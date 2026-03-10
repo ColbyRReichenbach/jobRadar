@@ -1,5 +1,7 @@
 import os
 import uuid
+import hashlib
+import secrets
 from datetime import datetime, timezone
 
 import jwt
@@ -80,6 +82,14 @@ def create_refresh_token(user_id: str) -> str:
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
+def hash_api_key(raw_key: str) -> str:
+    return hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
+
+
+def generate_api_key() -> str:
+    return f"aptk_{secrets.token_urlsafe(32)}"
+
+
 # --- Token Decoding ---
 
 def decode_jwt(token: str) -> dict:
@@ -106,22 +116,20 @@ def decode_refresh_token(token: str) -> dict:
 
 # --- Auth Dependencies ---
 
-async def verify_api_key(authorization: str = Header(...)):
+async def verify_api_key(
+    authorization: str = Header(...),
+    db: AsyncSession = Depends(get_db),
+):
     """Accepts either a Bearer API key or a Bearer JWT token.
 
     Returns a dict with user context:
     - For JWT: {"user_id": <uuid>, "auth_type": "jwt"}
-    - For API key: {"auth_type": "api_key"}
+    - For API key: {"user_id": <uuid>, "auth_type": "api_key"}
     """
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing Bearer token")
 
     token = authorization[7:]
-    expected_api_key = os.getenv("APPTRAIL_API_KEY", "")
-
-    # Check API key first (extension auth)
-    if token == expected_api_key:
-        return {"auth_type": "api_key"}
 
     # Try JWT (dashboard auth)
     try:
@@ -129,6 +137,19 @@ async def verify_api_key(authorization: str = Header(...)):
         return {"auth_type": "jwt", "user_id": payload["sub"]}
     except HTTPException:
         pass
+
+    # Fallback to per-user API key lookup
+    from backend.models import User
+
+    hashed = hash_api_key(token)
+    stmt = select(User).where(User.api_key_hash == hashed)
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+    if user:
+        user.api_key_last_used_at = datetime.now(timezone.utc)
+        user.updated_at = datetime.now(timezone.utc)
+        await db.commit()
+        return {"auth_type": "api_key", "user_id": str(user.id)}
 
     raise HTTPException(status_code=401, detail="Invalid credentials")
 

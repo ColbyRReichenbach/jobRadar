@@ -211,6 +211,10 @@ class User(Base):
     name: Mapped[str | None] = mapped_column(Text, nullable=True)
     picture: Mapped[str | None] = mapped_column(Text, nullable=True)
     gmail_connected: Mapped[bool] = mapped_column(Boolean, default=False)
+    api_key_hash: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
+    api_key_last4: Mapped[str | None] = mapped_column(String(4), nullable=True)
+    api_key_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    api_key_last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     # Sprint 6: Onboarding

@@ -15,17 +15,19 @@ document.getElementById("saveBtn").addEventListener("click", async () => {
   btn.textContent = "Validating...";
 
   try {
-    const resp = await fetch(`${API_BASE}/api/health`, {
+    const resp = await fetch(`${API_BASE}/api/auth/api-key/validate`, {
+      method: "POST",
       headers: { Authorization: `Bearer ${apiKey}` },
     });
 
     if (resp.ok) {
+      const data = await resp.json();
       await chrome.storage.local.set({ apiKey });
       statusEl.className = "status success";
-      statusEl.textContent = "Connected successfully! You can close this tab.";
+      statusEl.textContent = `Connected successfully as ${data.user?.email || "your account"}. You can close this tab.`;
     } else {
       statusEl.className = "status error";
-      statusEl.textContent = `Validation failed (${resp.status}). Check your API key.`;
+      statusEl.textContent = `Validation failed (${resp.status}). Generate a fresh key from dashboard Settings and try again.`;
     }
   } catch (e) {
     statusEl.className = "status error";

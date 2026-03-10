@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 load_dotenv(override=True)
 
 from backend.database import get_db
-from backend.dependencies import verify_api_key, create_jwt, create_refresh_token, decode_jwt, decode_refresh_token, get_current_user, set_refresh_cookie, clear_refresh_cookie, blacklist_token, REFRESH_COOKIE_NAME
+from backend.dependencies import verify_api_key, create_jwt, create_refresh_token, decode_jwt, decode_refresh_token, get_current_user, set_refresh_cookie, clear_refresh_cookie, blacklist_token, REFRESH_COOKIE_NAME, generate_api_key, hash_api_key
 from backend.models import Application, Contact, EmailEvent, EmailFeedback, User, GmailToken, Company, RoleUmbrella, CompanyTechProfile, UserProfile, UserRoleInterest, AtsBehavior, WarmConnection, Alert, Interview, CompanyVisit, InterviewNote, NotificationPreference, ResumeDraft
 from backend.services.hunter import find_contacts, generate_linkedin_search_url
 from backend.services.scraper import extract_job
@@ -951,6 +951,63 @@ async def logout(request: Request, authorization: str = Header(default="")):
     response = JSONResponse({"status": "logged_out"})
     clear_refresh_cookie(response)
     return response
+
+
+@app.get("/api/auth/api-key")
+async def get_api_key_metadata(current_user: User = Depends(get_current_user)):
+    """Return metadata for the current user's extension API key."""
+    return {
+        "has_api_key": bool(current_user.api_key_hash),
+        "last4": current_user.api_key_last4,
+        "created_at": current_user.api_key_created_at.isoformat() if current_user.api_key_created_at else None,
+        "last_used_at": current_user.api_key_last_used_at.isoformat() if current_user.api_key_last_used_at else None,
+    }
+
+
+@app.post("/api/auth/api-key", status_code=201)
+async def create_or_rotate_api_key(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Generate a new per-user API key for extension auth and replace any existing key."""
+    raw_key = generate_api_key()
+    now = datetime.now(timezone.utc)
+
+    current_user.api_key_hash = hash_api_key(raw_key)
+    current_user.api_key_last4 = raw_key[-4:]
+    current_user.api_key_created_at = now
+    current_user.api_key_last_used_at = None
+    current_user.updated_at = now
+
+    await db.commit()
+    await db.refresh(current_user)
+
+    return {
+        "api_key": raw_key,
+        "last4": current_user.api_key_last4,
+        "created_at": current_user.api_key_created_at.isoformat() if current_user.api_key_created_at else None,
+    }
+
+
+@app.post("/api/auth/api-key/validate")
+async def validate_api_key(auth: dict = Depends(verify_api_key), db: AsyncSession = Depends(get_db)):
+    """Validate an extension API key and return the owning user metadata."""
+    user_id = _require_user_id(auth)
+    stmt = select(User).where(User.id == user_id)
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    return {
+        "status": "ok",
+        "auth_type": auth["auth_type"],
+        "user": {
+            "id": str(user.id),
+            "email": user.email,
+            "name": user.name,
+        },
+    }
 
 
 # --- Gmail Sync ---
