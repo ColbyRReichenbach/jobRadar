@@ -1,0 +1,5 @@
+{
+  "name": "AppTrail",
+  "description": "A personal job application tracker with a Kanban pipeline, email feed, and AI classification.",
+  "requestFramePermissions": []
+}

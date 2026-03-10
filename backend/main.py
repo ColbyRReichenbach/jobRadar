@@ -1,0 +1,3114 @@
+import os
+from datetime import datetime, timezone
+from typing import Optional
+
+from dotenv import load_dotenv
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
+
+load_dotenv(override=True)
+
+from backend.database import get_db
+from backend.dependencies import verify_api_key, create_jwt, create_refresh_token, decode_jwt, decode_refresh_token, get_current_user, set_refresh_cookie, clear_refresh_cookie, blacklist_token, REFRESH_COOKIE_NAME
+from backend.models import Application, Contact, EmailEvent, EmailFeedback, User, GmailToken, Company, RoleUmbrella, CompanyTechProfile, UserProfile, UserRoleInterest, AtsBehavior, WarmConnection, Alert, Interview, CompanyVisit, InterviewNote, NotificationPreference, ResumeDraft
+from backend.services.hunter import find_contacts, generate_linkedin_search_url
+from backend.services.scraper import extract_job
+
+app = FastAPI(title="AppTrail API")
+
+_cors_origins = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+]
+_dashboard_url = os.getenv("DASHBOARD_URL")
+if _dashboard_url:
+    _cors_origins.append(_dashboard_url)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_origin_regex=r"^chrome-extension://.*$",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# --- Schemas ---
+
+class ApplicationCreate(BaseModel):
+    company: str
+    role_title: str
+    job_url: Optional[str] = None
+    source: Optional[str] = None
+    department: Optional[str] = None
+    description_text: Optional[str] = None
+    salary: Optional[str] = None
+    logo_url: Optional[str] = None
+    location: Optional[str] = None
+    status: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class ApplicationPatch(BaseModel):
+    status: Optional[str] = None
+    notes: Optional[str] = None
+    salary: Optional[str] = None
+    location: Optional[str] = None
+    logo_url: Optional[str] = None
+    description_text: Optional[str] = None
+    company: Optional[str] = None
+    role_title: Optional[str] = None
+    source: Optional[str] = None
+    job_url: Optional[str] = None
+
+
+class JobParseRequest(BaseModel):
+    url: str
+
+
+class ContactsFindRequest(BaseModel):
+    application_id: str
+    company: str
+    domain: str
+
+
+class ContactUpdate(BaseModel):
+    reached_out: Optional[bool] = None
+    reached_out_at: Optional[str] = None
+    response_received: Optional[bool] = None
+
+
+class EmailUpdate(BaseModel):
+    collapsed: Optional[bool] = None
+    read: Optional[bool] = None
+    application_id: Optional[str] = None
+    classification: Optional[str] = None
+    resolved: Optional[bool] = None
+
+
+# --- Helpers ---
+
+import uuid as _uuid
+
+
+def _get_user_id(auth: dict) -> _uuid.UUID | None:
+    """Extract user_id from auth context. Returns None for API-key auth."""
+    uid = auth.get("user_id")
+    if uid:
+        return _uuid.UUID(uid) if isinstance(uid, str) else uid
+    return None
+
+
+def _require_user_id(auth: dict) -> _uuid.UUID:
+    """Require a JWT-authenticated user context for user-owned routes."""
+    user_id = _get_user_id(auth)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="JWT authentication required")
+    return user_id
+
+
+def _serialize_app(app_row: Application, include_contacts: bool = False) -> dict:
+    data = {
+        "id": str(app_row.id),
+        "company": app_row.company,
+        "role_title": app_row.role_title,
+        "department": app_row.department,
+        "job_url": app_row.job_url,
+        "source": app_row.source,
+        "description_text": app_row.description_text,
+        "salary": app_row.salary,
+        "logo_url": app_row.logo_url,
+        "location": app_row.location,
+        "applied_at": app_row.applied_at.isoformat() if app_row.applied_at else None,
+        "status": app_row.status,
+        "status_updated_at": app_row.status_updated_at.isoformat() if app_row.status_updated_at else None,
+        "archived_at": app_row.archived_at.isoformat() if app_row.archived_at else None,
+        "follow_up_due": app_row.follow_up_due,
+        "notes": app_row.notes,
+        "company_id": str(app_row.company_id) if app_row.company_id else None,
+        "umbrella_id": str(app_row.umbrella_id) if app_row.umbrella_id else None,
+        "umbrella_name": app_row.umbrella.name if 'umbrella' in app_row.__dict__ and app_row.__dict__['umbrella'] is not None else None,
+        "tech_stack": app_row.tech_stack or [],
+        "match_score": app_row.match_score,
+        "listing_alive": app_row.listing_alive,
+        "listing_died_at": app_row.listing_died_at.isoformat() if app_row.listing_died_at else None,
+        "first_response_days": app_row.first_response_days,
+        "salary_min": app_row.salary_min,
+        "salary_max": app_row.salary_max,
+        "salary_currency": app_row.salary_currency,
+        "salary_period": app_row.salary_period,
+    }
+    if include_contacts:
+        data["contacts"] = [_serialize_contact(c) for c in app_row.contacts]
+    return data
+
+
+def _serialize_email_event(event: EmailEvent) -> dict:
+    return {
+        "id": str(event.id),
+        "application_id": str(event.application_id) if event.application_id else None,
+        "gmail_message_id": event.gmail_message_id,
+        "thread_id": event.thread_id,
+        "sender": event.sender,
+        "sender_email": event.sender_email,
+        "subject": event.subject,
+        "body": event.body,
+        "snippet": event.snippet or event.key_sentence,
+        "received_at": event.received_at.isoformat() if event.received_at else None,
+        "pipeline": event.pipeline,
+        "classification": event.classification,
+        "color_code": event.color_code,
+        "urgency": event.urgency,
+        "action_needed": event.action_needed,
+        "action_url": event.action_url,
+        "is_human": event.is_human,
+        "is_from_user": event.is_from_user,
+        "email_type": event.email_type,
+        "key_sentence": event.key_sentence,
+        "summary": event.summary,
+        "read": event.read,
+        "collapsed": event.collapsed,
+        "company_name": event.company_name,
+        "company_logo_url": event.company_logo_url,
+        "sender_domain": event.sender_domain,
+        "confidence": event.confidence,
+        "resolved": event.resolved,
+        "company_id": str(event.company_id) if event.company_id else None,
+        "application": {
+            "company": event.application.company,
+            "role_title": event.application.role_title,
+        } if event.application else None,
+    }
+
+
+def _serialize_contact(contact_row: Contact) -> dict:
+    return {
+        "id": str(contact_row.id),
+        "application_id": str(contact_row.application_id),
+        "name": contact_row.name,
+        "title": contact_row.title,
+        "email": contact_row.email,
+        "linkedin_url": contact_row.linkedin_url,
+        "source": contact_row.source,
+        "confidence_score": contact_row.confidence_score,
+        "reached_out": contact_row.reached_out,
+        "reached_out_at": contact_row.reached_out_at.isoformat() if contact_row.reached_out_at else None,
+        "response_received": contact_row.response_received,
+    }
+
+
+# --- Routes ---
+
+@app.get("/api/health")
+async def health():
+    return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
+
+
+@app.post("/api/jobs/parse", dependencies=[Depends(verify_api_key)])
+async def parse_job(req: JobParseRequest):
+    result = await extract_job(req.url)
+    return {"status": "ok", "data": result}
+
+
+@app.post("/api/jobs", status_code=201)
+async def create_application(payload: ApplicationCreate, auth: dict = Depends(verify_api_key), db: AsyncSession = Depends(get_db)):
+    user_id = _require_user_id(auth)
+
+    # Check for duplicate job_url
+    if payload.job_url:
+        stmt = select(Application).where(
+            Application.job_url == payload.job_url,
+            Application.user_id == user_id,
+        )
+        result = await db.execute(stmt)
+        existing = result.scalar_one_or_none()
+        if existing:
+            raise HTTPException(status_code=409, detail={"message": "Already tracked", "existing": _serialize_app(existing)})
+
+    new_app = Application(
+        user_id=user_id,
+        company=payload.company,
+        role_title=payload.role_title,
+        job_url=payload.job_url,
+        source=payload.source,
+        department=payload.department,
+        description_text=payload.description_text,
+        salary=payload.salary,
+        logo_url=payload.logo_url,
+        location=payload.location,
+        notes=payload.notes,
+    )
+    if payload.status:
+        new_app.status = payload.status
+
+    # Sprint 2: Company upsert from job URL domain
+    if payload.job_url:
+        from urllib.parse import urlparse
+        from backend.services.company_service import upsert_company
+        parsed_url = urlparse(payload.job_url)
+        domain = parsed_url.netloc.lower().replace("www.", "")
+        if domain:
+            company_entity = await upsert_company(db, domain)
+            if company_entity:
+                new_app.company_id = company_entity.id
+
+    # Sprint 3: Role classification
+    from backend.services.role_classifier import classify_role
+    role_result = await classify_role(db, new_app.role_title, new_app.description_text or "")
+    if role_result["umbrella_id"]:
+        new_app.umbrella_id = role_result["umbrella_id"]
+
+    # Sprint 4: Tech stack extraction
+    if new_app.description_text:
+        from backend.services.tech_extractor import extract_tech_stack
+        tech = extract_tech_stack(new_app.description_text)
+        new_app.tech_stack = [t["name"] for t in tech]
+
+    db.add(new_app)
+    try:
+        await db.commit()
+        await db.refresh(new_app)
+    except IntegrityError:
+        await db.rollback()
+        # Race condition: another request for the same user inserted between our check and insert.
+        stmt = select(Application).where(
+            Application.job_url == payload.job_url,
+            Application.user_id == user_id,
+        )
+        result = await db.execute(stmt)
+        existing = result.scalar_one_or_none()
+        if existing:
+            raise HTTPException(status_code=409, detail={"message": "Already tracked", "existing": _serialize_app(existing)})
+        raise HTTPException(status_code=409, detail={"message": "Unable to create application for this job URL"})
+
+    # Sprint 4: Update company tech profile
+    if new_app.company_id and new_app.tech_stack:
+        from backend.services.tech_extractor import extract_tech_stack as _extract
+        tech_items = _extract(new_app.description_text or "")
+        for t in tech_items:
+            stmt = select(CompanyTechProfile).where(
+                CompanyTechProfile.company_id == new_app.company_id,
+                CompanyTechProfile.tech_name == t["name"],
+            )
+            result = await db.execute(stmt)
+            profile = result.scalar_one_or_none()
+            if profile:
+                profile.mention_count += 1
+                profile.last_seen_at = datetime.now(timezone.utc)
+            else:
+                db.add(CompanyTechProfile(
+                    company_id=new_app.company_id,
+                    tech_name=t["name"],
+                    category=t["category"],
+                ))
+        await db.commit()
+
+    return _serialize_app(new_app)
+
+
+@app.get("/api/jobs")
+async def list_applications(
+    status: Optional[str] = Query(None),
+    archived: Optional[bool] = Query(None),
+    umbrella_id: Optional[str] = Query(None),
+    auth: dict = Depends(verify_api_key),
+    db: AsyncSession = Depends(get_db),
+):
+    from sqlalchemy.orm import selectinload
+
+    user_id = _require_user_id(auth)
+    stmt = select(Application).options(
+        selectinload(Application.contacts),
+        selectinload(Application.umbrella),
+    )
+    stmt = stmt.where(Application.user_id == user_id)
+    if not archived:
+        stmt = stmt.where(Application.archived_at.is_(None))
+    if status:
+        stmt = stmt.where(Application.status == status)
+    if umbrella_id:
+        stmt = stmt.where(Application.umbrella_id == _uuid.UUID(umbrella_id))
+    stmt = stmt.order_by(Application.applied_at.desc())
+
+    result = await db.execute(stmt)
+    apps = result.scalars().unique().all()
+    return [_serialize_app(a, include_contacts=True) for a in apps]
+
+
+@app.patch("/api/jobs/{job_id}")
+async def update_application(
+    job_id: str,
+    payload: ApplicationPatch,
+    auth: dict = Depends(verify_api_key),
+    db: AsyncSession = Depends(get_db),
+):
+    user_id = _require_user_id(auth)
+    jid = _uuid.UUID(job_id)
+    stmt = select(Application).where(
+        Application.id == jid,
+        Application.user_id == user_id,
+    )
+    result = await db.execute(stmt)
+    app_row = result.scalar_one_or_none()
+    if not app_row:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    if payload.status is not None:
+        app_row.status = payload.status
+        app_row.status_updated_at = datetime.now(timezone.utc)
+    if payload.notes is not None:
+        app_row.notes = payload.notes
+    if payload.salary is not None:
+        app_row.salary = payload.salary
+    if payload.location is not None:
+        app_row.location = payload.location
+    if payload.logo_url is not None:
+        app_row.logo_url = payload.logo_url
+    if payload.description_text is not None:
+        app_row.description_text = payload.description_text
+    if payload.company is not None:
+        app_row.company = payload.company
+    if payload.role_title is not None:
+        app_row.role_title = payload.role_title
+    if payload.source is not None:
+        app_row.source = payload.source
+    if payload.job_url is not None:
+        app_row.job_url = payload.job_url
+
+    await db.commit()
+    await db.refresh(app_row)
+    return _serialize_app(app_row)
+
+
+@app.get("/api/contacts")
+async def list_contacts(auth: dict = Depends(verify_api_key)):
+    return []
+
+
+@app.post("/api/contacts/find")
+async def find_contacts_endpoint(
+    req: ContactsFindRequest,
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    user_id = _require_user_id(auth)
+
+    app_id = _uuid.UUID(req.application_id)
+    app_stmt = select(Application).where(
+        Application.id == app_id,
+        Application.user_id == user_id,
+    )
+    app_result = await db.execute(app_stmt)
+    app = app_result.scalar_one_or_none()
+    if not app:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    # Check cache: existing contacts for this application fetched within 30 days
+    stmt = select(Contact).where(
+        Contact.application_id == app_id,
+        Contact.user_id == user_id,
+    )
+    result = await db.execute(stmt)
+    existing_contacts = result.scalars().all()
+    if existing_contacts:
+        linkedin_url = generate_linkedin_search_url(req.company)
+        return {
+            "contacts": [_serialize_contact(c) for c in existing_contacts],
+            "linkedin_search_url": linkedin_url,
+            "cached": True,
+        }
+
+    # Call Hunter.io
+    contacts_data = await find_contacts(req.domain, req.company)
+
+    # Write to DB
+    saved_contacts = []
+    for c in contacts_data:
+        contact = Contact(
+            application_id=app_id,
+            company_id=app.company_id,
+            name=c.get("name"),
+            title=c.get("title"),
+            email=c.get("email"),
+            confidence_score=c.get("confidence_score"),
+            source="hunter",
+            user_id=user_id,
+        )
+        db.add(contact)
+        saved_contacts.append(contact)
+
+    await db.commit()
+    for c in saved_contacts:
+        await db.refresh(c)
+
+    linkedin_url = generate_linkedin_search_url(req.company)
+    return {
+        "contacts": [_serialize_contact(c) for c in saved_contacts],
+        "linkedin_search_url": linkedin_url,
+        "cached": False,
+    }
+
+
+@app.patch("/api/contacts/{contact_id}")
+async def update_contact(
+    contact_id: str,
+    payload: ContactUpdate,
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    user_id = _require_user_id(auth)
+    from datetime import datetime, timezone
+
+    cid = _uuid.UUID(contact_id)
+    stmt = select(Contact).where(
+        Contact.id == cid,
+        Contact.user_id == user_id,
+    )
+    result = await db.execute(stmt)
+    contact = result.scalar_one_or_none()
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contact not found")
+
+    if payload.reached_out is not None:
+        contact.reached_out = payload.reached_out
+    if payload.reached_out_at is not None:
+        contact.reached_out_at = datetime.fromisoformat(payload.reached_out_at)
+    elif payload.reached_out:
+        contact.reached_out_at = datetime.now(timezone.utc)
+    if payload.response_received is not None:
+        contact.response_received = payload.response_received
+
+    await db.commit()
+    await db.refresh(contact)
+    return _serialize_contact(contact)
+
+
+@app.get("/api/emails")
+async def list_emails(
+    application_id: Optional[str] = Query(None),
+    unmatched: Optional[bool] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    user_id = _require_user_id(auth)
+    from sqlalchemy.orm import selectinload
+
+    stmt = select(EmailEvent).options(selectinload(EmailEvent.application)).where(
+        EmailEvent.user_id == user_id
+    )
+
+    if application_id:
+        stmt = stmt.where(EmailEvent.application_id == _uuid.UUID(application_id))
+    elif unmatched:
+        stmt = stmt.where(EmailEvent.application_id.is_(None))
+    else:
+        stmt = stmt.where(EmailEvent.collapsed.is_(False))
+
+    stmt = stmt.order_by(EmailEvent.received_at.desc())
+    result = await db.execute(stmt)
+    events = result.scalars().all()
+    return [_serialize_email_event(e) for e in events]
+
+
+@app.patch("/api/emails/{email_id}")
+async def update_email(
+    email_id: str,
+    payload: EmailUpdate,
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    user_id = _require_user_id(auth)
+
+    eid = _uuid.UUID(email_id)
+    stmt = select(EmailEvent).where(
+        EmailEvent.id == eid,
+        EmailEvent.user_id == user_id,
+    )
+    result = await db.execute(stmt)
+    event = result.scalar_one_or_none()
+    if not event:
+        raise HTTPException(status_code=404, detail="Email event not found")
+
+    if payload.collapsed is not None:
+        event.collapsed = payload.collapsed
+    if payload.read is not None:
+        event.read = payload.read
+    if payload.application_id is not None:
+        target_app_id = _uuid.UUID(payload.application_id)
+        app_stmt = select(Application).where(
+            Application.id == target_app_id,
+            Application.user_id == user_id,
+        )
+        app_result = await db.execute(app_stmt)
+        if not app_result.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Application not found")
+        event.application_id = target_app_id
+    if payload.classification is not None:
+        event.classification = payload.classification
+    if payload.resolved is not None:
+        event.resolved = payload.resolved
+
+    await db.commit()
+    await db.refresh(event)
+
+    # Re-fetch with relationship loaded
+    from sqlalchemy.orm import selectinload
+    stmt = select(EmailEvent).options(selectinload(EmailEvent.application)).where(
+        EmailEvent.id == eid,
+        EmailEvent.user_id == user_id,
+    )
+    result = await db.execute(stmt)
+    event = result.scalar_one()
+    return _serialize_email_event(event)
+
+
+class EmailFeedbackCreate(BaseModel):
+    email_id: str
+    is_job_related: bool
+
+
+@app.post("/api/emails/feedback", status_code=201)
+async def create_email_feedback(
+    payload: EmailFeedbackCreate,
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    """User feedback: mark an email as job-related or not. Builds sender blocklist over time."""
+    user_id = _require_user_id(auth)
+
+    eid = _uuid.UUID(payload.email_id)
+    stmt = select(EmailEvent).where(
+        EmailEvent.id == eid,
+        EmailEvent.user_id == user_id,
+    )
+    result = await db.execute(stmt)
+    event = result.scalar_one_or_none()
+    if not event:
+        raise HTTPException(status_code=404, detail="Email not found")
+
+    # Extract pattern from subject for learning
+    subject_pattern = None
+    if event.subject:
+        # Strip specific details, keep structural pattern
+        import re
+        pattern = re.sub(r'\b\d+\b', '#', event.subject)
+        pattern = re.sub(r'\b[A-Z][a-z]+\b', '*', pattern)
+        subject_pattern = pattern[:100]
+
+    feedback = EmailFeedback(
+        email_id=eid,
+        is_job_related=payload.is_job_related,
+        sender_domain=event.sender_domain,
+        subject_pattern=subject_pattern,
+    )
+    db.add(feedback)
+
+    # If not job related, collapse the email
+    if not payload.is_job_related:
+        event.collapsed = True
+        event.classification = "not_relevant"
+
+    await db.commit()
+    return {"status": "ok", "feedback_id": str(feedback.id)}
+
+
+@app.get("/api/emails/{email_id}/pipeline-check")
+async def check_email_pipeline(
+    email_id: str,
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    """Check if an email's sender company exists in the pipeline.
+
+    Returns whether the company is tracked and suggests adding if not.
+    """
+    user_id = _require_user_id(auth)
+
+    eid = _uuid.UUID(email_id)
+    stmt = select(EmailEvent).where(
+        EmailEvent.id == eid,
+        EmailEvent.user_id == user_id,
+    )
+    result = await db.execute(stmt)
+    event = result.scalar_one_or_none()
+    if not event:
+        raise HTTPException(status_code=404, detail="Email not found")
+
+    if event.application_id:
+        return {"in_pipeline": True, "application_id": str(event.application_id)}
+
+    # Check if company name matches any application
+    company_name = event.company_name
+    if company_name:
+        from sqlalchemy import func
+        app_stmt = select(Application).where(
+            func.lower(Application.company).like(f"%{company_name.lower()}%"),
+            Application.user_id == user_id,
+        )
+        app_result = await db.execute(app_stmt)
+        matched_app = app_result.scalar_one_or_none()
+        if matched_app:
+            return {
+                "in_pipeline": True,
+                "application_id": str(matched_app.id),
+                "company": matched_app.company,
+            }
+
+    return {
+        "in_pipeline": False,
+        "company_name": company_name,
+        "sender_domain": event.sender_domain,
+        "suggestion": f"I don't see {company_name or event.sender_domain} in your pipeline. Would you like to add it?",
+    }
+
+
+@app.get("/api/auth/gmail")
+async def gmail_auth_redirect():
+    from backend.services.gmail_auth import get_oauth_flow
+    flow = get_oauth_flow()
+    auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline")
+    return {"auth_url": auth_url}
+
+
+@app.get("/api/auth/gmail/callback")
+async def gmail_auth_callback(
+    code: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+):
+    from backend.services.gmail_auth import get_oauth_flow, store_tokens
+    flow = get_oauth_flow()
+    flow.fetch_token(code=code)
+    credentials = flow.credentials
+
+    expires_at = datetime.fromtimestamp(
+        credentials.expiry.timestamp(), tz=timezone.utc
+    ) if credentials.expiry else datetime.now(timezone.utc)
+
+    await store_tokens(
+        db,
+        access_token=credentials.token,
+        refresh_token=credentials.refresh_token,
+        expires_at=expires_at,
+    )
+    return {"status": "ok", "message": "Gmail tokens stored successfully"}
+
+
+# --- Google Sign-In ---
+
+GOOGLE_CLIENT_ID = os.getenv("GMAIL_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.getenv("GMAIL_CLIENT_SECRET", "")
+GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/api/auth/google/callback")
+
+
+@app.get("/api/auth/google")
+async def google_auth_redirect(
+    connect_gmail: bool = Query(False),
+):
+    """Redirect to Google OAuth. Set connect_gmail=true to also request Gmail access."""
+    from google_auth_oauthlib.flow import Flow
+    import json, base64
+
+    scopes = [
+        "openid",
+        "https://www.googleapis.com/auth/userinfo.email",
+        "https://www.googleapis.com/auth/userinfo.profile",
+    ]
+    if connect_gmail:
+        scopes.append("https://www.googleapis.com/auth/gmail.readonly")
+
+    flow = Flow.from_client_config(
+        {
+            "web": {
+                "client_id": GOOGLE_CLIENT_ID,
+                "client_secret": GOOGLE_CLIENT_SECRET,
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "redirect_uris": [GOOGLE_REDIRECT_URI],
+            }
+        },
+        scopes=scopes,
+        redirect_uri=GOOGLE_REDIRECT_URI,
+    )
+
+    # Generate auth URL first (this sets flow.code_verifier)
+    auth_url, _ = flow.authorization_url(
+        prompt="consent",
+        access_type="offline",
+    )
+
+    # Encode intent + code_verifier into state so the callback can use it
+    state_data = {
+        "intent": "connect_gmail" if connect_gmail else "signin",
+        "code_verifier": flow.code_verifier,
+    }
+    state_str = base64.urlsafe_b64encode(json.dumps(state_data).encode()).decode()
+
+    # Replace the auto-generated state param with our custom one
+    from urllib.parse import urlencode, urlparse, parse_qs, urlunparse
+    parsed = urlparse(auth_url)
+    params = parse_qs(parsed.query, keep_blank_values=True)
+    params["state"] = [state_str]
+    new_query = urlencode({k: v[0] for k, v in params.items()})
+    auth_url = urlunparse(parsed._replace(query=new_query))
+
+    return {"auth_url": auth_url}
+
+
+@app.get("/api/auth/google/callback")
+async def google_auth_callback(
+    code: str = Query(...),
+    state: str = Query(""),
+    db: AsyncSession = Depends(get_db),
+):
+    """Handle Google OAuth callback. Creates/updates user and returns JWT."""
+    from google_auth_oauthlib.flow import Flow
+    from fastapi.responses import RedirectResponse
+    import json, base64
+
+    frontend_url = os.getenv("DASHBOARD_URL", "http://localhost:5173")
+
+    # Decode state to get intent and PKCE code_verifier
+    try:
+        state_data = json.loads(base64.urlsafe_b64decode(state).decode())
+        intent = state_data.get("intent", "signin")
+        code_verifier = state_data.get("code_verifier")
+    except Exception:
+        intent = "signin"
+        code_verifier = None
+
+    scopes = [
+        "openid",
+        "https://www.googleapis.com/auth/userinfo.email",
+        "https://www.googleapis.com/auth/userinfo.profile",
+    ]
+    if intent == "connect_gmail":
+        scopes.append("https://www.googleapis.com/auth/gmail.readonly")
+
+    try:
+        flow = Flow.from_client_config(
+            {
+                "web": {
+                    "client_id": GOOGLE_CLIENT_ID,
+                    "client_secret": GOOGLE_CLIENT_SECRET,
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "redirect_uris": [GOOGLE_REDIRECT_URI],
+                }
+            },
+            scopes=scopes,
+            redirect_uri=GOOGLE_REDIRECT_URI,
+        )
+        flow.code_verifier = code_verifier
+        flow.fetch_token(code=code)
+    except Exception as e:
+        import logging
+        logging.exception("OAuth token exchange failed")
+        return RedirectResponse(url=f"{frontend_url}/?auth_error=token_exchange_failed", status_code=302)
+    credentials = flow.credentials
+
+    # Get user info from Google
+    from google.oauth2 import id_token
+    from google.auth.transport import requests as google_requests
+
+    id_info = id_token.verify_oauth2_token(
+        credentials.id_token,
+        google_requests.Request(),
+        GOOGLE_CLIENT_ID,
+    )
+
+    google_id = id_info["sub"]
+    email = id_info.get("email", "")
+    name = id_info.get("name", "")
+    picture = id_info.get("picture", "")
+
+    # Find or create user
+    stmt = select(User).where(User.google_id == google_id)
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+
+    if user:
+        user.name = name
+        user.picture = picture
+        user.email = email
+        user.updated_at = datetime.now(timezone.utc)
+    else:
+        user = User(
+            google_id=google_id,
+            email=email,
+            name=name,
+            picture=picture,
+        )
+        db.add(user)
+        await db.flush()
+
+    # Store Gmail tokens if connect_gmail was requested
+    if intent == "connect_gmail" and credentials.refresh_token:
+        expires_at = datetime.fromtimestamp(
+            credentials.expiry.timestamp(), tz=timezone.utc
+        ) if credentials.expiry else datetime.now(timezone.utc)
+
+        # Check for existing token for this user
+        token_stmt = select(GmailToken).where(GmailToken.user_id == user.id)
+        token_result = await db.execute(token_stmt)
+        existing_token = token_result.scalar_one_or_none()
+
+        if existing_token:
+            existing_token.access_token = credentials.token
+            existing_token.refresh_token = credentials.refresh_token
+            existing_token.expires_at = expires_at
+            existing_token.updated_at = datetime.now(timezone.utc)
+        else:
+            gmail_token = GmailToken(
+                user_id=user.id,
+                access_token=credentials.token,
+                refresh_token=credentials.refresh_token,
+                expires_at=expires_at,
+            )
+            db.add(gmail_token)
+
+        user.gmail_connected = True
+
+    await db.commit()
+    await db.refresh(user)
+
+    # Create short-lived access token + refresh token
+    access_token = create_jwt(str(user.id), user.email, user.name, user.picture)
+    refresh_token = create_refresh_token(str(user.id))
+
+    # Redirect to frontend with access token in hash, set refresh cookie
+    from starlette.responses import RedirectResponse as _RedirectResponse
+    redirect_url = f"{frontend_url}/auth/callback#{access_token}"
+    response = _RedirectResponse(url=redirect_url, status_code=302)
+    set_refresh_cookie(response, refresh_token)
+    return response
+
+
+@app.get("/api/auth/me")
+async def get_me(current_user: User = Depends(get_current_user)):
+    """Return current user info for the active JWT session."""
+    return {
+        "id": str(current_user.id),
+        "email": current_user.email,
+        "name": current_user.name,
+        "picture": current_user.picture,
+        "gmail_connected": current_user.gmail_connected,
+    }
+
+
+@app.post("/api/auth/refresh")
+async def refresh_access_token(request: Request, db: AsyncSession = Depends(get_db)):
+    """Exchange a valid refresh token cookie for a new access token."""
+    refresh = request.cookies.get(REFRESH_COOKIE_NAME)
+    if not refresh:
+        raise HTTPException(status_code=401, detail="No refresh token")
+
+    payload = decode_refresh_token(refresh)
+    user_id_str = payload["sub"]
+
+    import uuid as _uuid
+    stmt = select(User).where(User.id == _uuid.UUID(user_id_str))
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    new_access = create_jwt(str(user.id), user.email, user.name, user.picture)
+    return {"access_token": new_access, "token_type": "bearer"}
+
+
+@app.post("/api/auth/logout")
+async def logout(request: Request, authorization: str = Header(default="")):
+    """Revoke current tokens and clear refresh cookie."""
+    from starlette.responses import JSONResponse
+
+    # Blacklist current access token if present
+    if authorization.startswith("Bearer "):
+        token = authorization[7:]
+        try:
+            payload = decode_jwt(token)
+            jti = payload.get("jti")
+            if jti:
+                blacklist_token(jti)
+        except HTTPException:
+            pass  # Already expired, fine
+
+    # Blacklist refresh token if present
+    refresh = request.cookies.get(REFRESH_COOKIE_NAME)
+    if refresh:
+        try:
+            payload = decode_refresh_token(refresh)
+            jti = payload.get("jti")
+            if jti:
+                blacklist_token(jti)
+        except HTTPException:
+            pass
+
+    response = JSONResponse({"status": "logged_out"})
+    clear_refresh_cookie(response)
+    return response
+
+
+# --- Gmail Sync ---
+
+@app.post("/api/gmail/sync")
+async def sync_gmail(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """On-demand Gmail sync. Fetches recent emails, classifies with Haiku LLM."""
+    import uuid as _uuid
+    import time
+    from email.utils import parsedate_to_datetime
+    from google.oauth2.credentials import Credentials
+    from googleapiclient.discovery import build
+    from backend.services.email_parser import parse_email_body, extract_sender_parts
+    from backend.services.email_classifier import (
+        classify_email as classify_email_llm,
+        CLASSIFICATION_TO_COLOR,
+        CLASSIFICATION_TO_EMAIL_TYPE,
+    )
+    from backend.services.company_identity import extract_domain, get_company_info
+
+    # Get Gmail credentials
+    user_id = current_user.id
+    user_email = current_user.email or ""
+    stmt = select(GmailToken).where(GmailToken.user_id == user_id)
+    result = await db.execute(stmt)
+    gmail_token = result.scalar_one_or_none()
+    if not gmail_token:
+        raise HTTPException(status_code=400, detail="Gmail not connected. Please connect your Gmail account first.")
+
+    creds = Credentials(
+        token=gmail_token.access_token,
+        refresh_token=gmail_token.refresh_token,
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=GOOGLE_CLIENT_ID,
+        client_secret=GOOGLE_CLIENT_SECRET,
+    )
+
+    # Refresh if needed
+    if gmail_token.expires_at.timestamp() - time.time() < 300:
+        from google.auth.transport.requests import Request
+        creds.refresh(Request())
+        gmail_token.access_token = creds.token
+        gmail_token.expires_at = datetime.fromtimestamp(
+            creds.expiry.timestamp(), tz=timezone.utc
+        ) if creds.expiry else gmail_token.expires_at
+        gmail_token.updated_at = datetime.now(timezone.utc)
+        await db.commit()
+
+    service = build("gmail", "v1", credentials=creds)
+
+    # Get feedback blocklist
+    feedback_stmt = (
+        select(EmailFeedback.sender_domain)
+        .join(EmailEvent, EmailFeedback.email_id == EmailEvent.id)
+        .where(
+            EmailEvent.user_id == user_id,
+            EmailFeedback.is_job_related.is_(False),
+            EmailFeedback.sender_domain.isnot(None),
+        )
+    )
+    feedback_result = await db.execute(feedback_stmt)
+    blocklist = {row[0] for row in feedback_result.all()}
+
+    # Fetch last 30 days of emails — let classifier decide relevance
+    messages_response = service.users().messages().list(
+        userId="me", q="newer_than:30d", maxResults=50
+    ).execute()
+
+    messages = messages_response.get("messages", [])
+    new_count = 0
+    emails_synced = []
+
+    for msg_meta in messages:
+        msg_id = msg_meta["id"]
+
+        existing_stmt = select(EmailEvent).where(EmailEvent.gmail_message_id == msg_id)
+        existing_result = await db.execute(existing_stmt)
+        if existing_result.scalar_one_or_none():
+            continue
+
+        msg = service.users().messages().get(userId="me", id=msg_id, format="full").execute()
+
+        headers_list = msg.get("payload", {}).get("headers", [])
+        headers = {h["name"].lower(): h["value"] for h in headers_list}
+        from_header = headers.get("from", "")
+        subject = headers.get("subject", "")
+        date_str = headers.get("date", "")
+
+        sender_name, sender_email_addr = extract_sender_parts(from_header)
+        sender_domain = extract_domain(sender_email_addr)
+
+        # Skip blocked domains
+        if sender_domain in blocklist:
+            continue
+
+        # Parse date
+        received_at = datetime.now(timezone.utc)
+        if date_str:
+            try:
+                received_at = parsedate_to_datetime(date_str)
+                if received_at.tzinfo is None:
+                    received_at = received_at.replace(tzinfo=timezone.utc)
+            except Exception:
+                pass
+
+        # Parse body with improved MIME parser
+        body_text = parse_email_body(msg.get("payload", {}))
+        snippet = msg.get("snippet", "")
+
+        is_from_user = sender_email_addr.lower() == user_email.lower() if user_email else False
+
+        # Classify with Haiku LLM
+        classification = await classify_email_llm(
+            subject=subject,
+            body=body_text,
+            sender=sender_name,
+            sender_email=sender_email_addr,
+        )
+
+        cls = classification.get("classification", "job_update")
+
+        # Skip not_relevant
+        if cls == "not_relevant":
+            continue
+
+        # Company identity
+        company_info = get_company_info(sender_email_addr)
+        email_company_name = classification.get("company_name") or company_info.get("company_name")
+
+        # Match to application
+        app_id = None
+        if sender_email_addr:
+            domain = sender_email_addr.split("@")[-1].lower()
+            app_stmt = select(Application).where(Application.user_id == user_id)
+            app_result = await db.execute(app_stmt)
+            apps = app_result.scalars().all()
+            for a in apps:
+                company_lower = a.company.lower().replace(" ", "")
+                domain_base = domain.split(".")[0]
+                if domain_base in company_lower or company_lower in domain_base:
+                    app_id = a.id
+                    break
+
+        email_event = EmailEvent(
+            user_id=user_id,
+            application_id=app_id,
+            gmail_message_id=msg_id,
+            thread_id=msg.get("threadId", ""),
+            sender=sender_name,
+            sender_email=sender_email_addr,
+            subject=subject,
+            body=body_text[:10000] if body_text else None,
+            snippet=snippet,
+            received_at=received_at,
+            classification=cls,
+            color_code=CLASSIFICATION_TO_COLOR.get(cls, "gray"),
+            email_type=CLASSIFICATION_TO_EMAIL_TYPE.get(cls),
+            action_needed=classification.get("action_needed", False),
+            key_sentence=classification.get("key_sentence"),
+            summary=classification.get("summary"),
+            is_from_user=is_from_user,
+            is_human=not classification.get("is_automated", False),
+            read=is_from_user,
+            company_name=email_company_name,
+            company_logo_url=company_info.get("logo_url"),
+            sender_domain=sender_domain,
+            confidence=classification.get("confidence"),
+        )
+        db.add(email_event)
+        new_count += 1
+        emails_synced.append({
+            "subject": subject,
+            "sender": sender_name,
+            "classification": cls,
+            "company": email_company_name,
+        })
+
+    if new_count > 0:
+        await db.commit()
+
+    return {
+        "status": "ok",
+        "new_emails": new_count,
+        "total_found": len(messages),
+        "emails": emails_synced[:10],
+    }
+
+
+@app.get("/api/search", dependencies=[Depends(verify_api_key)])
+async def search_jobs_endpoint(
+    q: str = Query(""),
+    location: str = Query(""),
+    db: AsyncSession = Depends(get_db),
+):
+    from datetime import timedelta
+
+    from backend.models import JobListing
+    from backend.services.job_search import search_jobs
+
+    # Check cache: listings saved within 24h matching this query
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    cache_source = f"search:{q}:{location}"
+    stmt = select(JobListing).where(
+        JobListing.source == cache_source,
+        JobListing.saved_at > cutoff,
+    )
+    result = await db.execute(stmt)
+    cached = result.scalars().all()
+
+    if cached:
+        return {
+            "results": [
+                {
+                    "id": str(c.id),
+                    "title": c.title,
+                    "company": c.company,
+                    "source": c.description_snippet or "cached",
+                    "url": c.url,
+                    "posted_at": c.posted_at.isoformat() if c.posted_at else None,
+                }
+                for c in cached
+            ],
+            "cached": True,
+        }
+
+    # Fresh search
+    results = await search_jobs(q, location)
+
+    # Cache results
+    for r in results:
+        listing = JobListing(
+            title=r.get("title"),
+            company=r.get("company"),
+            source=cache_source,
+            url=r.get("url"),
+            description_snippet=r.get("source"),
+        )
+        db.add(listing)
+
+    if results:
+        await db.commit()
+
+    return {"results": results, "cached": False}
+
+
+@app.get("/api/search/global")
+async def global_search(
+    q: str = Query(""),
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    user_id = _require_user_id(auth)
+    if not q or len(q) < 2:
+        return {"applications": [], "contacts": [], "emails": []}
+
+    search_term = f"%{q.lower()}%"
+
+    from sqlalchemy import or_, func
+
+    # Search applications
+    app_stmt = select(Application).where(
+        Application.user_id == user_id,
+        or_(
+            func.lower(Application.company).like(search_term),
+            func.lower(Application.role_title).like(search_term),
+        )
+    ).limit(20)
+    app_result = await db.execute(app_stmt)
+    apps = [_serialize_app(a) for a in app_result.scalars().all()]
+
+    # Search contacts
+    contact_stmt = select(Contact).where(
+        Contact.user_id == user_id,
+        or_(
+            func.lower(Contact.name).like(search_term),
+            func.lower(Contact.email).like(search_term),
+        )
+    ).limit(20)
+    contact_result = await db.execute(contact_stmt)
+    contacts = [_serialize_contact(c) for c in contact_result.scalars().all()]
+
+    # Search emails
+    from sqlalchemy.orm import selectinload
+    email_stmt = select(EmailEvent).options(
+        selectinload(EmailEvent.application)
+    ).where(
+        EmailEvent.user_id == user_id,
+        func.lower(EmailEvent.summary).like(search_term)
+    ).limit(20)
+    email_result = await db.execute(email_stmt)
+    emails = [_serialize_email_event(e) for e in email_result.scalars().all()]
+
+    return {"applications": apps, "contacts": contacts, "emails": emails}
+
+
+# --- Sprint 2: Company Endpoints ---
+
+@app.get("/api/companies")
+async def list_companies(db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    from sqlalchemy import func
+    user_id = _require_user_id(auth)
+
+    stmt = select(
+        Company,
+        func.count(Application.id.distinct()).label("job_count"),
+    ).join(
+        Application,
+        (Application.company_id == Company.id) & (Application.user_id == user_id),
+    ).group_by(Company.id).order_by(Company.name)
+
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    return [
+        {
+            "id": str(c.id),
+            "domain": c.domain,
+            "name": c.name,
+            "logo_url": c.logo_url,
+            "industry": c.industry,
+            "size": c.size,
+            "first_seen_at": c.first_seen_at.isoformat() if c.first_seen_at else None,
+            "last_activity_at": c.last_activity_at.isoformat() if c.last_activity_at else None,
+            "job_count": job_count,
+        }
+        for c, job_count in rows
+    ]
+
+
+@app.get("/api/companies/{domain}")
+async def get_company(domain: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    user_id = _require_user_id(auth)
+
+    stmt = (
+        select(Company)
+        .join(Application, Application.company_id == Company.id)
+        .where(Company.domain == domain, Application.user_id == user_id)
+        .limit(1)
+    )
+    result = await db.execute(stmt)
+    company = result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+
+    # Get related jobs
+    jobs_stmt = select(Application).where(
+        Application.company_id == company.id,
+        Application.user_id == user_id,
+    ).order_by(Application.applied_at.desc()).limit(20)
+    jobs_result = await db.execute(jobs_stmt)
+    jobs = [_serialize_app(a) for a in jobs_result.scalars().all()]
+
+    # Get related contacts
+    contacts_stmt = select(Contact).where(
+        Contact.company_id == company.id,
+        Contact.user_id == user_id,
+    ).limit(20)
+    contacts_result = await db.execute(contacts_stmt)
+    contacts = [_serialize_contact(c) for c in contacts_result.scalars().all()]
+
+    # Get recent emails
+    from sqlalchemy.orm import selectinload as _sel
+    emails_stmt = select(EmailEvent).options(_sel(EmailEvent.application)).where(
+        EmailEvent.company_id == company.id,
+        EmailEvent.user_id == user_id,
+    ).order_by(EmailEvent.received_at.desc()).limit(10)
+    emails_result = await db.execute(emails_stmt)
+    emails = [_serialize_email_event(e) for e in emails_result.scalars().all()]
+
+    return {
+        "id": str(company.id),
+        "domain": company.domain,
+        "name": company.name,
+        "logo_url": company.logo_url,
+        "industry": company.industry,
+        "size": company.size,
+        "first_seen_at": company.first_seen_at.isoformat() if company.first_seen_at else None,
+        "last_activity_at": company.last_activity_at.isoformat() if company.last_activity_at else None,
+        "jobs": jobs,
+        "contacts": contacts,
+        "emails": emails,
+    }
+
+
+# --- Sprint 3: Umbrella Endpoints ---
+
+@app.get("/api/umbrellas", dependencies=[Depends(verify_api_key)])
+async def list_umbrellas(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(RoleUmbrella).order_by(RoleUmbrella.name))
+    return [
+        {"id": str(u.id), "name": u.name, "aliases": u.aliases}
+        for u in result.scalars().all()
+    ]
+
+
+# --- Sprint 4: Company Tech Endpoint ---
+
+@app.get("/api/companies/{domain}/tech", dependencies=[Depends(verify_api_key)])
+async def get_company_tech(domain: str, db: AsyncSession = Depends(get_db)):
+    stmt = select(Company).where(Company.domain == domain)
+    result = await db.execute(stmt)
+    company = result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+
+    tech_stmt = select(CompanyTechProfile).where(
+        CompanyTechProfile.company_id == company.id
+    ).order_by(CompanyTechProfile.mention_count.desc())
+    tech_result = await db.execute(tech_stmt)
+    profiles = tech_result.scalars().all()
+
+    return {
+        "company": company.name,
+        "domain": company.domain,
+        "tech_stack": [
+            {
+                "name": p.tech_name,
+                "category": p.category,
+                "mentions": p.mention_count,
+            }
+            for p in profiles
+        ],
+    }
+
+
+# --- Sprint 5: Resume Intelligence ---
+
+class ResumeTextUpload(BaseModel):
+    text: str
+
+
+@app.post("/api/resume/parse", status_code=201)
+async def parse_resume_text(
+    payload: ResumeTextUpload,
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    """Parse resume text into structured profile."""
+    user_id = _require_user_id(auth)
+    from backend.services.resume_parser import parse_resume
+
+    parsed = await parse_resume(payload.text)
+
+    # Upsert profile scoped by user_id
+    stmt = select(UserProfile).where(UserProfile.user_id == user_id).limit(1)
+    result = await db.execute(stmt)
+    profile = result.scalar_one_or_none()
+
+    if profile:
+        profile.raw_text = payload.text[:50000]
+        profile.skills = parsed.get("skills")
+        profile.education = parsed.get("education")
+        profile.experience_years = parsed.get("experience_years")
+        profile.tools = parsed.get("tools")
+        profile.certifications = parsed.get("certifications")
+        profile.updated_at = datetime.now(timezone.utc)
+    else:
+        profile = UserProfile(
+            raw_text=payload.text[:50000],
+            skills=parsed.get("skills"),
+            education=parsed.get("education"),
+            experience_years=parsed.get("experience_years"),
+            tools=parsed.get("tools"),
+            certifications=parsed.get("certifications"),
+            user_id=user_id,
+        )
+        db.add(profile)
+
+    await db.commit()
+    await db.refresh(profile)
+
+    return {
+        "id": str(profile.id),
+        "skills": profile.skills or [],
+        "education": profile.education or [],
+        "experience_years": profile.experience_years,
+        "tools": profile.tools or [],
+        "certifications": profile.certifications or [],
+    }
+
+
+@app.get("/api/profile")
+async def get_profile(db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    """Get current user profile."""
+    user_id = _require_user_id(auth)
+    stmt = select(UserProfile).where(UserProfile.user_id == user_id).limit(1)
+    result = await db.execute(stmt)
+    profile = result.scalar_one_or_none()
+    if not profile:
+        return None
+    return {
+        "id": str(profile.id),
+        "skills": profile.skills or [],
+        "education": profile.education or [],
+        "experience_years": profile.experience_years,
+        "tools": profile.tools or [],
+        "certifications": profile.certifications or [],
+    }
+
+
+@app.get("/api/jobs/{job_id}/match")
+async def get_job_match(job_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    """Get match score for a job against user profile."""
+    import uuid as _uuid
+    from backend.services.match_scorer import score_match
+
+    user_id = _require_user_id(auth)
+    jid = _uuid.UUID(job_id)
+    stmt = select(Application).where(
+        Application.id == jid,
+        Application.user_id == user_id,
+    )
+    result = await db.execute(stmt)
+    app_row = result.scalar_one_or_none()
+    if not app_row:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    # Get user profile
+    profile_stmt = select(UserProfile).where(UserProfile.user_id == user_id).limit(1)
+    profile_result = await db.execute(profile_stmt)
+    profile = profile_result.scalar_one_or_none()
+    if not profile:
+        raise HTTPException(status_code=404, detail="No resume profile found. Upload your resume first.")
+
+    profile_dict = {
+        "skills": profile.skills or [],
+        "tools": profile.tools or [],
+        "experience_years": profile.experience_years,
+    }
+    job_tech = app_row.tech_stack or []
+    match = score_match(profile_dict, job_tech, app_row.description_text or "")
+
+    # Cache the score on the application
+    app_row.match_score = match["score"]
+    await db.commit()
+
+    return match
+
+
+# --- Sprint 6: Onboarding / Preferences ---
+
+class PreferencesPayload(BaseModel):
+    preferred_locations: Optional[list] = None
+    preferred_remote_type: Optional[str] = None
+    target_salary_min: Optional[int] = None
+    target_salary_max: Optional[int] = None
+    role_interest_ids: Optional[list] = None
+    onboarding_complete: Optional[bool] = None
+
+
+@app.post("/api/profile/preferences")
+async def save_preferences(
+    payload: PreferencesPayload,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Save user onboarding preferences."""
+    import uuid as _uuid
+
+    user = current_user
+
+    if payload.preferred_locations is not None:
+        user.preferred_locations = payload.preferred_locations
+    if payload.preferred_remote_type is not None:
+        user.preferred_remote_type = payload.preferred_remote_type
+    if payload.target_salary_min is not None:
+        user.target_salary_min = payload.target_salary_min
+    if payload.target_salary_max is not None:
+        user.target_salary_max = payload.target_salary_max
+    if payload.onboarding_complete is not None:
+        user.onboarding_complete = payload.onboarding_complete
+
+    # Handle role interests
+    if payload.role_interest_ids is not None:
+        # Clear existing
+        from sqlalchemy import delete
+        await db.execute(delete(UserRoleInterest).where(UserRoleInterest.user_id == user.id))
+        # Add new
+        for uid in payload.role_interest_ids:
+            db.add(UserRoleInterest(user_id=user.id, umbrella_id=_uuid.UUID(uid)))
+
+    await db.commit()
+    await db.refresh(user)
+
+    return {
+        "preferred_locations": user.preferred_locations,
+        "preferred_remote_type": user.preferred_remote_type,
+        "target_salary_min": user.target_salary_min,
+        "target_salary_max": user.target_salary_max,
+        "onboarding_complete": user.onboarding_complete,
+    }
+
+
+@app.get("/api/profile/preferences")
+async def get_preferences(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get user preferences."""
+    from sqlalchemy.orm import selectinload
+
+    stmt = select(User).options(selectinload(User.role_interests)).where(User.id == current_user.id)
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    return {
+        "preferred_locations": user.preferred_locations,
+        "preferred_remote_type": user.preferred_remote_type,
+        "target_salary_min": user.target_salary_min,
+        "target_salary_max": user.target_salary_max,
+        "onboarding_complete": user.onboarding_complete,
+        "role_interest_ids": [str(ri.umbrella_id) for ri in user.role_interests],
+    }
+
+
+# --- Sprint 8: ATS Intelligence ---
+
+@app.get("/api/intelligence/ats/{platform}", dependencies=[Depends(verify_api_key)])
+async def get_ats_intelligence(platform: str, db: AsyncSession = Depends(get_db)):
+    """Get behavioral profile for an ATS platform."""
+    from backend.services.ats_intelligence import get_platform_profile
+    return await get_platform_profile(db, platform)
+
+
+@app.post("/api/intelligence/ats/compute", dependencies=[Depends(verify_api_key)])
+async def compute_ats_intelligence(db: AsyncSession = Depends(get_db)):
+    """Trigger ATS metrics computation."""
+    from backend.services.ats_intelligence import compute_ats_metrics
+    metrics = await compute_ats_metrics(db)
+    return {"status": "ok", "metrics": metrics}
+
+
+# --- Sprint 9: Warm Paths ---
+
+@app.get("/api/jobs/{job_id}/warm-paths")
+async def get_warm_paths(job_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    """Get warm connections for a job's company."""
+    import uuid as _uuid
+    from backend.services.warm_path import discover_warm_paths
+
+    user_id = _require_user_id(auth)
+    jid = _uuid.UUID(job_id)
+    stmt = select(Application).where(
+        Application.id == jid,
+        Application.user_id == user_id,
+    )
+    result = await db.execute(stmt)
+    app_row = result.scalar_one_or_none()
+    if not app_row:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    # Get company domain from job URL or company_ref
+    domain = None
+    if app_row.company_id:
+        company_stmt = select(Company).where(Company.id == app_row.company_id)
+        company_result = await db.execute(company_stmt)
+        company = company_result.scalar_one_or_none()
+        if company:
+            domain = company.domain
+    if not domain and app_row.job_url:
+        from urllib.parse import urlparse
+        parsed = urlparse(app_row.job_url)
+        domain = parsed.netloc.lower().replace("www.", "")
+
+    if not domain:
+        return {"warm_connections": [], "company": app_row.company}
+
+    connections = await discover_warm_paths(db, domain, user_id=user_id)
+    return {
+        "warm_connections": connections,
+        "company": app_row.company,
+        "domain": domain,
+    }
+
+
+# --- Sprint 10: Network ---
+
+@app.get("/api/network")
+async def list_network(
+    q: Optional[str] = Query(None),
+    source: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    """Unified network view: all contacts + unique email senders."""
+    from sqlalchemy import or_, func, distinct
+    from sqlalchemy.orm import selectinload
+
+    user_id = _require_user_id(auth)
+    contacts_list = []
+
+    # Get contacts from Contact table
+    contact_stmt = select(Contact).options(selectinload(Contact.application)).where(Contact.user_id == user_id)
+    if q:
+        search = f"%{q.lower()}%"
+        contact_stmt = contact_stmt.where(
+            or_(
+                func.lower(Contact.name).like(search),
+                func.lower(Contact.email).like(search),
+            )
+        )
+    if source:
+        contact_stmt = contact_stmt.where(Contact.source == source)
+    contact_stmt = contact_stmt.limit(100)
+    contact_result = await db.execute(contact_stmt)
+    contacts = contact_result.scalars().all()
+
+    seen_emails: set[str] = set()
+    for c in contacts:
+        email = (c.email or "").lower()
+        if email in seen_emails:
+            continue
+        seen_emails.add(email)
+        contacts_list.append({
+            "id": str(c.id),
+            "name": c.name,
+            "email": c.email,
+            "title": c.title,
+            "company": c.application.company if c.application else None,
+            "company_id": str(c.company_id) if c.company_id else None,
+            "source": c.source or "hunter",
+            "reached_out": c.reached_out,
+            "response_received": c.response_received,
+            "linkedin_url": c.linkedin_url,
+        })
+
+    # Add unique email senders not already in contacts
+    email_stmt = select(
+        EmailEvent.sender_email,
+        EmailEvent.sender,
+        EmailEvent.company_name,
+        func.count(EmailEvent.id).label("email_count"),
+        func.max(EmailEvent.received_at).label("last_interaction"),
+    ).where(
+        EmailEvent.user_id == user_id,
+        EmailEvent.sender_email.isnot(None),
+        EmailEvent.is_from_user.is_(False),
+    ).group_by(
+        EmailEvent.sender_email, EmailEvent.sender, EmailEvent.company_name,
+    ).limit(200)
+    email_result = await db.execute(email_stmt)
+    for row in email_result.all():
+        email_addr = (row[0] or "").lower()
+        if email_addr in seen_emails:
+            continue
+        seen_emails.add(email_addr)
+        if q and q.lower() not in email_addr and q.lower() not in (row[1] or "").lower():
+            continue
+        contacts_list.append({
+            "id": f"email-{email_addr}",
+            "name": row[1],
+            "email": row[0],
+            "title": None,
+            "company": row[2],
+            "company_id": None,
+            "source": "email",
+            "reached_out": False,
+            "response_received": False,
+            "linkedin_url": None,
+            "email_count": row[3],
+            "last_interaction_at": row[4].isoformat() if row[4] else None,
+        })
+
+    return contacts_list
+
+
+@app.get("/api/network/{email}")
+async def get_network_contact(email: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    """Full contact profile: emails, linked applications, company info."""
+    from sqlalchemy.orm import selectinload
+    from sqlalchemy import func
+
+    user_id = _require_user_id(auth)
+    # Get contact record
+    contact_stmt = select(Contact).where(
+        Contact.email == email,
+        Contact.user_id == user_id,
+    ).limit(1)
+    contact_result = await db.execute(contact_stmt)
+    contact = contact_result.scalar_one_or_none()
+
+    # Get all emails from/to this person
+    email_stmt = select(EmailEvent).options(
+        selectinload(EmailEvent.application)
+    ).where(
+        EmailEvent.user_id == user_id,
+        EmailEvent.sender_email == email,
+    ).order_by(EmailEvent.received_at.desc()).limit(50)
+    email_result = await db.execute(email_stmt)
+    emails = [_serialize_email_event(e) for e in email_result.scalars().all()]
+
+    # Get linked applications
+    linked_apps = []
+    if contact:
+        app_stmt = select(Application).where(
+            Application.id == contact.application_id,
+            Application.user_id == user_id,
+        )
+        app_result = await db.execute(app_stmt)
+        app = app_result.scalar_one_or_none()
+        if app:
+            linked_apps.append(_serialize_app(app))
+
+    return {
+        "contact": _serialize_contact(contact) if contact else {"email": email},
+        "emails": emails,
+        "applications": linked_apps,
+    }
+
+
+# --- Sprint 11: Alerts ---
+
+@app.get("/api/alerts")
+async def list_alerts(
+    unread: Optional[bool] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    """List alerts, optionally filtered to unread."""
+    user_id = _require_user_id(auth)
+    stmt = select(Alert).where(Alert.user_id == user_id).order_by(Alert.created_at.desc())
+    if unread:
+        stmt = stmt.where(Alert.read.is_(False))
+    stmt = stmt.limit(50)
+    result = await db.execute(stmt)
+    alerts = result.scalars().all()
+    return [
+        {
+            "id": str(a.id),
+            "alert_type": a.alert_type,
+            "title": a.title,
+            "body": a.body,
+            "action_url": a.action_url,
+            "read": a.read,
+            "created_at": a.created_at.isoformat() if a.created_at else None,
+        }
+        for a in alerts
+    ]
+
+
+@app.patch("/api/alerts/{alert_id}")
+async def update_alert(alert_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    """Mark an alert as read."""
+    user_id = _require_user_id(auth)
+    aid = _uuid.UUID(alert_id)
+    stmt = select(Alert).where(
+        Alert.id == aid,
+        Alert.user_id == user_id,
+    )
+    result = await db.execute(stmt)
+    alert = result.scalar_one_or_none()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    alert.read = True
+    await db.commit()
+    return {"status": "ok"}
+
+
+@app.get("/api/alerts/count")
+async def alert_count(db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    """Get unread alert count."""
+    user_id = _require_user_id(auth)
+    from sqlalchemy import func
+    stmt = select(func.count(Alert.id)).where(
+        Alert.read.is_(False),
+        Alert.user_id == user_id,
+    )
+    result = await db.execute(stmt)
+    count = result.scalar() or 0
+    return {"unread": count}
+
+
+# --- Sprint 12: Send Email ---
+
+class SendEmailPayload(BaseModel):
+    to: str
+    subject: str
+    body: str
+    application_id: Optional[str] = None
+    reply_to_message_id: Optional[str] = None
+    thread_id: Optional[str] = None
+
+
+@app.post("/api/emails/send", status_code=201)
+async def send_email_endpoint(
+    payload: SendEmailPayload,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Send an email via Gmail API."""
+    from backend.services.email_sender import send_email
+    from google.oauth2.credentials import Credentials
+    from googleapiclient.discovery import build
+
+    GOOGLE_CLIENT_ID = os.getenv("GMAIL_CLIENT_ID", "")
+    GOOGLE_CLIENT_SECRET = os.getenv("GMAIL_CLIENT_SECRET", "")
+
+    user_id = current_user.id
+    if payload.application_id:
+        app_stmt = select(Application).where(
+            Application.id == _uuid.UUID(payload.application_id),
+            Application.user_id == user_id,
+        )
+        app_result = await db.execute(app_stmt)
+        if not app_result.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Application not found")
+
+    stmt = select(GmailToken).where(GmailToken.user_id == user_id)
+    result = await db.execute(stmt)
+    gmail_token = result.scalar_one_or_none()
+    if not gmail_token:
+        raise HTTPException(status_code=400, detail="Gmail not connected.")
+
+    creds = Credentials(
+        token=gmail_token.access_token,
+        refresh_token=gmail_token.refresh_token,
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=GOOGLE_CLIENT_ID,
+        client_secret=GOOGLE_CLIENT_SECRET,
+    )
+    gmail_service = build("gmail", "v1", credentials=creds)
+
+    result = await send_email(
+        db=db,
+        gmail_service=gmail_service,
+        to=payload.to,
+        subject=payload.subject,
+        body=payload.body,
+        application_id=payload.application_id,
+        reply_to_message_id=payload.reply_to_message_id,
+        thread_id=payload.thread_id,
+        user_id=user_id,
+    )
+    return result
+
+
+# --- Sprint 13: Interview Calendar ---
+
+class InterviewCreate(BaseModel):
+    application_id: Optional[str] = None
+    interview_type: str = "phone"
+    scheduled_at: Optional[str] = None
+    duration_minutes: Optional[int] = None
+    interviewer_name: Optional[str] = None
+    interviewer_email: Optional[str] = None
+    location_or_link: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class InterviewUpdate(BaseModel):
+    interview_type: Optional[str] = None
+    scheduled_at: Optional[str] = None
+    duration_minutes: Optional[int] = None
+    interviewer_name: Optional[str] = None
+    interviewer_email: Optional[str] = None
+    location_or_link: Optional[str] = None
+    notes: Optional[str] = None
+    outcome: Optional[str] = None
+
+
+def _serialize_interview(i: Interview) -> dict:
+    return {
+        "id": str(i.id),
+        "application_id": str(i.application_id) if i.application_id else None,
+        "interview_type": i.interview_type,
+        "scheduled_at": i.scheduled_at.isoformat() if i.scheduled_at else None,
+        "duration_minutes": i.duration_minutes,
+        "interviewer_name": i.interviewer_name,
+        "interviewer_email": i.interviewer_email,
+        "location_or_link": i.location_or_link,
+        "notes": i.notes,
+        "outcome": i.outcome,
+        "calendar_event_id": i.calendar_event_id,
+        "created_at": i.created_at.isoformat() if i.created_at else None,
+    }
+
+
+@app.post("/api/interviews", status_code=201)
+async def create_interview(
+    payload: InterviewCreate,
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    """Create an interview record."""
+    user_id = _require_user_id(auth)
+
+    scheduled_at = None
+    if payload.scheduled_at:
+        from dateutil import parser as dateparser
+        scheduled_at = dateparser.parse(payload.scheduled_at)
+
+    application_id = None
+    if payload.application_id:
+        application_id = _uuid.UUID(payload.application_id)
+        app_stmt = select(Application).where(
+            Application.id == application_id,
+            Application.user_id == user_id,
+        )
+        app_result = await db.execute(app_stmt)
+        if not app_result.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Application not found")
+
+    interview = Interview(
+        application_id=application_id,
+        interview_type=payload.interview_type,
+        scheduled_at=scheduled_at,
+        duration_minutes=payload.duration_minutes,
+        interviewer_name=payload.interviewer_name,
+        interviewer_email=payload.interviewer_email,
+        location_or_link=payload.location_or_link,
+        notes=payload.notes,
+        user_id=user_id,
+    )
+    db.add(interview)
+    await db.commit()
+    await db.refresh(interview)
+    return _serialize_interview(interview)
+
+
+@app.get("/api/interviews")
+async def list_interviews(
+    application_id: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    """List interviews, optionally filtered by application."""
+    user_id = _require_user_id(auth)
+    stmt = select(Interview).where(Interview.user_id == user_id).order_by(Interview.scheduled_at.desc().nullslast())
+    if application_id:
+        stmt = stmt.where(Interview.application_id == _uuid.UUID(application_id))
+    stmt = stmt.limit(100)
+    result = await db.execute(stmt)
+    return [_serialize_interview(i) for i in result.scalars().all()]
+
+
+@app.get("/api/interviews/upcoming")
+async def upcoming_interviews(db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    """Get upcoming interviews (scheduled in the future)."""
+    user_id = _require_user_id(auth)
+    now = datetime.now(timezone.utc)
+    stmt = select(Interview).where(
+        Interview.user_id == user_id,
+        Interview.scheduled_at > now,
+        Interview.outcome == "pending",
+    ).order_by(Interview.scheduled_at.asc()).limit(20)
+    result = await db.execute(stmt)
+    return [_serialize_interview(i) for i in result.scalars().all()]
+
+
+@app.patch("/api/interviews/{interview_id}")
+async def update_interview(
+    interview_id: str,
+    payload: InterviewUpdate,
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    """Update an interview record."""
+    user_id = _require_user_id(auth)
+    iid = _uuid.UUID(interview_id)
+    stmt = select(Interview).where(
+        Interview.id == iid,
+        Interview.user_id == user_id,
+    )
+    result = await db.execute(stmt)
+    interview = result.scalar_one_or_none()
+    if not interview:
+        raise HTTPException(status_code=404, detail="Interview not found")
+
+    if payload.interview_type is not None:
+        interview.interview_type = payload.interview_type
+    if payload.scheduled_at is not None:
+        from dateutil import parser as dateparser
+        interview.scheduled_at = dateparser.parse(payload.scheduled_at)
+    if payload.duration_minutes is not None:
+        interview.duration_minutes = payload.duration_minutes
+    if payload.interviewer_name is not None:
+        interview.interviewer_name = payload.interviewer_name
+    if payload.interviewer_email is not None:
+        interview.interviewer_email = payload.interviewer_email
+    if payload.location_or_link is not None:
+        interview.location_or_link = payload.location_or_link
+    if payload.notes is not None:
+        interview.notes = payload.notes
+    if payload.outcome is not None:
+        interview.outcome = payload.outcome
+
+    await db.commit()
+    await db.refresh(interview)
+    return _serialize_interview(interview)
+
+
+@app.delete("/api/interviews/{interview_id}")
+async def delete_interview(interview_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    """Delete an interview."""
+    user_id = _require_user_id(auth)
+    iid = _uuid.UUID(interview_id)
+    stmt = select(Interview).where(
+        Interview.id == iid,
+        Interview.user_id == user_id,
+    )
+    result = await db.execute(stmt)
+    interview = result.scalar_one_or_none()
+    if not interview:
+        raise HTTPException(status_code=404, detail="Interview not found")
+    await db.delete(interview)
+    await db.commit()
+    return {"status": "deleted"}
+
+
+@app.post("/api/interviews/from-email/{email_id}", status_code=201)
+async def create_interview_from_email(
+    email_id: str,
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    """Create interview from a classified email with datetime extraction."""
+    import uuid as _uuid
+    from backend.services.calendar_sync import extract_interview_datetime
+
+    user_id = _require_user_id(auth)
+    eid = _uuid.UUID(email_id)
+    stmt = select(EmailEvent).where(
+        EmailEvent.id == eid,
+        EmailEvent.user_id == user_id,
+    )
+    result = await db.execute(stmt)
+    event = result.scalar_one_or_none()
+    if not event:
+        raise HTTPException(status_code=404, detail="Email not found")
+
+    # Extract datetime from email
+    extracted = extract_interview_datetime(event.body or "", event.subject or "")
+
+    scheduled_at = None
+    duration_minutes = None
+    location_or_link = None
+
+    if extracted:
+        from dateutil import parser as dateparser
+        try:
+            scheduled_at = dateparser.parse(extracted["scheduled_at"])
+        except (ValueError, TypeError):
+            pass
+        duration_minutes = extracted.get("duration_minutes")
+        location_or_link = extracted.get("location_or_link")
+
+    interview = Interview(
+        application_id=event.application_id,
+        user_id=user_id,
+        interview_type="phone",
+        scheduled_at=scheduled_at,
+        duration_minutes=duration_minutes,
+        interviewer_name=event.sender,
+        interviewer_email=event.sender_email,
+        location_or_link=location_or_link,
+        notes=f"Created from email: {event.subject}",
+    )
+    db.add(interview)
+    await db.commit()
+    await db.refresh(interview)
+    return _serialize_interview(interview)
+
+
+# ── Sprint 18: Interview Notes / Second Brain ──────────────────────────
+
+
+def _serialize_note(n: InterviewNote) -> dict:
+    return {
+        "id": str(n.id),
+        "interview_id": str(n.interview_id) if n.interview_id else None,
+        "application_id": str(n.application_id) if n.application_id else None,
+        "questions_asked": n.questions_asked,
+        "went_well": n.went_well,
+        "to_improve": n.to_improve,
+        "overall_feeling": n.overall_feeling,
+        "created_at": n.created_at.isoformat() if n.created_at else None,
+    }
+
+
+class NoteCreate(BaseModel):
+    application_id: Optional[str] = None
+    questions_asked: Optional[str] = None
+    went_well: Optional[str] = None
+    to_improve: Optional[str] = None
+    overall_feeling: Optional[str] = None  # great/good/okay/poor
+
+
+class NotePatch(BaseModel):
+    questions_asked: Optional[str] = None
+    went_well: Optional[str] = None
+    to_improve: Optional[str] = None
+    overall_feeling: Optional[str] = None
+
+
+@app.post("/api/interviews/{interview_id}/notes", status_code=201)
+async def create_interview_note(
+    interview_id: str,
+    payload: NoteCreate,
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    """Create a structured note for an interview."""
+    import uuid as _uuid
+    iid = _uuid.UUID(interview_id)
+
+    # Verify interview exists
+    user_id = _require_user_id(auth)
+    stmt = select(Interview).where(
+        Interview.id == iid,
+        Interview.user_id == user_id,
+    )
+    result = await db.execute(stmt)
+    interview = result.scalar_one_or_none()
+    if not interview:
+        raise HTTPException(status_code=404, detail="Interview not found")
+
+    note = InterviewNote(
+        interview_id=iid,
+        application_id=_uuid.UUID(payload.application_id) if payload.application_id else interview.application_id,
+        questions_asked=payload.questions_asked,
+        went_well=payload.went_well,
+        to_improve=payload.to_improve,
+        overall_feeling=payload.overall_feeling,
+    )
+    db.add(note)
+    await db.commit()
+    await db.refresh(note)
+    return _serialize_note(note)
+
+
+@app.get("/api/interviews/{interview_id}/notes")
+async def list_interview_notes(interview_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    """List all notes for an interview."""
+    import uuid as _uuid
+    user_id = _require_user_id(auth)
+    iid = _uuid.UUID(interview_id)
+    stmt = (
+        select(InterviewNote)
+        .join(Interview, InterviewNote.interview_id == Interview.id)
+        .where(InterviewNote.interview_id == iid)
+        .where(Interview.user_id == user_id)
+        .order_by(InterviewNote.created_at.desc())
+    )
+    result = await db.execute(stmt)
+    return [_serialize_note(n) for n in result.scalars().all()]
+
+
+@app.patch("/api/interviews/notes/{note_id}")
+async def update_interview_note(note_id: str, payload: NotePatch, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    """Update an interview note."""
+    import uuid as _uuid
+    user_id = _require_user_id(auth)
+    nid = _uuid.UUID(note_id)
+    stmt = (
+        select(InterviewNote)
+        .join(Interview, InterviewNote.interview_id == Interview.id)
+        .where(InterviewNote.id == nid, Interview.user_id == user_id)
+    )
+    result = await db.execute(stmt)
+    note = result.scalar_one_or_none()
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    for field in ("questions_asked", "went_well", "to_improve", "overall_feeling"):
+        val = getattr(payload, field)
+        if val is not None:
+            setattr(note, field, val)
+
+    await db.commit()
+    await db.refresh(note)
+    return _serialize_note(note)
+
+
+@app.delete("/api/interviews/notes/{note_id}")
+async def delete_interview_note(note_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    """Delete an interview note."""
+    import uuid as _uuid
+    user_id = _require_user_id(auth)
+    nid = _uuid.UUID(note_id)
+    stmt = (
+        select(InterviewNote)
+        .join(Interview, InterviewNote.interview_id == Interview.id)
+        .where(InterviewNote.id == nid, Interview.user_id == user_id)
+    )
+    result = await db.execute(stmt)
+    note = result.scalar_one_or_none()
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+    await db.delete(note)
+    await db.commit()
+    return {"status": "deleted"}
+
+
+@app.get("/api/interviews/{interview_id}/prep")
+async def get_interview_prep(interview_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    """Pre-interview prep: surface past notes for same company.
+
+    Returns notes from prior interviews at the same company, plus
+    the company's knowledge graph context if available.
+    """
+    import uuid as _uuid
+    user_id = _require_user_id(auth)
+    iid = _uuid.UUID(interview_id)
+
+    # Get the interview and its application
+    stmt = select(Interview).where(
+        Interview.id == iid,
+        Interview.user_id == user_id,
+    )
+    result = await db.execute(stmt)
+    interview = result.scalar_one_or_none()
+    if not interview:
+        raise HTTPException(status_code=404, detail="Interview not found")
+
+    if not interview.application_id:
+        return {"past_notes": [], "company_context": None}
+
+    # Get the application to find the company
+    app_stmt = select(Application).where(
+        Application.id == interview.application_id,
+        Application.user_id == user_id,
+    )
+    app_result = await db.execute(app_stmt)
+    app = app_result.scalar_one_or_none()
+    if not app:
+        return {"past_notes": [], "company_context": None}
+
+    # Find all past notes for the same company
+    past_notes_stmt = (
+        select(InterviewNote)
+        .join(Interview, InterviewNote.interview_id == Interview.id)
+        .join(Application, Interview.application_id == Application.id)
+        .where(Application.company == app.company, Application.user_id == user_id, Interview.user_id == user_id)
+        .where(InterviewNote.interview_id != iid)
+        .order_by(InterviewNote.created_at.desc())
+        .limit(20)
+    )
+    past_result = await db.execute(past_notes_stmt)
+    past_notes = [_serialize_note(n) for n in past_result.scalars().all()]
+
+    # Get company context if company_id is set
+    company_context = None
+    if app.company_id:
+        company_stmt = select(Company).where(Company.id == app.company_id)
+        company_result = await db.execute(company_stmt)
+        company = company_result.scalar_one_or_none()
+        if company and company.domain:
+            from backend.services.knowledge_graph import get_company_context
+            company_context = await get_company_context(db, company.domain)
+
+    return {"past_notes": past_notes, "company_context": company_context}
+
+
+@app.get("/api/interviews/past-due")
+async def get_past_due_interviews(db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    """Get interviews whose scheduled_at has passed but have no notes yet.
+
+    Used for post-interview prompts: 'How did your interview at {company} go?'
+    """
+    from sqlalchemy.orm import selectinload
+
+    user_id = _require_user_id(auth)
+    now = datetime.now(timezone.utc)
+    stmt = (
+        select(Interview)
+        .where(Interview.user_id == user_id)
+        .where(Interview.scheduled_at < now)
+        .where(Interview.outcome == "pending")
+        .order_by(Interview.scheduled_at.desc())
+        .limit(20)
+    )
+    result = await db.execute(stmt)
+    interviews = result.scalars().all()
+
+    # Filter to those without notes
+    past_due = []
+    for i in interviews:
+        note_stmt = select(InterviewNote).where(InterviewNote.interview_id == i.id).limit(1)
+        note_result = await db.execute(note_stmt)
+        if not note_result.scalar_one_or_none():
+            # Get company name from application
+            company_name = None
+            role_title = None
+            if i.application_id:
+                app_stmt = select(Application).where(
+                    Application.id == i.application_id,
+                    Application.user_id == user_id,
+                )
+                app_result = await db.execute(app_stmt)
+                app = app_result.scalar_one_or_none()
+                if app:
+                    company_name = app.company
+                    role_title = app.role_title
+
+            past_due.append({
+                **_serialize_interview(i),
+                "company_name": company_name,
+                "role_title": role_title,
+            })
+
+    return past_due
+
+
+@app.get("/api/interviews/patterns")
+async def get_interview_patterns(db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    """Analyze interview note patterns across all applications.
+
+    Returns aggregated insights like outcome rates by interview type,
+    common areas of improvement, and performance by company/role category.
+    """
+    from sqlalchemy import func
+
+    # Get all notes with their interviews
+    user_id = _require_user_id(auth)
+    stmt = (
+        select(InterviewNote, Interview, Application)
+        .join(Interview, InterviewNote.interview_id == Interview.id)
+        .join(Application, Interview.application_id == Application.id, isouter=True)
+        .where(Interview.user_id == user_id)
+    )
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    if not rows:
+        return {"total_notes": 0, "patterns": {}}
+
+    # Aggregate feelings
+    feeling_counts = {}
+    type_outcomes = {}
+    company_feelings = {}
+
+    for note, interview, app in rows:
+        # Feeling distribution
+        feeling = note.overall_feeling or "unknown"
+        feeling_counts[feeling] = feeling_counts.get(feeling, 0) + 1
+
+        # Outcome by interview type
+        itype = interview.interview_type or "unknown"
+        if itype not in type_outcomes:
+            type_outcomes[itype] = {"total": 0, "passed": 0, "failed": 0, "pending": 0}
+        type_outcomes[itype]["total"] += 1
+        type_outcomes[itype][interview.outcome or "pending"] = type_outcomes[itype].get(interview.outcome or "pending", 0) + 1
+
+        # Feeling by company
+        if app:
+            company = app.company
+            if company not in company_feelings:
+                company_feelings[company] = []
+            company_feelings[company].append(feeling)
+
+    # Find best-performing areas
+    best_companies = []
+    for company, feelings in company_feelings.items():
+        positive = sum(1 for f in feelings if f in ("great", "good"))
+        total = len(feelings)
+        if total > 0:
+            best_companies.append({
+                "company": company,
+                "positive_rate": round(positive / total, 2),
+                "total_interviews": total,
+            })
+    best_companies.sort(key=lambda x: x["positive_rate"], reverse=True)
+
+    return {
+        "total_notes": len(rows),
+        "feeling_distribution": feeling_counts,
+        "outcome_by_type": type_outcomes,
+        "company_performance": best_companies[:10],
+    }
+
+
+# --- Sprint 14: AI-Drafted Communications ---
+
+class DraftRequest(BaseModel):
+    application_id: Optional[str] = None
+    contact_email: Optional[str] = None
+    draft_type: str = "follow_up"  # follow_up/introduction/reply/thank_you
+    additional_context: Optional[str] = None
+
+
+@app.post("/api/drafts/generate")
+async def generate_draft_endpoint(
+    payload: DraftRequest,
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    """Generate an AI email draft."""
+    import uuid as _uuid
+    from backend.services.draft_writer import generate_draft
+
+    company = ""
+    role = ""
+    contact_name = ""
+    conversation_history = []
+    days_since = 0
+
+    user_id = _require_user_id(auth)
+
+    # Get application context
+    if payload.application_id:
+        app_id = _uuid.UUID(payload.application_id)
+        stmt = select(Application).where(
+            Application.id == app_id,
+            Application.user_id == user_id,
+        )
+        result = await db.execute(stmt)
+        app_row = result.scalar_one_or_none()
+        if app_row:
+            company = app_row.company
+            role = app_row.role_title
+            if app_row.applied_at:
+                days_since = (datetime.now(timezone.utc) - app_row.applied_at.replace(tzinfo=timezone.utc if app_row.applied_at.tzinfo is None else app_row.applied_at.tzinfo)).days
+
+    # Get contact info
+    if payload.contact_email:
+        contact_stmt = select(Contact).where(
+            Contact.email == payload.contact_email,
+            Contact.user_id == user_id,
+        ).limit(1)
+        contact_result = await db.execute(contact_stmt)
+        contact = contact_result.scalar_one_or_none()
+        if contact:
+            contact_name = contact.name or ""
+
+        # Get conversation history
+        from sqlalchemy.orm import selectinload
+        email_stmt = select(EmailEvent).options(
+            selectinload(EmailEvent.application)
+        ).where(
+            EmailEvent.user_id == user_id,
+            EmailEvent.sender_email == payload.contact_email,
+        ).order_by(EmailEvent.received_at.desc()).limit(5)
+        email_result = await db.execute(email_stmt)
+        for e in email_result.scalars().all():
+            conversation_history.append({
+                "sender": e.sender,
+                "subject": e.subject,
+                "snippet": e.snippet or e.key_sentence or "",
+                "is_from_user": e.is_from_user,
+            })
+
+    draft = await generate_draft(
+        draft_type=payload.draft_type,
+        company=company,
+        role=role,
+        contact_name=contact_name,
+        contact_email=payload.contact_email or "",
+        conversation_history=conversation_history,
+        days_since=days_since,
+        additional_context=payload.additional_context or "",
+    )
+    return draft
+
+
+# --- Sprint 15: Knowledge Graph ---
+
+@app.get("/api/companies/{domain}/context", dependencies=[Depends(verify_api_key)])
+async def get_company_context_endpoint(domain: str, db: AsyncSession = Depends(get_db)):
+    """Get full assembled company context from knowledge graph."""
+    from backend.services.knowledge_graph import get_company_context
+    return await get_company_context(db, domain)
+
+
+# --- Sprint 16: Salary Intelligence ---
+
+@app.post("/api/jobs/{job_id}/extract-salary")
+async def extract_salary_endpoint(job_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    """Extract salary from job description and store on application."""
+    import uuid as _uuid
+    from backend.services.salary_extractor import extract_salary
+
+    user_id = _require_user_id(auth)
+    jid = _uuid.UUID(job_id)
+    stmt = select(Application).where(
+        Application.id == jid,
+        Application.user_id == user_id,
+    )
+    result = await db.execute(stmt)
+    app_row = result.scalar_one_or_none()
+    if not app_row:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    if not app_row.description_text:
+        return {"extracted": False, "reason": "No description text"}
+
+    salary = extract_salary(app_row.description_text)
+    if not salary:
+        return {"extracted": False, "reason": "No salary found in description"}
+
+    app_row.salary_min = salary["salary_min"]
+    app_row.salary_max = salary["salary_max"]
+    app_row.salary_currency = salary["salary_currency"]
+    app_row.salary_period = salary["salary_period"]
+    await db.commit()
+
+    return {"extracted": True, **salary}
+
+
+@app.get("/api/intelligence/salary")
+async def salary_intelligence(
+    umbrella_id: Optional[str] = Query(None),
+    location: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    """Aggregated salary intelligence by role category and/or location."""
+    from backend.services.salary_extractor import aggregate_salaries
+    from sqlalchemy import func
+
+    user_id = _require_user_id(auth)
+    stmt = select(Application).where(
+        Application.user_id == user_id,
+        Application.salary_min.isnot(None),
+        Application.salary_max.isnot(None),
+    )
+
+    if umbrella_id:
+        import uuid as _uuid
+        stmt = stmt.where(Application.umbrella_id == _uuid.UUID(umbrella_id))
+    if location:
+        stmt = stmt.where(func.lower(Application.location).like(f"%{location.lower()}%"))
+
+    result = await db.execute(stmt)
+    apps = result.scalars().all()
+
+    salaries = [
+        {
+            "salary_min": a.salary_min,
+            "salary_max": a.salary_max,
+            "salary_currency": a.salary_currency,
+            "salary_period": a.salary_period,
+        }
+        for a in apps
+    ]
+
+    aggregated = aggregate_salaries(salaries)
+
+    return {
+        "filter": {
+            "umbrella_id": umbrella_id,
+            "location": location,
+        },
+        "stats": aggregated,
+        "raw_count": len(salaries),
+    }
+
+
+@app.get("/api/export/csv")
+async def export_csv(db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    user_id = _require_user_id(auth)
+    import csv
+    import io
+
+    from fastapi.responses import StreamingResponse
+    from sqlalchemy import func
+
+    stmt = select(
+        Application,
+        func.count(Contact.id).label("contacts_count"),
+    ).outerjoin(Contact).group_by(Application.id).order_by(Application.applied_at.desc())
+    stmt = stmt.where(Application.user_id == user_id)
+
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "company", "role_title", "department", "job_url", "source",
+        "applied_at", "status", "last_email_at", "notes",
+        "contacts_count", "archived_at",
+    ])
+
+    for app_row, contacts_count in rows:
+        writer.writerow([
+            app_row.company,
+            app_row.role_title,
+            app_row.department or "",
+            app_row.job_url or "",
+            app_row.source or "",
+            app_row.applied_at.isoformat() if app_row.applied_at else "",
+            app_row.status or "",
+            app_row.last_email_at.isoformat() if app_row.last_email_at else "",
+            app_row.notes or "",
+            contacts_count,
+            app_row.archived_at.isoformat() if app_row.archived_at else "",
+        ])
+
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=apptrail_export.csv"},
+    )
+
+
+# ── Sprint 17: Company Visits ──────────────────────────────────────────
+
+
+class CompanyVisitPayload(BaseModel):
+    domain: str
+    url: Optional[str] = None
+    visit_count: int = 1
+
+
+@app.post("/api/company-visits", status_code=201)
+async def record_company_visit(payload: CompanyVisitPayload, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    """Record or update a career page visit from the extension."""
+    user_id = _require_user_id(auth)
+    stmt = select(CompanyVisit).where(
+        CompanyVisit.domain == payload.domain,
+        CompanyVisit.user_id == user_id,
+    )
+    result = await db.execute(stmt)
+    existing = result.scalar_one_or_none()
+
+    now = datetime.now(timezone.utc)
+    if existing:
+        existing.visit_count = payload.visit_count
+        existing.last_visited_at = now
+        await db.commit()
+        await db.refresh(existing)
+        return {
+            "id": str(existing.id),
+            "domain": existing.domain,
+            "visit_count": existing.visit_count,
+            "first_visited_at": existing.first_visited_at.isoformat() if existing.first_visited_at else None,
+            "last_visited_at": existing.last_visited_at.isoformat() if existing.last_visited_at else None,
+        }
+    else:
+        visit = CompanyVisit(
+            domain=payload.domain,
+            url=payload.url,
+            visit_count=payload.visit_count,
+            first_visited_at=now,
+            last_visited_at=now,
+            user_id=user_id,
+        )
+        db.add(visit)
+        await db.commit()
+        await db.refresh(visit)
+        return {
+            "id": str(visit.id),
+            "domain": visit.domain,
+            "visit_count": visit.visit_count,
+            "first_visited_at": visit.first_visited_at.isoformat(),
+            "last_visited_at": visit.last_visited_at.isoformat(),
+        }
+
+
+@app.get("/api/company-visits")
+async def list_company_visits(
+    min_visits: int = Query(default=1, ge=1),
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    """List tracked company visits, optionally filtered by minimum visit count."""
+    user_id = _require_user_id(auth)
+    stmt = (
+        select(CompanyVisit)
+        .where(CompanyVisit.user_id == user_id)
+        .where(CompanyVisit.visit_count >= min_visits)
+        .order_by(CompanyVisit.last_visited_at.desc())
+        .limit(100)
+    )
+    result = await db.execute(stmt)
+    visits = result.scalars().all()
+    return [
+        {
+            "id": str(v.id),
+            "domain": v.domain,
+            "url": v.url,
+            "visit_count": v.visit_count,
+            "first_visited_at": v.first_visited_at.isoformat() if v.first_visited_at else None,
+            "last_visited_at": v.last_visited_at.isoformat() if v.last_visited_at else None,
+        }
+        for v in visits
+    ]
+
+
+class SubmissionPayload(BaseModel):
+    platform: str
+    url: str
+    domain: str
+    enrichment: Optional[dict] = None
+
+
+@app.post("/api/company-visits/submission", status_code=200)
+async def record_submission_detection(payload: SubmissionPayload, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    """Handle auto-detected ATS application submission from the extension.
+
+    Finds the most recent application matching the domain and updates its status to 'applied'.
+    Also applies any enrichment data (salary, department) extracted from the confirmation page.
+    """
+    from sqlalchemy import func
+
+    user_id = _require_user_id(auth)
+
+    # Find matching application by company domain
+    app_stmt = (
+        select(Application)
+        .join(Company, Application.company_id == Company.id, isouter=True)
+        .where(Company.domain == payload.domain, Application.user_id == user_id)
+        .order_by(Application.applied_at.desc())
+        .limit(1)
+    )
+    result = await db.execute(app_stmt)
+    app = result.scalar_one_or_none()
+
+    updated = False
+    if app:
+        if app.status == "saved":
+            app.status = "applied"
+            app.applied_at = datetime.now(timezone.utc)
+        # Apply enrichment
+        if payload.enrichment:
+            if payload.enrichment.get("department") and not app.department:
+                app.department = payload.enrichment["department"]
+            salary_str = payload.enrichment.get("salary")
+            if salary_str and not app.salary_min:
+                # Try to parse salary range from enrichment string like "$100,000 - $150,000"
+                import re
+                nums = re.findall(r'[\d,]+', salary_str)
+                if len(nums) >= 2:
+                    app.salary_min = int(nums[0].replace(',', ''))
+                    app.salary_max = int(nums[1].replace(',', ''))
+                    app.salary_currency = "USD"
+                    app.salary_period = "year"
+        await db.commit()
+        updated = True
+
+    return {"matched": app is not None, "updated": updated, "platform": payload.platform}
+
+
+# ── Sprint 19: Notification Preferences & Alerts ──────────────────────
+
+
+class NotificationPrefPayload(BaseModel):
+    sms_enabled: bool | None = None
+    sms_phone: str | None = None
+    weekly_digest_enabled: bool | None = None
+
+
+@app.get("/api/notifications/preferences")
+async def get_notification_preferences(
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    """Get current user's notification preferences."""
+    user_id = _require_user_id(auth)
+    stmt = select(NotificationPreference).where(NotificationPreference.user_id == user_id)
+    result = await db.execute(stmt)
+    pref = result.scalars().first()
+
+    if not pref:
+        return {
+            "sms_enabled": False,
+            "sms_phone": None,
+            "weekly_digest_enabled": False,
+        }
+
+    return {
+        "id": str(pref.id),
+        "sms_enabled": pref.sms_enabled,
+        "sms_phone": pref.sms_phone,
+        "weekly_digest_enabled": pref.weekly_digest_enabled,
+        "created_at": pref.created_at.isoformat() if pref.created_at else None,
+        "updated_at": pref.updated_at.isoformat() if pref.updated_at else None,
+    }
+
+
+@app.put("/api/notifications/preferences")
+async def update_notification_preferences(
+    payload: NotificationPrefPayload,
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    """Create or update notification preferences."""
+    user_id = _require_user_id(auth)
+    stmt = select(NotificationPreference).where(NotificationPreference.user_id == user_id)
+    result = await db.execute(stmt)
+    pref = result.scalars().first()
+
+    if not pref:
+        pref = NotificationPreference(user_id=user_id)
+        db.add(pref)
+
+    if payload.sms_enabled is not None:
+        pref.sms_enabled = payload.sms_enabled
+    if payload.sms_phone is not None:
+        pref.sms_phone = payload.sms_phone
+    if payload.weekly_digest_enabled is not None:
+        pref.weekly_digest_enabled = payload.weekly_digest_enabled
+
+    from datetime import datetime, timezone
+    pref.updated_at = datetime.now(timezone.utc)
+
+    await db.commit()
+    await db.refresh(pref)
+
+    return {
+        "id": str(pref.id),
+        "sms_enabled": pref.sms_enabled,
+        "sms_phone": pref.sms_phone,
+        "weekly_digest_enabled": pref.weekly_digest_enabled,
+        "updated_at": pref.updated_at.isoformat() if pref.updated_at else None,
+    }
+
+
+class AlertCreatePayload(BaseModel):
+    alert_type: str
+    title: str
+    body: str | None = None
+    action_url: str | None = None
+
+
+@app.post("/api/alerts", status_code=201)
+async def create_alert(
+    payload: AlertCreatePayload,
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    """Create an alert and optionally send SMS for urgent types."""
+    user_id = _require_user_id(auth)
+    alert = Alert(
+        user_id=user_id,
+        alert_type=payload.alert_type,
+        title=payload.title,
+        body=payload.body,
+        action_url=payload.action_url,
+    )
+    db.add(alert)
+    await db.commit()
+    await db.refresh(alert)
+
+    # Try to send SMS for urgent alerts
+    sms_result = None
+    try:
+        from backend.services.sms_sender import maybe_send_sms_for_alert
+        sms_result = await maybe_send_sms_for_alert(
+            db, payload.alert_type, payload.title, payload.body, user_id=user_id
+        )
+    except Exception:
+        pass  # SMS is best-effort
+
+    return {
+        "id": str(alert.id),
+        "alert_type": alert.alert_type,
+        "title": alert.title,
+        "body": alert.body,
+        "action_url": alert.action_url,
+        "read": alert.read,
+        "created_at": alert.created_at.isoformat() if alert.created_at else None,
+        "sms_sent": sms_result is not None,
+    }
+
+
+@app.get("/api/digest/preview")
+async def preview_digest(
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    """Preview the weekly digest stats without sending."""
+    from backend.tasks.send_weekly_digest import build_digest, render_digest_text
+
+    user_id = _require_user_id(auth)
+    stats = await build_digest(db, user_id=user_id)
+    return {
+        "stats": stats,
+        "preview": render_digest_text(stats),
+    }
+
+
+# ── Sprint 20: Resume Tailoring ──────────────────────────────────────
+
+
+class TailorPayload(BaseModel):
+    resume_text: str | None = None  # Override resume text; defaults to user profile
+
+
+@app.post("/api/resume/tailor/{application_id}", status_code=201)
+async def tailor_resume_endpoint(
+    application_id: str,
+    payload: TailorPayload,
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    """Generate a tailored resume for a specific job application."""
+    user_id = _require_user_id(auth)
+    try:
+        app_uuid = _uuid.UUID(application_id)
+    except ValueError:
+        raise HTTPException(404, "Application not found")
+
+    # Get application
+    stmt = select(Application).where(Application.id == app_uuid)
+    if user_id:
+        stmt = stmt.where(Application.user_id == user_id)
+    result = await db.execute(stmt)
+    app = result.scalars().first()
+    if not app:
+        raise HTTPException(404, "Application not found")
+
+    # Get resume text from payload or user profile
+    original_text = payload.resume_text
+    skills = None
+    if not original_text:
+        profile_stmt = select(UserProfile)
+        if user_id:
+            profile_stmt = profile_stmt.where(UserProfile.user_id == user_id)
+        profile_result = await db.execute(profile_stmt)
+        profile = profile_result.scalars().first()
+        if profile and profile.raw_text:
+            original_text = profile.raw_text
+            skills = profile.skills
+        else:
+            raise HTTPException(400, "No resume text provided and no user profile found. Upload a resume first.")
+
+    # Get job description
+    job_description = app.description_text or ""
+    if not job_description:
+        raise HTTPException(400, "Application has no job description. Add one before tailoring.")
+
+    # Generate tailored version
+    from backend.services.resume_tailor import tailor_resume
+    result = await tailor_resume(
+        original_text=original_text,
+        job_description=job_description,
+        company=app.company or "",
+        role=app.role_title or "",
+        skills=skills,
+    )
+
+    # Save draft
+    draft = ResumeDraft(
+        application_id=app.id,
+        original_text=original_text,
+        tailored_text=result["tailored_text"],
+        changes_summary=result["changes_summary"],
+        user_id=user_id,
+    )
+    db.add(draft)
+    await db.commit()
+    await db.refresh(draft)
+
+    return {
+        "id": str(draft.id),
+        "application_id": str(draft.application_id),
+        "original_text": draft.original_text,
+        "tailored_text": draft.tailored_text,
+        "changes_summary": draft.changes_summary,
+        "match_improvements": result.get("match_improvements", ""),
+        "created_at": draft.created_at.isoformat() if draft.created_at else None,
+    }
+
+
+@app.get("/api/resume/drafts/{application_id}")
+async def list_resume_drafts(
+    application_id: str,
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    """List all tailored resume drafts for an application."""
+    user_id = _require_user_id(auth)
+    try:
+        app_uuid = _uuid.UUID(application_id)
+    except ValueError:
+        return []
+
+    stmt = (
+        select(ResumeDraft)
+        .where(ResumeDraft.application_id == app_uuid)
+        .order_by(ResumeDraft.created_at.desc())
+    )
+    if user_id:
+        stmt = stmt.where(ResumeDraft.user_id == user_id)
+    result = await db.execute(stmt)
+    drafts = result.scalars().all()
+
+    return [
+        {
+            "id": str(d.id),
+            "application_id": str(d.application_id) if d.application_id else None,
+            "tailored_text": d.tailored_text,
+            "changes_summary": d.changes_summary,
+            "created_at": d.created_at.isoformat() if d.created_at else None,
+        }
+        for d in drafts
+    ]
+
+
+@app.get("/api/resume/drafts/{application_id}/{draft_id}")
+async def get_resume_draft(
+    application_id: str,
+    draft_id: str,
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    """Get a specific resume draft with full text for diff view."""
+    user_id = _require_user_id(auth)
+    try:
+        app_uuid = _uuid.UUID(application_id)
+        d_uuid = _uuid.UUID(draft_id)
+    except ValueError:
+        raise HTTPException(404, "Draft not found")
+
+    stmt = select(ResumeDraft).where(
+        ResumeDraft.id == d_uuid,
+        ResumeDraft.application_id == app_uuid,
+    )
+    if user_id:
+        stmt = stmt.where(ResumeDraft.user_id == user_id)
+    result = await db.execute(stmt)
+    draft = result.scalars().first()
+    if not draft:
+        raise HTTPException(404, "Draft not found")
+
+    return {
+        "id": str(draft.id),
+        "application_id": str(draft.application_id) if draft.application_id else None,
+        "original_text": draft.original_text,
+        "tailored_text": draft.tailored_text,
+        "changes_summary": draft.changes_summary,
+        "created_at": draft.created_at.isoformat() if draft.created_at else None,
+    }
+
+
+@app.delete("/api/resume/drafts/{application_id}/{draft_id}")
+async def delete_resume_draft(
+    application_id: str,
+    draft_id: str,
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    """Delete a resume draft."""
+    user_id = _require_user_id(auth)
+    try:
+        app_uuid = _uuid.UUID(application_id)
+        d_uuid = _uuid.UUID(draft_id)
+    except ValueError:
+        raise HTTPException(404, "Draft not found")
+
+    stmt = select(ResumeDraft).where(
+        ResumeDraft.id == d_uuid,
+        ResumeDraft.application_id == app_uuid,
+    )
+    if user_id:
+        stmt = stmt.where(ResumeDraft.user_id == user_id)
+    result = await db.execute(stmt)
+    draft = result.scalars().first()
+    if not draft:
+        raise HTTPException(404, "Draft not found")
+
+    await db.delete(draft)
+    await db.commit()
+    return {"status": "deleted"}

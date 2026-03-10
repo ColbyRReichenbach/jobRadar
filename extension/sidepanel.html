@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AppTrail</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8fafc; padding: 16px; width: 360px; font-size: 13px; color: #1e293b; }
+    h1 { font-size: 18px; margin-bottom: 12px; color: #0f172a; }
+    h2 { font-size: 14px; margin: 16px 0 8px; color: #334155; }
+    .card { background: white; border-radius: 8px; padding: 12px; margin-bottom: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; }
+    .label { font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px; }
+    .value { font-size: 14px; font-weight: 500; }
+    .btn { width: 100%; padding: 10px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; margin-top: 8px; }
+    .btn-primary { background: #3b82f6; color: white; }
+    .btn-primary:hover { background: #2563eb; }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .alert { padding: 10px; border-radius: 8px; margin: 8px 0; font-size: 12px; }
+    .alert-warning { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
+    .alert-success { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+    .alert-error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+    .contact-card { background: white; border-radius: 8px; padding: 10px; margin-bottom: 6px; border: 1px solid #e2e8f0; }
+    .contact-name { font-weight: 600; font-size: 13px; }
+    .contact-title { font-size: 12px; color: #64748b; }
+    .contact-email { font-size: 12px; color: #3b82f6; }
+    .contact-check { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12px; }
+    .contact-check input { cursor: pointer; }
+    a { color: #3b82f6; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    #loading { text-align: center; padding: 40px; color: #94a3b8; }
+    #no-job { text-align: center; padding: 40px; color: #94a3b8; }
+    .hidden { display: none; }
+    .nudge { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+    .nudge-title { font-weight: 600; font-size: 13px; color: #92400e; margin-bottom: 4px; }
+    .nudge-text { font-size: 12px; color: #78716c; margin-bottom: 8px; }
+    .btn-nudge { background: #f59e0b; color: white; font-size: 12px; padding: 6px 12px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; }
+    .btn-nudge:hover { background: #d97706; }
+  </style>
+</head>
+<body>
+  <h1>AppTrail</h1>
+
+  <div id="browsing-nudge" class="hidden"></div>
+
+  <div id="loading" class="hidden">Loading job data...</div>
+  <div id="no-job">
+    <p>Navigate to a job posting page to get started.</p>
+  </div>
+
+  <div id="job-data" class="hidden">
+    <div class="card">
+      <div class="label">Company</div>
+      <div class="value" id="job-company">—</div>
+    </div>
+    <div class="card">
+      <div class="label">Role</div>
+      <div class="value" id="job-title">—</div>
+    </div>
+    <div class="card">
+      <div class="label">Location</div>
+      <div class="value" id="job-location">—</div>
+    </div>
+
+    <button id="track-btn" class="btn btn-primary">Track This Job</button>
+
+    <div id="track-status"></div>
+  </div>
+
+  <div id="contacts-section" class="hidden">
+    <h2>Contacts</h2>
+    <div id="contacts-list"></div>
+    <div id="linkedin-link"></div>
+  </div>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>

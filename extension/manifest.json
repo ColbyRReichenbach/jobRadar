@@ -1,0 +1,52 @@
+{
+  "manifest_version": 3,
+  "name": "AppTrail",
+  "version": "1.0.0",
+  "description": "Job application tracking — capture, contacts, and pipeline management",
+  "permissions": [
+    "sidePanel",
+    "activeTab",
+    "storage"
+  ],
+  "host_permissions": [
+    "http://localhost:8000/*",
+    "https://boards.greenhouse.io/*",
+    "https://boards-api.greenhouse.io/*",
+    "https://job-boards.greenhouse.io/*",
+    "https://jobs.lever.co/*",
+    "https://api.lever.co/*",
+    "https://*.myworkdayjobs.com/*",
+    "https://jobs.ashbyhq.com/*",
+    "https://www.indeed.com/*",
+    "https://www.linkedin.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.linkedin.com/jobs/view/*"],
+      "js": ["content.js"]
+    },
+    {
+      "matches": [
+        "https://*/*careers*",
+        "https://*/*jobs*",
+        "https://*/*job-openings*",
+        "https://*/*opportunities*",
+        "https://*/*work-with-us*",
+        "https://*/*join-us*"
+      ],
+      "js": ["tracker.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "AppTrail"
+  },
+  "icons": {}
+}
