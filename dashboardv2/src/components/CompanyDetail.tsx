@@ -1,20 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Building2, Mail, Users, Code, BarChart2, X, ExternalLink, Briefcase } from 'lucide-react';
-
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-const API_KEY = import.meta.env.VITE_API_KEY || '';
-
-function getToken(): string {
-  return localStorage.getItem('apptrail_token') || API_KEY;
-}
-
-function headers(): Record<string, string> {
-  return {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${getToken()}`,
-  };
-}
+import { apiFetch, authHeaders } from '../lib/api';
 
 interface CompanyDetailProps {
   domain: string;
@@ -32,7 +19,7 @@ export function CompanyDetail({ domain, onClose }: CompanyDetailProps) {
   const loadContext = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/companies/${encodeURIComponent(domain)}/context`, { headers: headers() });
+      const res = await apiFetch(`/api/companies/${encodeURIComponent(domain)}/context`, { headers: authHeaders() });
       if (res.ok) setContext(await res.json());
     } catch (err) {
       console.error('Failed to load company context:', err);

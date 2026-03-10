@@ -14,10 +14,10 @@ import { initialJobs, initialEmails } from './data/mockData';
 import { Job, Email } from './types';
 import { Menu, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { fetchJobs, fetchEmails, hasAuthToken } from './lib/api';
+import { fetchJobs, fetchEmails } from './lib/api';
 import { AuthProvider, useAuth } from './lib/AuthContext';
 
-const USE_API = !!(import.meta.env.VITE_API_URL || import.meta.env.VITE_API_KEY);
+const USE_API = true;
 
 function AppContent() {
   const { user, loading: authLoading } = useAuth();
@@ -51,21 +51,19 @@ function AppContent() {
     if (!USE_API) return;
     // Wait for auth to finish loading before fetching data
     if (authLoading) return;
-    // Need either a JWT or API key
-    if (!hasAuthToken() && !import.meta.env.VITE_API_KEY) return;
+    if (!user) return;
 
     loadData();
     const interval = setInterval(loadData, 30000);
     return () => clearInterval(interval);
-  }, [authLoading, loadData]);
+  }, [authLoading, loadData, user]);
 
   // Close mobile menu when tab changes
   useEffect(() => {
     setIsMobileMenuOpen(false);
   }, [activeTab]);
 
-  // Show login page if no user and no API key fallback
-  if (!authLoading && !user && !import.meta.env.VITE_API_KEY) {
+  if (!authLoading && !user) {
     return <LoginPage />;
   }
 

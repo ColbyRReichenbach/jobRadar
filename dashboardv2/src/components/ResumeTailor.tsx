@@ -1,20 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { FileText, Sparkles, Clock, Trash2, ChevronDown, ChevronUp, Loader2, Download } from 'lucide-react';
-
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-const API_KEY = import.meta.env.VITE_API_KEY || '';
-
-function getToken(): string {
-  return localStorage.getItem('apptrail_token') || API_KEY;
-}
-
-function headers(): Record<string, string> {
-  return {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${getToken()}`,
-  };
-}
+import { apiFetch, authHeaders } from '../lib/api';
 
 interface ResumeDraft {
   id: string;
@@ -48,7 +35,7 @@ export function ResumeTailor({ applicationId, company, role, onClose }: ResumeTa
 
   const loadDrafts = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/resume/drafts/${applicationId}`, { headers: headers() });
+      const res = await apiFetch(`/api/resume/drafts/${applicationId}`, { headers: authHeaders() });
       if (res.ok) {
         setDrafts(await res.json());
       }
@@ -66,9 +53,9 @@ export function ResumeTailor({ applicationId, company, role, onClose }: ResumeTa
       if (customResume.trim()) {
         body.resume_text = customResume.trim();
       }
-      const res = await fetch(`${API_BASE}/api/resume/tailor/${applicationId}`, {
+      const res = await apiFetch(`/api/resume/tailor/${applicationId}`, {
         method: 'POST',
-        headers: headers(),
+        headers: authHeaders(),
         body: JSON.stringify(body),
       });
       if (res.ok) {
@@ -89,9 +76,9 @@ export function ResumeTailor({ applicationId, company, role, onClose }: ResumeTa
 
   const deleteDraft = async (draftId: string) => {
     try {
-      await fetch(`${API_BASE}/api/resume/drafts/${applicationId}/${draftId}`, {
+      await apiFetch(`/api/resume/drafts/${applicationId}/${draftId}`, {
         method: 'DELETE',
-        headers: headers(),
+        headers: authHeaders(),
       });
       setDrafts(prev => prev.filter(d => d.id !== draftId));
       if (selectedDraft?.id === draftId) {

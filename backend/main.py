@@ -910,13 +910,12 @@ async def google_auth_callback(
     await db.commit()
     await db.refresh(user)
 
-    # Create short-lived access token + refresh token
-    access_token = create_jwt(str(user.id), user.email, user.name, user.picture)
+    # Create refresh token for cookie-based session bootstrap.
     refresh_token = create_refresh_token(str(user.id))
 
-    # Redirect to frontend with access token in hash, set refresh cookie
+    # Redirect to frontend callback and rely on refresh cookie for session bootstrap.
     from starlette.responses import RedirectResponse as _RedirectResponse
-    redirect_url = f"{frontend_url}/auth/callback#{access_token}"
+    redirect_url = f"{frontend_url}/auth/callback"
     response = _RedirectResponse(url=redirect_url, status_code=302)
     set_refresh_cookie(response, refresh_token)
     return response

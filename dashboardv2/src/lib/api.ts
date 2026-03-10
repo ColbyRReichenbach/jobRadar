@@ -1,0 +1,506 @@
+import { Job, Email, Contact } from '../types';
+
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
+let _accessToken: string | null = null;
+
+function getToken(): string {
+  return _accessToken || '';
+}
+
+export function authHeaders(): Record<string, string> {
+  const token = getToken();
+  const h: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) {
+    h['Authorization'] = `Bearer ${token}`;
+  }
+  return h;
+}
+
+function resolveUrl(pathOrUrl: string): string {
+  if (pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://')) {
+    return pathOrUrl;
+  }
+  return `${API_BASE}${pathOrUrl}`;
+}
+
+/**
+ * Wrapper around fetch that auto-refreshes on 401.
+ */
+export async function apiFetch(pathOrUrl: string, options: RequestInit = {}): Promise<Response> {
+  const url = resolveUrl(pathOrUrl);
+  let res = await fetch(url, { ...options, credentials: 'include' });
+
+  if (res.status === 401) {
+    // Try to refresh
+    const refreshed = await refreshAccessToken();
+    if (refreshed) {
+      // Retry with new token
+      const retryHeaders = { ...options.headers as Record<string, string> };
+      retryHeaders['Authorization'] = `Bearer ${_accessToken}`;
+      res = await fetch(url, { ...options, headers: retryHeaders, credentials: 'include' });
+    }
+  }
+
+  return res;
+}
+
+async function refreshAccessToken(): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/refresh`, {
+      method: 'POST',
+      credentials: 'include',
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    _accessToken = data.access_token;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// --- Auth API ---
+
+export interface UserProfile {
+  id: string;
+  email: string;
+  name: string;
+  picture: string;
+  gmail_connected: boolean;
+}
+
+export interface NotificationPrefs {
+  sms_enabled: boolean;
+  sms_phone: string | null;
+  weekly_digest_enabled: boolean;
+}
+
+export interface ApiKeyStatus {
+  has_api_key: boolean;
+  last4: string | null;
+  created_at: string | null;
+  last_used_at: string | null;
+}
+
+export interface ApiKeyCreateResponse {
+  api_key: string;
+  last4: string;
+  created_at: string;
+}
+
+export async function getGoogleAuthUrl(connectGmail = false): Promise<string> {
+  const params = connectGmail ? '?connect_gmail=true' : '';
+  const res = await fetch(`${API_BASE}/api/auth/google${params}`, { credentials: 'include' });
+  if (!res.ok) throw new Error('Failed to get auth URL');
+  const data = await res.json();
+  return data.auth_url;
+}
+
+export async function fetchMe(): Promise<UserProfile | null> {
+  const token = getToken();
+  if (!token) {
+    // Try refreshing first (page reload scenario)
+    const refreshed = await refreshAccessToken();
+    if (!refreshed) return null;
+  }
+  try {
+    const res = await apiFetch(`${API_BASE}/api/auth/me`, { headers: authHeaders() });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+export async function syncGmail(): Promise<{ new_emails: number; total_found: number }> {
+  const res = await apiFetch(`${API_BASE}/api/gmail/sync`, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Sync failed' }));
+    throw new Error(err.detail || 'Gmail sync failed');
+  }
+  return await res.json();
+}
+
+export async function fetchNotificationPreferences(): Promise<NotificationPrefs> {
+  const res = await apiFetch(`${API_BASE}/api/notifications/preferences`, { headers: authHeaders() });
+  if (!res.ok) throw new Error('Failed to load notification preferences');
+  return await res.json();
+}
+
+export async function updateNotificationPreferences(payload: NotificationPrefs): Promise<NotificationPrefs> {
+  const res = await apiFetch(`${API_BASE}/api/notifications/preferences`, {
+    method: 'PUT',
+    headers: authHeaders(),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error('Failed to save notification preferences');
+  return await res.json();
+}
+
+export async function fetchApiKeyStatus(): Promise<ApiKeyStatus> {
+  const res = await apiFetch(`${API_BASE}/api/auth/api-key`, { headers: authHeaders() });
+  if (!res.ok) throw new Error('Failed to load API key status');
+  return await res.json();
+}
+
+export async function generateApiKey(): Promise<ApiKeyCreateResponse> {
+  const res = await apiFetch(`${API_BASE}/api/auth/api-key`, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error('Failed to generate API key');
+  return await res.json();
+}
+
+export function setAuthToken(token: string) {
+  _accessToken = token;
+}
+
+export function clearAuthToken() {
+  const token = _accessToken;
+  _accessToken = null;
+  // Also call logout to clear refresh cookie
+  fetch(`${API_BASE}/api/auth/logout`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+  }).catch(() => {});
+}
+
+export function hasAuthToken(): boolean {
+  return !!_accessToken;
+}
+
+// --- Mappers: backend → frontend types ---
+
+function mapJob(raw: any): Job {
+  return {
+    id: raw.id,
+    company: raw.company,
+    role: raw.role_title,
+    location: raw.location || '',
+    salary: raw.salary || undefined,
+    status: raw.status,
+    dateAdded: raw.applied_at || new Date().toISOString(),
+    logoUrl: raw.logo_url || `https://logo.clearbit.com/${raw.company?.toLowerCase().replace(/\s+/g, '')}.com`,
+    source: raw.source || undefined,
+    contacts: raw.contacts?.map(mapContact) || [],
+    description: raw.description_text || undefined,
+    notes: raw.notes || undefined,
+    url: raw.job_url || undefined,
+    techStack: raw.tech_stack || [],
+    umbrellaId: raw.umbrella_id || undefined,
+    umbrellaName: raw.umbrella_name || undefined,
+    companyId: raw.company_id || undefined,
+    matchScore: raw.match_score ?? undefined,
+    listingAlive: raw.listing_alive ?? true,
+    listingDiedAt: raw.listing_died_at || undefined,
+  };
+}
+
+function mapContact(raw: any): Contact {
+  return {
+    id: raw.id,
+    name: raw.name || '',
+    role: raw.title || '',
+    email: raw.email || '',
+    linkedin: raw.linkedin_url || undefined,
+  };
+}
+
+function mapEmail(raw: any): Email {
+  // Map backend classification to frontend EmailClassification
+  const classificationMap: Record<string, string> = {
+    interview_request: 'interview',
+    rejection: 'rejection',
+    offer: 'action_item',
+    action_item: 'action_item',
+    job_update: 'update',
+    conversation: 'update',
+    not_relevant: 'update',
+    // Legacy values pass through
+    interview: 'interview',
+    update: 'update',
+  };
+
+  return {
+    id: raw.id,
+    threadId: raw.thread_id || undefined,
+    jobId: raw.application_id || '',
+    sender: raw.sender || '',
+    senderEmail: raw.sender_email || undefined,
+    subject: raw.subject || raw.summary || '',
+    snippet: raw.snippet || raw.key_sentence || '',
+    body: raw.body || undefined,
+    date: raw.received_at || new Date().toISOString(),
+    classification: (classificationMap[raw.classification] || raw.classification || 'update') as Email['classification'],
+    read: raw.read || false,
+    type: raw.email_type || 'decision',
+    requiresFollowUp: raw.action_needed || false,
+    lastResponseAt: raw.received_at || undefined,
+    isFromUser: raw.is_from_user || false,
+    companyName: raw.company_name || undefined,
+    companyLogoUrl: raw.company_logo_url || undefined,
+    senderDomain: raw.sender_domain || undefined,
+    confidence: raw.confidence || undefined,
+    summary: raw.summary || undefined,
+    inPipeline: raw.application_id ? true : false,
+    resolved: raw.resolved || false,
+    actionUrl: raw.action_url || undefined,
+  };
+}
+
+// --- Jobs API ---
+
+export async function fetchJobs(): Promise<Job[]> {
+  const res = await apiFetch(`${API_BASE}/api/jobs`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`Failed to fetch jobs: ${res.status}`);
+  const data = await res.json();
+  return data.map(mapJob);
+}
+
+export async function createJob(job: Partial<Job>): Promise<Job> {
+  const body: any = {
+    company: job.company,
+    role_title: job.role,
+    job_url: job.url || undefined,
+    source: job.source || undefined,
+    description_text: job.description || undefined,
+    salary: job.salary || undefined,
+    logo_url: job.logoUrl || undefined,
+    location: job.location || undefined,
+    status: job.status || 'saved',
+    notes: job.notes || undefined,
+  };
+  const res = await apiFetch(`${API_BASE}/api/jobs`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`Failed to create job: ${res.status}`);
+  return mapJob(await res.json());
+}
+
+export async function updateJob(id: string, updates: Partial<Job>): Promise<Job> {
+  const body: any = {};
+  if (updates.status !== undefined) body.status = updates.status;
+  if (updates.notes !== undefined) body.notes = updates.notes;
+  if (updates.salary !== undefined) body.salary = updates.salary;
+  if (updates.location !== undefined) body.location = updates.location;
+  if (updates.description !== undefined) body.description_text = updates.description;
+  if (updates.company !== undefined) body.company = updates.company;
+  if (updates.role !== undefined) body.role_title = updates.role;
+  if (updates.source !== undefined) body.source = updates.source;
+  if (updates.url !== undefined) body.job_url = updates.url;
+  if (updates.logoUrl !== undefined) body.logo_url = updates.logoUrl;
+
+  const res = await apiFetch(`${API_BASE}/api/jobs/${id}`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`Failed to update job: ${res.status}`);
+  return mapJob(await res.json());
+}
+
+// --- Emails API ---
+
+export async function fetchEmails(): Promise<Email[]> {
+  const res = await apiFetch(`${API_BASE}/api/emails`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`Failed to fetch emails: ${res.status}`);
+  const data = await res.json();
+  return data.map(mapEmail);
+}
+
+export async function markEmailRead(id: string): Promise<void> {
+  await apiFetch(`${API_BASE}/api/emails/${id}`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify({ read: true }),
+  });
+}
+
+export async function submitEmailFeedback(emailId: string, isJobRelated: boolean): Promise<void> {
+  await apiFetch(`${API_BASE}/api/emails/feedback`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ email_id: emailId, is_job_related: isJobRelated }),
+  });
+}
+
+export async function checkEmailPipeline(emailId: string): Promise<{
+  in_pipeline: boolean;
+  application_id?: string;
+  company_name?: string;
+  suggestion?: string;
+}> {
+  const res = await apiFetch(`${API_BASE}/api/emails/${emailId}/pipeline-check`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`Failed to check pipeline: ${res.status}`);
+  return await res.json();
+}
+
+export async function markEmailResolved(id: string): Promise<void> {
+  await apiFetch(`${API_BASE}/api/emails/${id}`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify({ resolved: true }),
+  });
+}
+
+// --- Search API ---
+
+export async function searchJobs(query: string, location: string = ''): Promise<any[]> {
+  const params = new URLSearchParams({ q: query, location });
+  const res = await apiFetch(`${API_BASE}/api/search?${params}`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`Failed to search: ${res.status}`);
+  const data = await res.json();
+  return data.results || [];
+}
+
+// --- Resume / Match API ---
+
+export async function parseResume(text: string): Promise<any> {
+  const res = await apiFetch(`${API_BASE}/api/resume/parse`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ text }),
+  });
+  if (!res.ok) throw new Error(`Failed to parse resume: ${res.status}`);
+  return await res.json();
+}
+
+export async function getProfile(): Promise<any | null> {
+  const res = await apiFetch(`${API_BASE}/api/profile`, { headers: authHeaders() });
+  if (!res.ok) return null;
+  return await res.json();
+}
+
+export async function getJobMatch(jobId: string): Promise<any> {
+  const res = await apiFetch(`${API_BASE}/api/jobs/${jobId}/match`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`Failed to get match: ${res.status}`);
+  return await res.json();
+}
+
+// --- ATS Intelligence API ---
+
+export async function getAtsIntelligence(platform: string): Promise<any> {
+  const res = await apiFetch(`${API_BASE}/api/intelligence/ats/${platform}`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`Failed to get ATS intelligence: ${res.status}`);
+  return await res.json();
+}
+
+// --- Warm Paths API ---
+
+export async function getWarmPaths(jobId: string): Promise<any> {
+  const res = await apiFetch(`${API_BASE}/api/jobs/${jobId}/warm-paths`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`Failed to get warm paths: ${res.status}`);
+  return await res.json();
+}
+
+// --- Alerts API ---
+
+export async function fetchAlerts(unread = false): Promise<any[]> {
+  const params = unread ? '?unread=true' : '';
+  const res = await apiFetch(`${API_BASE}/api/alerts${params}`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`Failed to fetch alerts: ${res.status}`);
+  return await res.json();
+}
+
+export async function markAlertRead(id: string): Promise<void> {
+  await apiFetch(`${API_BASE}/api/alerts/${id}`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+  });
+}
+
+export async function getUnreadAlertCount(): Promise<number> {
+  const res = await apiFetch(`${API_BASE}/api/alerts/count`, { headers: authHeaders() });
+  if (!res.ok) return 0;
+  const data = await res.json();
+  return data.unread || 0;
+}
+
+// --- Send Email API ---
+
+export async function sendEmail(payload: {
+  to: string;
+  subject: string;
+  body: string;
+  application_id?: string;
+  reply_to_message_id?: string;
+  thread_id?: string;
+}): Promise<any> {
+  const res = await apiFetch(`${API_BASE}/api/emails/send`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`Failed to send email: ${res.status}`);
+  return await res.json();
+}
+
+// --- Draft API ---
+
+export async function generateDraft(payload: {
+  application_id?: string;
+  contact_email?: string;
+  draft_type: string;
+  additional_context?: string;
+}): Promise<{ subject: string; body: string; tone: string; draft_type: string }> {
+  const res = await apiFetch(`${API_BASE}/api/drafts/generate`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`Failed to generate draft: ${res.status}`);
+  return await res.json();
+}
+
+// --- Company Context API ---
+
+export async function getCompanyContext(domain: string): Promise<any> {
+  const res = await apiFetch(`${API_BASE}/api/companies/${encodeURIComponent(domain)}/context`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`Failed to get company context: ${res.status}`);
+  return await res.json();
+}
+
+// --- Interview API ---
+
+export async function fetchInterviews(applicationId?: string): Promise<any[]> {
+  const params = applicationId ? `?application_id=${applicationId}` : '';
+  const res = await apiFetch(`${API_BASE}/api/interviews${params}`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`Failed to fetch interviews: ${res.status}`);
+  return await res.json();
+}
+
+export async function createInterview(data: any): Promise<any> {
+  const res = await apiFetch(`${API_BASE}/api/interviews`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(`Failed to create interview: ${res.status}`);
+  return await res.json();
+}
+
+// --- Export API ---
+
+export function getExportUrl(): string {
+  return `${API_BASE}/api/export/csv`;
+}
+
+export async function exportCsv(): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/api/export/csv`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`Failed to export: ${res.status}`);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'apptrail_export.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}

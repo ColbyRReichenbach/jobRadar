@@ -367,8 +367,8 @@
 | 4 | Add user_id to all database queries (per-user data isolation) | GAP-005, GAP-006, GAP-007 | Done | Core user-owned routes now require JWT ownership checks and are regression tested |
 | 5 | Generate per-user API keys (hashed in DB, lookup user on request) | GAP-008 | Done | User-scoped hashed API keys now back extension auth and can be issued/rotated from dashboard settings |
 | 6 | Rate limit auth endpoints (5 req/min per IP) | GAP-009 | Done | Auth/OAuth endpoints now enforce a 5 req/min per-IP limit; current implementation is in-memory per process |
-| 7 | Replace localStorage token with HttpOnly secure cookie flow | GAP-015 | Partial | Refresh cookies exist, but dashboard still keeps access token client-side |
-| 8 | Remove VITE_API_KEY from frontend bundle | GAP-018 | Not Started | Blocked on finishing replacement extension auth flow |
+| 7 | Replace localStorage token with HttpOnly secure cookie flow | GAP-015 | Done | Dashboard no longer stores auth tokens in localStorage or URL hash; session bootstrap now relies on the refresh cookie |
+| 8 | Remove VITE_API_KEY from frontend bundle | GAP-018 | Done | Dashboard no longer references `VITE_API_KEY`; extension now uses per-user API keys instead |
 
 ### Sprint H2: Input Validation & Injection Hardening
 **Goal:** Close all injection and validation vulnerabilities.

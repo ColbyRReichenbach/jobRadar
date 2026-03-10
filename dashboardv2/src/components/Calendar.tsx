@@ -2,20 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChevronLeft, ChevronRight, Plus, Phone, Code, Building2, Users, X, Clock, MapPin, MessageSquare, BookOpen, AlertCircle } from 'lucide-react';
 import { cn } from '../lib/utils';
-
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-const API_KEY = import.meta.env.VITE_API_KEY || '';
-
-function getToken(): string {
-  return localStorage.getItem('apptrail_token') || API_KEY;
-}
-
-function headers(): Record<string, string> {
-  return {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${getToken()}`,
-  };
-}
+import { apiFetch, authHeaders } from '../lib/api';
 
 interface InterviewData {
   id: string;
@@ -91,7 +78,7 @@ export function Calendar() {
   const loadInterviews = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/interviews`, { headers: headers() });
+      const res = await apiFetch('/api/interviews', { headers: authHeaders() });
       if (res.ok) setInterviews(await res.json());
     } catch (err) {
       console.error('Failed to load interviews:', err);
@@ -102,7 +89,7 @@ export function Calendar() {
 
   const loadPastDue = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/interviews/past-due`, { headers: headers() });
+      const res = await apiFetch('/api/interviews/past-due', { headers: authHeaders() });
       if (res.ok) setPastDueInterviews(await res.json());
     } catch (err) {
       console.error('Failed to load past-due interviews:', err);
@@ -111,7 +98,7 @@ export function Calendar() {
 
   const loadNotes = async (interviewId: string) => {
     try {
-      const res = await fetch(`${API_BASE}/api/interviews/${interviewId}/notes`, { headers: headers() });
+      const res = await apiFetch(`/api/interviews/${interviewId}/notes`, { headers: authHeaders() });
       if (res.ok) setInterviewNotes(await res.json());
     } catch (err) {
       console.error('Failed to load notes:', err);
@@ -120,7 +107,7 @@ export function Calendar() {
 
   const loadPrep = async (interviewId: string) => {
     try {
-      const res = await fetch(`${API_BASE}/api/interviews/${interviewId}/prep`, { headers: headers() });
+      const res = await apiFetch(`/api/interviews/${interviewId}/prep`, { headers: authHeaders() });
       if (res.ok) setPrepData(await res.json());
     } catch (err) {
       console.error('Failed to load prep:', err);
@@ -141,9 +128,9 @@ export function Calendar() {
 
   const handleSaveNote = async (interviewId: string, note: { questions_asked: string; went_well: string; to_improve: string; overall_feeling: string }) => {
     try {
-      const res = await fetch(`${API_BASE}/api/interviews/${interviewId}/notes`, {
+      const res = await apiFetch(`/api/interviews/${interviewId}/notes`, {
         method: 'POST',
-        headers: headers(),
+        headers: authHeaders(),
         body: JSON.stringify(note),
       });
       if (res.ok) {
@@ -158,9 +145,9 @@ export function Calendar() {
 
   const handleAdd = async (data: Partial<InterviewData>) => {
     try {
-      const res = await fetch(`${API_BASE}/api/interviews`, {
+      const res = await apiFetch('/api/interviews', {
         method: 'POST',
-        headers: headers(),
+        headers: authHeaders(),
         body: JSON.stringify(data),
       });
       if (res.ok) {
@@ -174,9 +161,9 @@ export function Calendar() {
 
   const handleUpdate = async (id: string, data: Partial<InterviewData>) => {
     try {
-      const res = await fetch(`${API_BASE}/api/interviews/${id}`, {
+      const res = await apiFetch(`/api/interviews/${id}`, {
         method: 'PATCH',
-        headers: headers(),
+        headers: authHeaders(),
         body: JSON.stringify(data),
       });
       if (res.ok) {

@@ -1,20 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Search, Building2, Mail, ExternalLink, Linkedin, User } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-const API_KEY = import.meta.env.VITE_API_KEY || '';
-
-function getToken(): string {
-  return localStorage.getItem('apptrail_token') || API_KEY;
-}
-
-function headers(): Record<string, string> {
-  return {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${getToken()}`,
-  };
-}
+import { apiFetch, authHeaders } from '../lib/api';
 
 interface NetworkContact {
   id: string;
@@ -46,7 +33,7 @@ export function NetworkPage() {
     try {
       const params = new URLSearchParams();
       if (q) params.set('q', q);
-      const res = await fetch(`${API_BASE}/api/network?${params}`, { headers: headers() });
+      const res = await apiFetch(`/api/network?${params}`, { headers: authHeaders() });
       if (res.ok) {
         setContacts(await res.json());
       }
@@ -65,7 +52,7 @@ export function NetworkPage() {
     setSelectedContact(contact);
     if (contact.email) {
       try {
-        const res = await fetch(`${API_BASE}/api/network/${encodeURIComponent(contact.email)}`, { headers: headers() });
+        const res = await apiFetch(`/api/network/${encodeURIComponent(contact.email)}`, { headers: authHeaders() });
         if (res.ok) {
           setContactDetail(await res.json());
         }
