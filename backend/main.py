@@ -1,4 +1,5 @@
 import os
+import time
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -110,6 +111,39 @@ def _require_user_id(auth: dict) -> _uuid.UUID:
     if not user_id:
         raise HTTPException(status_code=401, detail="JWT authentication required")
     return user_id
+
+
+_AUTH_RATE_LIMIT_WINDOW_SECONDS = 60
+_AUTH_RATE_LIMIT_MAX_REQUESTS = 5
+_auth_rate_limit_hits: dict[str, list[float]] = {}
+
+
+def _get_request_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
+
+
+async def rate_limit_auth_requests(request: Request):
+    """Simple per-IP auth route rate limiting.
+
+    This is in-memory for now. GAP-003/H1.3 still tracks the Redis-backed version.
+    """
+    now = time.time()
+    ip = _get_request_ip(request)
+    recent_hits = [
+        ts
+        for ts in _auth_rate_limit_hits.get(ip, [])
+        if now - ts < _AUTH_RATE_LIMIT_WINDOW_SECONDS
+    ]
+    if len(recent_hits) >= _AUTH_RATE_LIMIT_MAX_REQUESTS:
+        raise HTTPException(status_code=429, detail="Too many auth requests. Try again in a minute.")
+
+    recent_hits.append(now)
+    _auth_rate_limit_hits[ip] = recent_hits
 
 
 def _serialize_app(app_row: Application, include_contacts: bool = False) -> dict:
@@ -667,7 +701,7 @@ async def check_email_pipeline(
     }
 
 
-@app.get("/api/auth/gmail")
+@app.get("/api/auth/gmail", dependencies=[Depends(rate_limit_auth_requests)])
 async def gmail_auth_redirect():
     from backend.services.gmail_auth import get_oauth_flow
     flow = get_oauth_flow()
@@ -675,7 +709,7 @@ async def gmail_auth_redirect():
     return {"auth_url": auth_url}
 
 
-@app.get("/api/auth/gmail/callback")
+@app.get("/api/auth/gmail/callback", dependencies=[Depends(rate_limit_auth_requests)])
 async def gmail_auth_callback(
     code: str = Query(...),
     db: AsyncSession = Depends(get_db),
@@ -705,7 +739,7 @@ GOOGLE_CLIENT_SECRET = os.getenv("GMAIL_CLIENT_SECRET", "")
 GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/api/auth/google/callback")
 
 
-@app.get("/api/auth/google")
+@app.get("/api/auth/google", dependencies=[Depends(rate_limit_auth_requests)])
 async def google_auth_redirect(
     connect_gmail: bool = Query(False),
 ):
@@ -759,7 +793,7 @@ async def google_auth_redirect(
     return {"auth_url": auth_url}
 
 
-@app.get("/api/auth/google/callback")
+@app.get("/api/auth/google/callback", dependencies=[Depends(rate_limit_auth_requests)])
 async def google_auth_callback(
     code: str = Query(...),
     state: str = Query(""),
@@ -900,7 +934,7 @@ async def get_me(current_user: User = Depends(get_current_user)):
     }
 
 
-@app.post("/api/auth/refresh")
+@app.post("/api/auth/refresh", dependencies=[Depends(rate_limit_auth_requests)])
 async def refresh_access_token(request: Request, db: AsyncSession = Depends(get_db)):
     """Exchange a valid refresh token cookie for a new access token."""
     refresh = request.cookies.get(REFRESH_COOKIE_NAME)
@@ -989,7 +1023,7 @@ async def create_or_rotate_api_key(
     }
 
 
-@app.post("/api/auth/api-key/validate")
+@app.post("/api/auth/api-key/validate", dependencies=[Depends(rate_limit_auth_requests)])
 async def validate_api_key(auth: dict = Depends(verify_api_key), db: AsyncSession = Depends(get_db)):
     """Validate an extension API key and return the owning user metadata."""
     user_id = _require_user_id(auth)
