@@ -377,7 +377,7 @@
 | # | Task | Gaps Addressed | Status | Notes |
 |---|------|----------------|--------|-------|
 | 1 | Escape LIKE special chars in all search queries | GAP-010 | Done | Shared escaping now treats `%` and `_` literally across backend `LIKE` filters |
-| 2 | Add `Field(max_length=...)` to all Pydantic string fields | GAP-011 | Not Started |  |
+| 2 | Add `Field(max_length=...)` to all Pydantic string fields | GAP-011 | Done | Request models now enforce bounded string lengths, including long text and resume payload fields |
 | 3 | Add request body size limit middleware (1MB default) | GAP-011 | Not Started |  |
 | 4 | Validate URLs: HTTPS only, block private IPs, whitelist job boards | GAP-012 | Not Started |  |
 | 5 | Replace all `innerHTML` with `textContent` in extension | GAP-013 | Not Started |  |

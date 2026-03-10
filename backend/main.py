@@ -6,7 +6,7 @@ from typing import Optional
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,54 +41,67 @@ app.add_middleware(
 
 # --- Schemas ---
 
+MAX_ID_LEN = 255
+MAX_NAME_LEN = 255
+MAX_URL_LEN = 2048
+MAX_DOMAIN_LEN = 255
+MAX_EMAIL_LEN = 320
+MAX_PHONE_LEN = 32
+MAX_STATUS_LEN = 64
+MAX_PLATFORM_LEN = 100
+MAX_SHORT_TEXT_LEN = 500
+MAX_MEDIUM_TEXT_LEN = 2000
+MAX_LONG_TEXT_LEN = 10000
+MAX_RESUME_TEXT_LEN = 50000
+
 class ApplicationCreate(BaseModel):
-    company: str
-    role_title: str
-    job_url: Optional[str] = None
-    source: Optional[str] = None
-    department: Optional[str] = None
-    description_text: Optional[str] = None
-    salary: Optional[str] = None
-    logo_url: Optional[str] = None
-    location: Optional[str] = None
-    status: Optional[str] = None
-    notes: Optional[str] = None
+    company: str = Field(..., max_length=MAX_NAME_LEN)
+    role_title: str = Field(..., max_length=MAX_NAME_LEN)
+    job_url: Optional[str] = Field(None, max_length=MAX_URL_LEN)
+    source: Optional[str] = Field(None, max_length=MAX_SHORT_TEXT_LEN)
+    department: Optional[str] = Field(None, max_length=MAX_NAME_LEN)
+    description_text: Optional[str] = Field(None, max_length=MAX_LONG_TEXT_LEN)
+    salary: Optional[str] = Field(None, max_length=MAX_SHORT_TEXT_LEN)
+    logo_url: Optional[str] = Field(None, max_length=MAX_URL_LEN)
+    location: Optional[str] = Field(None, max_length=MAX_NAME_LEN)
+    status: Optional[str] = Field(None, max_length=MAX_STATUS_LEN)
+    notes: Optional[str] = Field(None, max_length=MAX_LONG_TEXT_LEN)
 
 
 class ApplicationPatch(BaseModel):
-    status: Optional[str] = None
-    notes: Optional[str] = None
-    salary: Optional[str] = None
-    location: Optional[str] = None
-    logo_url: Optional[str] = None
-    description_text: Optional[str] = None
-    company: Optional[str] = None
-    role_title: Optional[str] = None
-    source: Optional[str] = None
-    job_url: Optional[str] = None
+    status: Optional[str] = Field(None, max_length=MAX_STATUS_LEN)
+    notes: Optional[str] = Field(None, max_length=MAX_LONG_TEXT_LEN)
+    salary: Optional[str] = Field(None, max_length=MAX_SHORT_TEXT_LEN)
+    location: Optional[str] = Field(None, max_length=MAX_NAME_LEN)
+    logo_url: Optional[str] = Field(None, max_length=MAX_URL_LEN)
+    description_text: Optional[str] = Field(None, max_length=MAX_LONG_TEXT_LEN)
+    company: Optional[str] = Field(None, max_length=MAX_NAME_LEN)
+    role_title: Optional[str] = Field(None, max_length=MAX_NAME_LEN)
+    source: Optional[str] = Field(None, max_length=MAX_SHORT_TEXT_LEN)
+    job_url: Optional[str] = Field(None, max_length=MAX_URL_LEN)
 
 
 class JobParseRequest(BaseModel):
-    url: str
+    url: str = Field(..., max_length=MAX_URL_LEN)
 
 
 class ContactsFindRequest(BaseModel):
-    application_id: str
-    company: str
-    domain: str
+    application_id: str = Field(..., max_length=MAX_ID_LEN)
+    company: str = Field(..., max_length=MAX_NAME_LEN)
+    domain: str = Field(..., max_length=MAX_DOMAIN_LEN)
 
 
 class ContactUpdate(BaseModel):
     reached_out: Optional[bool] = None
-    reached_out_at: Optional[str] = None
+    reached_out_at: Optional[str] = Field(None, max_length=MAX_ID_LEN)
     response_received: Optional[bool] = None
 
 
 class EmailUpdate(BaseModel):
     collapsed: Optional[bool] = None
     read: Optional[bool] = None
-    application_id: Optional[str] = None
-    classification: Optional[str] = None
+    application_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
+    classification: Optional[str] = Field(None, max_length=MAX_SHORT_TEXT_LEN)
     resolved: Optional[bool] = None
 
 
@@ -610,7 +623,7 @@ async def update_email(
 
 
 class EmailFeedbackCreate(BaseModel):
-    email_id: str
+    email_id: str = Field(..., max_length=MAX_ID_LEN)
     is_job_related: bool
 
 
@@ -1480,7 +1493,7 @@ async def get_company_tech(domain: str, db: AsyncSession = Depends(get_db)):
 # --- Sprint 5: Resume Intelligence ---
 
 class ResumeTextUpload(BaseModel):
-    text: str
+    text: str = Field(..., max_length=MAX_RESUME_TEXT_LEN)
 
 
 @app.post("/api/resume/parse", status_code=201)
@@ -1595,7 +1608,7 @@ async def get_job_match(job_id: str, db: AsyncSession = Depends(get_db), auth: d
 
 class PreferencesPayload(BaseModel):
     preferred_locations: Optional[list] = None
-    preferred_remote_type: Optional[str] = None
+    preferred_remote_type: Optional[str] = Field(None, max_length=MAX_SHORT_TEXT_LEN)
     target_salary_min: Optional[int] = None
     target_salary_max: Optional[int] = None
     role_interest_ids: Optional[list] = None
@@ -1929,12 +1942,12 @@ async def alert_count(db: AsyncSession = Depends(get_db), auth: dict = Depends(v
 # --- Sprint 12: Send Email ---
 
 class SendEmailPayload(BaseModel):
-    to: str
-    subject: str
-    body: str
-    application_id: Optional[str] = None
-    reply_to_message_id: Optional[str] = None
-    thread_id: Optional[str] = None
+    to: str = Field(..., max_length=MAX_EMAIL_LEN)
+    subject: str = Field(..., max_length=MAX_NAME_LEN)
+    body: str = Field(..., max_length=MAX_LONG_TEXT_LEN)
+    application_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
+    reply_to_message_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
+    thread_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
 
 
 @app.post("/api/emails/send", status_code=201)
@@ -1993,25 +2006,25 @@ async def send_email_endpoint(
 # --- Sprint 13: Interview Calendar ---
 
 class InterviewCreate(BaseModel):
-    application_id: Optional[str] = None
-    interview_type: str = "phone"
-    scheduled_at: Optional[str] = None
+    application_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
+    interview_type: str = Field("phone", max_length=MAX_SHORT_TEXT_LEN)
+    scheduled_at: Optional[str] = Field(None, max_length=MAX_ID_LEN)
     duration_minutes: Optional[int] = None
-    interviewer_name: Optional[str] = None
-    interviewer_email: Optional[str] = None
-    location_or_link: Optional[str] = None
-    notes: Optional[str] = None
+    interviewer_name: Optional[str] = Field(None, max_length=MAX_NAME_LEN)
+    interviewer_email: Optional[str] = Field(None, max_length=MAX_EMAIL_LEN)
+    location_or_link: Optional[str] = Field(None, max_length=MAX_URL_LEN)
+    notes: Optional[str] = Field(None, max_length=MAX_LONG_TEXT_LEN)
 
 
 class InterviewUpdate(BaseModel):
-    interview_type: Optional[str] = None
-    scheduled_at: Optional[str] = None
+    interview_type: Optional[str] = Field(None, max_length=MAX_SHORT_TEXT_LEN)
+    scheduled_at: Optional[str] = Field(None, max_length=MAX_ID_LEN)
     duration_minutes: Optional[int] = None
-    interviewer_name: Optional[str] = None
-    interviewer_email: Optional[str] = None
-    location_or_link: Optional[str] = None
-    notes: Optional[str] = None
-    outcome: Optional[str] = None
+    interviewer_name: Optional[str] = Field(None, max_length=MAX_NAME_LEN)
+    interviewer_email: Optional[str] = Field(None, max_length=MAX_EMAIL_LEN)
+    location_or_link: Optional[str] = Field(None, max_length=MAX_URL_LEN)
+    notes: Optional[str] = Field(None, max_length=MAX_LONG_TEXT_LEN)
+    outcome: Optional[str] = Field(None, max_length=MAX_SHORT_TEXT_LEN)
 
 
 def _serialize_interview(i: Interview) -> dict:
@@ -2234,18 +2247,18 @@ def _serialize_note(n: InterviewNote) -> dict:
 
 
 class NoteCreate(BaseModel):
-    application_id: Optional[str] = None
-    questions_asked: Optional[str] = None
-    went_well: Optional[str] = None
-    to_improve: Optional[str] = None
-    overall_feeling: Optional[str] = None  # great/good/okay/poor
+    application_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
+    questions_asked: Optional[str] = Field(None, max_length=MAX_LONG_TEXT_LEN)
+    went_well: Optional[str] = Field(None, max_length=MAX_LONG_TEXT_LEN)
+    to_improve: Optional[str] = Field(None, max_length=MAX_LONG_TEXT_LEN)
+    overall_feeling: Optional[str] = Field(None, max_length=MAX_SHORT_TEXT_LEN)  # great/good/okay/poor
 
 
 class NotePatch(BaseModel):
-    questions_asked: Optional[str] = None
-    went_well: Optional[str] = None
-    to_improve: Optional[str] = None
-    overall_feeling: Optional[str] = None
+    questions_asked: Optional[str] = Field(None, max_length=MAX_LONG_TEXT_LEN)
+    went_well: Optional[str] = Field(None, max_length=MAX_LONG_TEXT_LEN)
+    to_improve: Optional[str] = Field(None, max_length=MAX_LONG_TEXT_LEN)
+    overall_feeling: Optional[str] = Field(None, max_length=MAX_SHORT_TEXT_LEN)
 
 
 @app.post("/api/interviews/{interview_id}/notes", status_code=201)
@@ -2528,10 +2541,10 @@ async def get_interview_patterns(db: AsyncSession = Depends(get_db), auth: dict 
 # --- Sprint 14: AI-Drafted Communications ---
 
 class DraftRequest(BaseModel):
-    application_id: Optional[str] = None
-    contact_email: Optional[str] = None
-    draft_type: str = "follow_up"  # follow_up/introduction/reply/thank_you
-    additional_context: Optional[str] = None
+    application_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
+    contact_email: Optional[str] = Field(None, max_length=MAX_EMAIL_LEN)
+    draft_type: str = Field("follow_up", max_length=MAX_SHORT_TEXT_LEN)  # follow_up/introduction/reply/thank_you
+    additional_context: Optional[str] = Field(None, max_length=MAX_LONG_TEXT_LEN)
 
 
 @app.post("/api/drafts/generate")
@@ -2754,8 +2767,8 @@ async def export_csv(db: AsyncSession = Depends(get_db), auth: dict = Depends(ve
 
 
 class CompanyVisitPayload(BaseModel):
-    domain: str
-    url: Optional[str] = None
+    domain: str = Field(..., max_length=MAX_DOMAIN_LEN)
+    url: Optional[str] = Field(None, max_length=MAX_URL_LEN)
     visit_count: int = 1
 
 
@@ -2835,9 +2848,9 @@ async def list_company_visits(
 
 
 class SubmissionPayload(BaseModel):
-    platform: str
-    url: str
-    domain: str
+    platform: str = Field(..., max_length=MAX_PLATFORM_LEN)
+    url: str = Field(..., max_length=MAX_URL_LEN)
+    domain: str = Field(..., max_length=MAX_DOMAIN_LEN)
     enrichment: Optional[dict] = None
 
 
@@ -2893,7 +2906,7 @@ async def record_submission_detection(payload: SubmissionPayload, db: AsyncSessi
 
 class NotificationPrefPayload(BaseModel):
     sms_enabled: bool | None = None
-    sms_phone: str | None = None
+    sms_phone: str | None = Field(None, max_length=MAX_PHONE_LEN)
     weekly_digest_enabled: bool | None = None
 
 
@@ -2964,10 +2977,10 @@ async def update_notification_preferences(
 
 
 class AlertCreatePayload(BaseModel):
-    alert_type: str
-    title: str
-    body: str | None = None
-    action_url: str | None = None
+    alert_type: str = Field(..., max_length=MAX_SHORT_TEXT_LEN)
+    title: str = Field(..., max_length=MAX_NAME_LEN)
+    body: str | None = Field(None, max_length=MAX_LONG_TEXT_LEN)
+    action_url: str | None = Field(None, max_length=MAX_URL_LEN)
 
 
 @app.post("/api/alerts", status_code=201)
@@ -3031,7 +3044,7 @@ async def preview_digest(
 
 
 class TailorPayload(BaseModel):
-    resume_text: str | None = None  # Override resume text; defaults to user profile
+    resume_text: str | None = Field(None, max_length=MAX_RESUME_TEXT_LEN)  # Override resume text; defaults to user profile
 
 
 @app.post("/api/resume/tailor/{application_id}", status_code=201)
