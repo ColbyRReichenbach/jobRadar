@@ -374,16 +374,16 @@
 **Goal:** Close all injection and validation vulnerabilities.
 **Estimated effort:** 10 hours
 
-| # | Task | Gaps Addressed |
-|---|------|----------------|
-| 1 | Escape LIKE special chars in all search queries | GAP-010 |
-| 2 | Add `Field(max_length=...)` to all Pydantic string fields | GAP-011 |
-| 3 | Add request body size limit middleware (1MB default) | GAP-011 |
-| 4 | Validate URLs: HTTPS only, block private IPs, whitelist job boards | GAP-012 |
-| 5 | Replace all `innerHTML` with `textContent` in extension | GAP-013 |
-| 6 | Use Pydantic `EmailStr` for email fields | GAP-014 |
-| 7 | Add CSP to dashboard index.html | GAP-019 |
-| 8 | Add CSP to extension manifest.json | GAP-025 |
+| # | Task | Gaps Addressed | Status | Notes |
+|---|------|----------------|--------|-------|
+| 1 | Escape LIKE special chars in all search queries | GAP-010 | Done | Shared escaping now treats `%` and `_` literally across backend `LIKE` filters |
+| 2 | Add `Field(max_length=...)` to all Pydantic string fields | GAP-011 | Not Started |  |
+| 3 | Add request body size limit middleware (1MB default) | GAP-011 | Not Started |  |
+| 4 | Validate URLs: HTTPS only, block private IPs, whitelist job boards | GAP-012 | Not Started |  |
+| 5 | Replace all `innerHTML` with `textContent` in extension | GAP-013 | Not Started |  |
+| 6 | Use Pydantic `EmailStr` for email fields | GAP-014 | Not Started |  |
+| 7 | Add CSP to dashboard index.html | GAP-019 | Not Started |  |
+| 8 | Add CSP to extension manifest.json | GAP-025 | Not Started |  |
 
 ### Sprint H3: Extension Security & Store Readiness
 **Goal:** Secure extension and prepare for Chrome Web Store submission.

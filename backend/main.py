@@ -113,6 +113,14 @@ def _require_user_id(auth: dict) -> _uuid.UUID:
     return user_id
 
 
+def _escape_like(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _contains_like(value: str) -> str:
+    return f"%{_escape_like(value.lower())}%"
+
+
 _AUTH_RATE_LIMIT_WINDOW_SECONDS = 60
 _AUTH_RATE_LIMIT_MAX_REQUESTS = 5
 _auth_rate_limit_hits: dict[str, list[float]] = {}
@@ -681,7 +689,7 @@ async def check_email_pipeline(
     if company_name:
         from sqlalchemy import func
         app_stmt = select(Application).where(
-            func.lower(Application.company).like(f"%{company_name.lower()}%"),
+            func.lower(Application.company).like(_contains_like(company_name), escape="\\"),
             Application.user_id == user_id,
         )
         app_result = await db.execute(app_stmt)
@@ -1299,7 +1307,7 @@ async def global_search(
     if not q or len(q) < 2:
         return {"applications": [], "contacts": [], "emails": []}
 
-    search_term = f"%{q.lower()}%"
+    search_term = _contains_like(q)
 
     from sqlalchemy import or_, func
 
@@ -1307,8 +1315,8 @@ async def global_search(
     app_stmt = select(Application).where(
         Application.user_id == user_id,
         or_(
-            func.lower(Application.company).like(search_term),
-            func.lower(Application.role_title).like(search_term),
+            func.lower(Application.company).like(search_term, escape="\\"),
+            func.lower(Application.role_title).like(search_term, escape="\\"),
         )
     ).limit(20)
     app_result = await db.execute(app_stmt)
@@ -1318,8 +1326,8 @@ async def global_search(
     contact_stmt = select(Contact).where(
         Contact.user_id == user_id,
         or_(
-            func.lower(Contact.name).like(search_term),
-            func.lower(Contact.email).like(search_term),
+            func.lower(Contact.name).like(search_term, escape="\\"),
+            func.lower(Contact.email).like(search_term, escape="\\"),
         )
     ).limit(20)
     contact_result = await db.execute(contact_stmt)
@@ -1331,7 +1339,7 @@ async def global_search(
         selectinload(EmailEvent.application)
     ).where(
         EmailEvent.user_id == user_id,
-        func.lower(EmailEvent.summary).like(search_term)
+        func.lower(EmailEvent.summary).like(search_term, escape="\\")
     ).limit(20)
     email_result = await db.execute(email_stmt)
     emails = [_serialize_email_event(e) for e in email_result.scalars().all()]
@@ -1740,11 +1748,11 @@ async def list_network(
     # Get contacts from Contact table
     contact_stmt = select(Contact).options(selectinload(Contact.application)).where(Contact.user_id == user_id)
     if q:
-        search = f"%{q.lower()}%"
+        search = _contains_like(q)
         contact_stmt = contact_stmt.where(
             or_(
-                func.lower(Contact.name).like(search),
-                func.lower(Contact.email).like(search),
+                func.lower(Contact.name).like(search, escape="\\"),
+                func.lower(Contact.email).like(search, escape="\\"),
             )
         )
     if source:
@@ -2666,7 +2674,7 @@ async def salary_intelligence(
         import uuid as _uuid
         stmt = stmt.where(Application.umbrella_id == _uuid.UUID(umbrella_id))
     if location:
-        stmt = stmt.where(func.lower(Application.location).like(f"%{location.lower()}%"))
+        stmt = stmt.where(func.lower(Application.location).like(_contains_like(location), escape="\\"))
 
     result = await db.execute(stmt)
     apps = result.scalars().all()
