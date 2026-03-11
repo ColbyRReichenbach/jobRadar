@@ -1,6 +1,10 @@
 import { Job, Email, Contact } from '../types';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+function normalizeApiBase(rawBase: string): string {
+  return rawBase.replace(/\/+$/, '').replace(/\/api$/, '');
+}
+
+const API_BASE = normalizeApiBase(import.meta.env.VITE_API_URL || 'http://localhost:8000');
 const PAGE_SIZE = 100;
 
 let _accessToken: string | null = null;
