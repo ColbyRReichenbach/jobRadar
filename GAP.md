@@ -396,7 +396,7 @@
 | 3 | Move API key to chrome.storage.session or encrypt | GAP-024 | Done | API keys now live in `chrome.storage.session`; legacy persistent keys are migrated out of `local` storage on first use |
 | 4 | Reduce host_permissions, use optional_host_permissions | GAP-026 | Done | Install-time `host_permissions` are now limited to backend API hosts; job-board domains were moved to `optional_host_permissions` instead |
 | 5 | Add offline detection, retry queue, error states | GAP-027 | Done | Background visit/submission sync now uses a bounded retry queue flushed on startup and before new sends; setup and sidepanel now distinguish network/auth parse failures from generic errors |
-| 6 | Change API key input to type="password" | GAP-028 | Not Started |  |
+| 6 | Change API key input to type="password" | GAP-028 | Done | Extension setup now masks the personal API key input and disables autocomplete for that field |
 | 7 | Design and add extension icons (16, 48, 128px) | GAP-046 | Not Started |  |
 | 8 | Write privacy policy | GAP-047 | Not Started |  |
 | 9 | Create store listing (description, screenshots) | GAP-048 | Not Started |  |
