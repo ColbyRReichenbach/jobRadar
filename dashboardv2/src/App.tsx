@@ -29,6 +29,12 @@ function AppContent() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [loading, setLoading] = useState(USE_API);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [emailFocusRequest, setEmailFocusRequest] = useState<{
+    emailId: string;
+    threadId?: string;
+    tab: 'emails' | 'conversations';
+    token: number;
+  } | null>(null);
 
   const loadData = useCallback(async () => {
     if (!USE_API) return;
@@ -70,6 +76,19 @@ function AppContent() {
   }
 
   const showInbox = activeTab !== 'emails' && activeTab !== 'conversations';
+
+  const handleOpenEmail = useCallback((email: any) => {
+    const tab = email.email_type === 'conversation' || email.type === 'conversation' || email.thread_id || email.threadId
+      ? 'conversations'
+      : 'emails';
+    setActiveTab(tab);
+    setEmailFocusRequest({
+      emailId: email.id,
+      threadId: email.thread_id || email.threadId || undefined,
+      tab,
+      token: Date.now(),
+    });
+  }, []);
 
   if (loading || authLoading) {
     return (
@@ -154,13 +173,13 @@ function AppContent() {
             {activeTab === 'search' && <JobSearch jobs={jobs} setJobs={setJobs} />}
             {activeTab === 'analytics' && <Analytics jobs={jobs} />}
             {activeTab === 'export' && <ExportData />}
-            {activeTab === 'conversations' && <Conversations emails={emails} jobs={jobs} />}
-            {activeTab === 'network' && <NetworkPage />}
+            {activeTab === 'conversations' && <Conversations emails={emails} jobs={jobs} focusRequest={emailFocusRequest?.tab === 'conversations' ? emailFocusRequest : null} />}
+            {activeTab === 'network' && <NetworkPage onOpenEmail={handleOpenEmail} onRefreshData={loadData} />}
             {activeTab === 'calendar' && <Calendar />}
             {activeTab === 'settings' && <Settings />}
             {activeTab === 'emails' && (
               <div className="flex-1 flex overflow-hidden">
-                <EmailFeed emails={emails} jobs={jobs} isCollapsed={false} setIsCollapsed={() => {}} forceOpen={true} />
+                <EmailFeed emails={emails} jobs={jobs} isCollapsed={false} setIsCollapsed={() => {}} forceOpen={true} focusRequest={emailFocusRequest?.tab === 'emails' ? emailFocusRequest : null} />
               </div>
             )}
           </div>
@@ -174,6 +193,7 @@ function AppContent() {
             jobs={jobs}
             isCollapsed={isInboxCollapsed}
             setIsCollapsed={setIsInboxCollapsed}
+            focusRequest={emailFocusRequest?.tab === 'emails' ? emailFocusRequest : null}
           />
         </div>
       )}

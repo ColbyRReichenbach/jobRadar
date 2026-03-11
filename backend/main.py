@@ -223,7 +223,21 @@ class ContactsFindRequest(BaseModel):
     domain: str = Field(..., max_length=MAX_DOMAIN_LEN)
 
 
+class ContactCreate(BaseModel):
+    name: Optional[str] = Field(None, max_length=MAX_NAME_LEN)
+    title: Optional[str] = Field(None, max_length=MAX_NAME_LEN)
+    email: Optional[EmailStr] = None
+    phone_number: Optional[str] = Field(None, max_length=MAX_PHONE_LEN)
+    linkedin_url: Optional[str] = Field(None, max_length=MAX_URL_LEN)
+    application_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
+
+
 class ContactUpdate(BaseModel):
+    name: Optional[str] = Field(None, max_length=MAX_NAME_LEN)
+    title: Optional[str] = Field(None, max_length=MAX_NAME_LEN)
+    email: Optional[EmailStr] = None
+    phone_number: Optional[str] = Field(None, max_length=MAX_PHONE_LEN)
+    linkedin_url: Optional[str] = Field(None, max_length=MAX_URL_LEN)
     reached_out: Optional[bool] = None
     reached_out_at: Optional[str] = Field(None, max_length=MAX_ID_LEN)
     response_received: Optional[bool] = None
@@ -450,10 +464,11 @@ def _serialize_email_event(event: EmailEvent) -> dict:
 def _serialize_contact(contact_row: Contact) -> dict:
     return {
         "id": str(contact_row.id),
-        "application_id": str(contact_row.application_id),
+        "application_id": str(contact_row.application_id) if contact_row.application_id else None,
         "name": contact_row.name,
         "title": contact_row.title,
         "email": contact_row.email,
+        "phone_number": contact_row.phone_number,
         "linkedin_url": contact_row.linkedin_url,
         "source": contact_row.source,
         "confidence_score": contact_row.confidence_score,
@@ -783,6 +798,16 @@ async def update_contact(
     if not contact:
         raise HTTPException(status_code=404, detail="Contact not found")
 
+    if payload.name is not None:
+        contact.name = payload.name
+    if payload.title is not None:
+        contact.title = payload.title
+    if payload.email is not None:
+        contact.email = str(payload.email)
+    if payload.phone_number is not None:
+        contact.phone_number = payload.phone_number
+    if payload.linkedin_url is not None:
+        contact.linkedin_url = payload.linkedin_url
     if payload.reached_out is not None:
         contact.reached_out = payload.reached_out
     if payload.reached_out_at is not None:
@@ -806,6 +831,41 @@ async def update_contact(
                 raise HTTPException(status_code=404, detail="Application not found")
             contact.application_id = app.id
 
+    await db.commit()
+    await db.refresh(contact)
+    return _serialize_contact(contact)
+
+
+@app.post("/api/contacts", status_code=201)
+async def create_contact(
+    payload: ContactCreate,
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    user_id = _require_user_id(auth)
+
+    app_id = None
+    if payload.application_id:
+        app_id = _uuid.UUID(payload.application_id)
+        app_stmt = select(Application).where(
+            Application.id == app_id,
+            Application.user_id == user_id,
+        )
+        app_result = await db.execute(app_stmt)
+        if not app_result.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Application not found")
+
+    contact = Contact(
+        user_id=user_id,
+        application_id=app_id,
+        name=payload.name,
+        title=payload.title,
+        email=str(payload.email) if payload.email else None,
+        phone_number=payload.phone_number,
+        linkedin_url=payload.linkedin_url,
+        source="manual",
+    )
+    db.add(contact)
     await db.commit()
     await db.refresh(contact)
     return _serialize_contact(contact)
@@ -1503,10 +1563,23 @@ async def sync_gmail(
 
         # Match to application
         app_id = _match_application_id_for_sender(sender_email_addr, app_domain_map, app_token_map)
+        contact_id = None
+        if sender_email_addr:
+            contact_stmt = select(Contact).where(
+                Contact.user_id == user_id,
+                Contact.email == sender_email_addr,
+            ).limit(1)
+            contact_result = await db.execute(contact_stmt)
+            matched_contact = contact_result.scalar_one_or_none()
+            if matched_contact:
+                contact_id = matched_contact.id
+                if matched_contact.application_id and not app_id:
+                    app_id = matched_contact.application_id
 
         email_event = EmailEvent(
             user_id=user_id,
             application_id=app_id,
+            contact_id=contact_id,
             gmail_message_id=msg_id,
             thread_id=msg.get("threadId", ""),
             sender=sender_name,
@@ -2169,6 +2242,7 @@ async def list_network(
             "name": c.name,
             "email": c.email,
             "title": c.title,
+            "phone_number": c.phone_number,
             "company": c.application.company if c.application else None,
             "company_id": str(c.company_id) if c.company_id else None,
             "source": c.source or "hunter",
@@ -2204,6 +2278,7 @@ async def list_network(
             "name": row[1],
             "email": row[0],
             "title": None,
+            "phone_number": None,
             "company": row[2],
             "company_id": None,
             "source": "email",

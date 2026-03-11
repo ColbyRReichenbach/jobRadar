@@ -295,6 +295,7 @@ function mapContact(raw: any): Contact {
     name: raw.name || '',
     role: raw.title || '',
     email: raw.email || '',
+    phoneNumber: raw.phone_number || undefined,
     linkedin: raw.linkedin_url || undefined,
   };
 }
@@ -581,6 +582,52 @@ export async function fetchNetworkContacts(query = ''): Promise<any[]> {
     if (query) params.set('q', query);
     return `${API_BASE}/api/network?${params.toString()}`;
   });
+}
+
+export async function fetchNetworkContact(email: string): Promise<any> {
+  const res = await apiFetch(`${API_BASE}/api/network/${encodeURIComponent(email)}`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to load contact detail'));
+  return await res.json();
+}
+
+export async function createContact(payload: {
+  name?: string;
+  title?: string;
+  email?: string;
+  phone_number?: string;
+  linkedin_url?: string;
+  application_id?: string;
+}): Promise<any> {
+  const res = await apiFetch(`${API_BASE}/api/contacts`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to create contact'));
+  return await res.json();
+}
+
+export async function updateContact(contactId: string, payload: {
+  name?: string;
+  title?: string;
+  email?: string;
+  phone_number?: string;
+  linkedin_url?: string;
+  application_id?: string | null;
+  reached_out?: boolean;
+  reached_out_at?: string;
+  response_received?: boolean;
+}): Promise<any> {
+  const body = { ...payload, application_id: payload.application_id ?? undefined };
+  const res = await apiFetch(`${API_BASE}/api/contacts/${contactId}`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to update contact'));
+  return await res.json();
 }
 
 export async function linkContactToApplication(contactId: string, applicationId: string | null): Promise<void> {

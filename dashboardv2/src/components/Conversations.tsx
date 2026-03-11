@@ -9,9 +9,15 @@ import { markEmailResolved, sendEmail, generateDraft } from '../lib/api';
 interface ConversationsProps {
   emails: Email[];
   jobs: Job[];
+  focusRequest?: {
+    emailId: string;
+    threadId?: string;
+    tab: 'emails' | 'conversations';
+    token: number;
+  } | null;
 }
 
-export function Conversations({ emails, jobs }: ConversationsProps) {
+export function Conversations({ emails, jobs, focusRequest }: ConversationsProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<'all' | 'needs_reply' | 'waiting'>('all');
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
@@ -25,6 +31,18 @@ export function Conversations({ emails, jobs }: ConversationsProps) {
     setIsReplying(false);
     setReplyText('');
   }, [selectedThreadId]);
+
+  useEffect(() => {
+    if (!focusRequest) return;
+    setSearchQuery('');
+    setFilter('all');
+    const targetEmail = emails.find((email) => email.id === focusRequest.emailId);
+    const targetThreadId = focusRequest.threadId || targetEmail?.threadId || targetEmail?.id || null;
+    if (targetThreadId) {
+      setSelectedThreadId(targetThreadId);
+      setExpandedThreadId(targetThreadId);
+    }
+  }, [emails, focusRequest]);
 
   const noisyConversationDomains = new Set([
     'github.com',

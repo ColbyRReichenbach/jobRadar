@@ -74,26 +74,32 @@ async def send_email(
     db.add(event)
 
     # Upsert contact from recipient
-    if application_id:
-        app_id = _uuid.UUID(application_id)
-        contact_stmt = select(Contact).where(
-            Contact.application_id == app_id,
-            Contact.email == to,
+    app_id = _uuid.UUID(application_id) if application_id else None
+    contact_stmt = select(Contact).where(Contact.email == to)
+    if user_id:
+        contact_stmt = contact_stmt.where(Contact.user_id == user_id)
+    if app_id:
+        contact_stmt = contact_stmt.where(
+            (Contact.application_id == app_id) | (Contact.application_id.is_(None))
         )
-        if user_id:
-            contact_stmt = contact_stmt.where(Contact.user_id == user_id)
-        contact_result = await db.execute(contact_stmt)
-        existing_contact = contact_result.scalar_one_or_none()
-        if not existing_contact:
-            contact = Contact(
-                user_id=user_id,
-                application_id=app_id,
-                email=to,
-                source="outbound",
-                reached_out=True,
-                reached_out_at=datetime.now(timezone.utc),
-            )
-            db.add(contact)
+    contact_result = await db.execute(contact_stmt.limit(1))
+    existing_contact = contact_result.scalar_one_or_none()
+    if existing_contact:
+        existing_contact.reached_out = True
+        existing_contact.reached_out_at = datetime.now(timezone.utc)
+        if app_id and not existing_contact.application_id:
+            existing_contact.application_id = app_id
+        event.contact_id = existing_contact.id
+    else:
+        contact = Contact(
+            user_id=user_id,
+            application_id=app_id,
+            email=to,
+            source="outbound",
+            reached_out=True,
+            reached_out_at=datetime.now(timezone.utc),
+        )
+        db.add(contact)
 
     await db.commit()
     await db.refresh(event)
