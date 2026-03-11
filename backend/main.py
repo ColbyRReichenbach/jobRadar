@@ -80,6 +80,8 @@ app.add_exception_handler(
 app.add_middleware(SlowAPIMiddleware)
 
 MAX_REQUEST_BODY_BYTES = 1024 * 1024
+MAX_PAGE_SIZE = 100
+DEFAULT_PAGE_SIZE = 100
 
 
 def _metrics_path(request: Request) -> str:
@@ -259,6 +261,10 @@ def _escape_like(value: str) -> str:
 
 def _contains_like(value: str) -> str:
     return f"%{_escape_like(value.lower())}%"
+
+
+def _paginate(stmt, limit: int, offset: int):
+    return stmt.limit(limit).offset(offset)
 
 
 def _auth_rate_limit() -> str:
@@ -536,6 +542,8 @@ async def list_applications(
     status: Optional[str] = Query(None),
     archived: Optional[bool] = Query(None),
     umbrella_id: Optional[str] = Query(None),
+    limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    offset: int = Query(0, ge=0),
     auth: dict = Depends(verify_api_key),
     db: AsyncSession = Depends(get_db),
 ):
@@ -554,6 +562,7 @@ async def list_applications(
     if umbrella_id:
         stmt = stmt.where(Application.umbrella_id == _uuid.UUID(umbrella_id))
     stmt = stmt.order_by(Application.applied_at.desc())
+    stmt = _paginate(stmt, limit, offset)
 
     result = await db.execute(stmt)
     apps = result.scalars().unique().all()
@@ -714,6 +723,8 @@ async def update_contact(
 async def list_emails(
     application_id: Optional[str] = Query(None),
     unmatched: Optional[bool] = Query(None),
+    limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     auth: dict = Depends(verify_api_key),
 ):
@@ -732,6 +743,7 @@ async def list_emails(
         stmt = stmt.where(EmailEvent.collapsed.is_(False))
 
     stmt = stmt.order_by(EmailEvent.received_at.desc())
+    stmt = _paginate(stmt, limit, offset)
     result = await db.execute(stmt)
     events = result.scalars().all()
     return [_serialize_email_event(e) for e in events]
@@ -1545,7 +1557,12 @@ async def global_search(
 # --- Sprint 2: Company Endpoints ---
 
 @app.get("/api/companies")
-async def list_companies(db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+async def list_companies(
+    limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
     from sqlalchemy import func
     user_id = _require_user_id(auth)
 
@@ -1556,6 +1573,7 @@ async def list_companies(db: AsyncSession = Depends(get_db), auth: dict = Depend
         Application,
         (Application.company_id == Company.id) & (Application.user_id == user_id),
     ).group_by(Company.id).order_by(Company.name)
+    stmt = _paginate(stmt, limit, offset)
 
     result = await db.execute(stmt)
     rows = result.all()
@@ -1930,11 +1948,13 @@ async def get_warm_paths(job_id: str, db: AsyncSession = Depends(get_db), auth: 
 async def list_network(
     q: Optional[str] = Query(None),
     source: Optional[str] = Query(None),
+    limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     auth: dict = Depends(verify_api_key),
 ):
     """Unified network view: all contacts + unique email senders."""
-    from sqlalchemy import or_, func, distinct
+    from sqlalchemy import or_, func
     from sqlalchemy.orm import selectinload
 
     user_id = _require_user_id(auth)
@@ -1952,7 +1972,7 @@ async def list_network(
         )
     if source:
         contact_stmt = contact_stmt.where(Contact.source == source)
-    contact_stmt = contact_stmt.limit(100)
+    contact_stmt = contact_stmt.order_by(Contact.id).offset(offset).limit(limit)
     contact_result = await db.execute(contact_stmt)
     contacts = contact_result.scalars().all()
 
@@ -1988,7 +2008,7 @@ async def list_network(
         EmailEvent.is_from_user.is_(False),
     ).group_by(
         EmailEvent.sender_email, EmailEvent.sender, EmailEvent.company_name,
-    ).limit(200)
+    ).order_by(func.max(EmailEvent.received_at).desc()).offset(offset).limit(limit)
     email_result = await db.execute(email_stmt)
     for row in email_result.all():
         email_addr = (row[0] or "").lower()
@@ -2012,7 +2032,7 @@ async def list_network(
             "last_interaction_at": row[4].isoformat() if row[4] else None,
         })
 
-    return contacts_list
+    return contacts_list[:limit]
 
 
 @app.get("/api/network/{email}")
@@ -2065,6 +2085,8 @@ async def get_network_contact(email: EmailStr, db: AsyncSession = Depends(get_db
 @app.get("/api/alerts")
 async def list_alerts(
     unread: Optional[bool] = Query(None),
+    limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     auth: dict = Depends(verify_api_key),
 ):
@@ -2073,7 +2095,7 @@ async def list_alerts(
     stmt = select(Alert).where(Alert.user_id == user_id).order_by(Alert.created_at.desc())
     if unread:
         stmt = stmt.where(Alert.read.is_(False))
-    stmt = stmt.limit(50)
+    stmt = _paginate(stmt, limit, offset)
     result = await db.execute(stmt)
     alerts = result.scalars().all()
     return [
@@ -2274,6 +2296,8 @@ async def create_interview(
 @app.get("/api/interviews")
 async def list_interviews(
     application_id: Optional[str] = Query(None),
+    limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     auth: dict = Depends(verify_api_key),
 ):
@@ -2282,13 +2306,18 @@ async def list_interviews(
     stmt = select(Interview).where(Interview.user_id == user_id).order_by(Interview.scheduled_at.desc().nullslast())
     if application_id:
         stmt = stmt.where(Interview.application_id == _uuid.UUID(application_id))
-    stmt = stmt.limit(100)
+    stmt = _paginate(stmt, limit, offset)
     result = await db.execute(stmt)
     return [_serialize_interview(i) for i in result.scalars().all()]
 
 
 @app.get("/api/interviews/upcoming")
-async def upcoming_interviews(db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+async def upcoming_interviews(
+    limit: int = Query(20, ge=1, le=MAX_PAGE_SIZE),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
     """Get upcoming interviews (scheduled in the future)."""
     user_id = _require_user_id(auth)
     now = datetime.now(timezone.utc)
@@ -2296,7 +2325,8 @@ async def upcoming_interviews(db: AsyncSession = Depends(get_db), auth: dict = D
         Interview.user_id == user_id,
         Interview.scheduled_at > now,
         Interview.outcome == "pending",
-    ).order_by(Interview.scheduled_at.asc()).limit(20)
+    ).order_by(Interview.scheduled_at.asc())
+    stmt = _paginate(stmt, limit, offset)
     result = await db.execute(stmt)
     return [_serialize_interview(i) for i in result.scalars().all()]
 
@@ -2483,7 +2513,13 @@ async def create_interview_note(
 
 
 @app.get("/api/interviews/{interview_id}/notes")
-async def list_interview_notes(interview_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+async def list_interview_notes(
+    interview_id: str,
+    limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
     """List all notes for an interview."""
     import uuid as _uuid
     user_id = _require_user_id(auth)
@@ -2495,6 +2531,7 @@ async def list_interview_notes(interview_id: str, db: AsyncSession = Depends(get
         .where(Interview.user_id == user_id)
         .order_by(InterviewNote.created_at.desc())
     )
+    stmt = _paginate(stmt, limit, offset)
     result = await db.execute(stmt)
     return [_serialize_note(n) for n in result.scalars().all()]
 
@@ -3005,6 +3042,8 @@ async def record_company_visit(payload: CompanyVisitPayload, db: AsyncSession = 
 @app.get("/api/company-visits")
 async def list_company_visits(
     min_visits: int = Query(default=1, ge=1),
+    limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     auth: dict = Depends(verify_api_key),
 ):
@@ -3015,7 +3054,8 @@ async def list_company_visits(
         .where(CompanyVisit.user_id == user_id)
         .where(CompanyVisit.visit_count >= min_visits)
         .order_by(CompanyVisit.last_visited_at.desc())
-        .limit(100)
+        .limit(limit)
+        .offset(offset)
     )
     result = await db.execute(stmt)
     visits = result.scalars().all()
@@ -3311,6 +3351,8 @@ async def tailor_resume_endpoint(
 @app.get("/api/resume/drafts/{application_id}")
 async def list_resume_drafts(
     application_id: str,
+    limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     auth: dict = Depends(verify_api_key),
 ):
@@ -3328,6 +3370,7 @@ async def list_resume_drafts(
     )
     if user_id:
         stmt = stmt.where(ResumeDraft.user_id == user_id)
+    stmt = _paginate(stmt, limit, offset)
     result = await db.execute(stmt)
     drafts = result.scalars().all()
 
