@@ -3,6 +3,7 @@ import { Job, Email, Contact } from '../types';
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 let _accessToken: string | null = null;
+let _unauthorizedHandler: (() => void) | null = null;
 
 function getToken(): string {
   return _accessToken || '';
@@ -24,6 +25,15 @@ function resolveUrl(pathOrUrl: string): string {
   return `${API_BASE}${pathOrUrl}`;
 }
 
+function notifyUnauthorized() {
+  _accessToken = null;
+  _unauthorizedHandler?.();
+  fetch(`${API_BASE}/api/auth/logout`, {
+    method: 'POST',
+    credentials: 'include',
+  }).catch(() => {});
+}
+
 /**
  * Wrapper around fetch that auto-refreshes on 401.
  */
@@ -39,6 +49,10 @@ export async function apiFetch(pathOrUrl: string, options: RequestInit = {}): Pr
       const retryHeaders = { ...options.headers as Record<string, string> };
       retryHeaders['Authorization'] = `Bearer ${_accessToken}`;
       res = await fetch(url, { ...options, headers: retryHeaders, credentials: 'include' });
+    }
+
+    if (res.status === 401) {
+      notifyUnauthorized();
     }
   }
 
@@ -160,9 +174,14 @@ export function setAuthToken(token: string) {
   _accessToken = token;
 }
 
+export function setUnauthorizedHandler(handler: (() => void) | null) {
+  _unauthorizedHandler = handler;
+}
+
 export function clearAuthToken() {
   const token = _accessToken;
   _accessToken = null;
+  _unauthorizedHandler?.();
   // Also call logout to clear refresh cookie
   fetch(`${API_BASE}/api/auth/logout`, {
     method: 'POST',

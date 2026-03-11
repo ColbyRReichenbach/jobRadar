@@ -438,7 +438,7 @@
 | # | Task | Gaps Addressed | Status | Notes |
 |---|------|----------------|--------|-------|
 | 1 | Add React ErrorBoundary with fallback UI | GAP-016 | Done | Added a root dashboard `ErrorBoundary` with a branded fallback state and recovery actions around the full app tree |
-| 2 | Add global 401 interceptor with auto-logout | GAP-017 | Not Started |  |
+| 2 | Add global 401 interceptor with auto-logout | GAP-017 | Done | `api.ts` now performs centralized 401 handling after failed refresh, clears auth state, clears the refresh cookie, and notifies `AuthContext` to return the dashboard to the signed-out state |
 | 3 | Replace silent mock data fallback with error banner | GAP-020 | Not Started |  |
 | 4 | Add optimistic update rollback on API failure | GAP-021 | Not Started |  |
 | 5 | Add aria-labels, focus trapping, keyboard navigation | GAP-022 | Not Started |  |

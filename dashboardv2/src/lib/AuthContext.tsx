@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react';
-import { UserProfile, fetchMe, clearAuthToken, getGoogleAuthUrl } from './api';
+import { UserProfile, fetchMe, clearAuthToken, getGoogleAuthUrl, setUnauthorizedHandler } from './api';
 
 interface AuthContextType {
   user: UserProfile | null;
@@ -44,6 +44,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     refreshUser();
   }, [refreshUser]);
 
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      setUser(null);
+      setLoading(false);
+    });
+
+    return () => setUnauthorizedHandler(null);
+  }, []);
+
   const signIn = useCallback(async () => {
     const url = await getGoogleAuthUrl(false);
     window.location.href = url;
@@ -51,7 +60,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(() => {
     clearAuthToken();
-    setUser(null);
   }, []);
 
   const connectGmail = useCallback(async () => {
