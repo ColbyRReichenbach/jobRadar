@@ -1,7 +1,16 @@
 // LinkedIn content script — runs on linkedin.com/jobs/view/* only
 // Reads DOM data when requested by sidepanel. No backend calls.
 
+function isTrustedExtensionSender(sender) {
+  return sender?.id === chrome.runtime.id;
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (!isTrustedExtensionSender(sender)) {
+    sendResponse(null);
+    return false;
+  }
+
   if (message.type === "EXTRACT_LINKEDIN_JOB") {
     const jobData = extractLinkedInJob();
     sendResponse(jobData);

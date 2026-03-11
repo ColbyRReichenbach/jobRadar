@@ -392,7 +392,7 @@
 | # | Task | Gaps Addressed | Status | Notes |
 |---|------|----------------|--------|-------|
 | 1 | Make API_BASE configurable (chrome.storage), default to HTTPS prod URL | GAP-004 | Done | Extension now reads a stored backend URL from `chrome.storage.local`, defaults to `https://api.apptrail.com`, and allows localhost overrides via setup |
-| 2 | Add sender origin validation to all message handlers | GAP-023 | Not Started |  |
+| 2 | Add sender origin validation to all message handlers | GAP-023 | Done | Background and LinkedIn content-script message handlers now reject senders whose `sender.id` does not match `chrome.runtime.id` |
 | 3 | Move API key to chrome.storage.session or encrypt | GAP-024 | Not Started |  |
 | 4 | Reduce host_permissions, use optional_host_permissions | GAP-026 | Not Started |  |
 | 5 | Add offline detection, retry queue, error states | GAP-027 | Not Started |  |

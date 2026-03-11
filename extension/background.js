@@ -15,8 +15,17 @@ chrome.sidePanel
   .setPanelBehavior({ openPanelOnActionClick: true })
   .catch(() => {});
 
+function isTrustedExtensionSender(sender) {
+  return sender?.id === chrome.runtime.id;
+}
+
 // --- Sprint 17: Handle tracker.js messages ---
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (!isTrustedExtensionSender(sender)) {
+    sendResponse({ ok: false, error: "untrusted_sender" });
+    return false;
+  }
+
   if (message.type === "CAREER_PAGE_VISIT") {
     // Store visit data for nudge display in side panel
     handleCareerPageVisit(message).then(() => sendResponse({ ok: true }));
