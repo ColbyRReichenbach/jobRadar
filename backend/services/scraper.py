@@ -1,8 +1,11 @@
 import asyncio
+import ipaddress
 import json
 import logging
 import random
 import re
+import socket
+from urllib.parse import urlparse
 
 import httpx
 from bs4 import BeautifulSoup
@@ -16,6 +19,79 @@ REALISTIC_UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 )
+
+ALLOWED_JOB_HOST_SUFFIXES = (
+    "linkedin.com",
+    "indeed.com",
+    "boards.greenhouse.io",
+    "greenhouse.io",
+    "jobs.lever.co",
+    "lever.co",
+    "myworkdayjobs.com",
+    "myworkday.com",
+    "workdayjobs.com",
+    "jobs.ashbyhq.com",
+    "ashbyhq.com",
+    "smartrecruiters.com",
+    "jobvite.com",
+    "icims.com",
+    "taleo.net",
+    "oraclecloud.com",
+    "successfactors.com",
+)
+
+
+def _is_allowed_job_host(hostname: str) -> bool:
+    host = hostname.lower().rstrip(".")
+    return any(host == suffix or host.endswith(f".{suffix}") for suffix in ALLOWED_JOB_HOST_SUFFIXES)
+
+
+def _is_disallowed_ip(value: str) -> bool:
+    ip = ipaddress.ip_address(value)
+    return (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_multicast
+        or ip.is_reserved
+        or ip.is_unspecified
+    )
+
+
+async def validate_job_parse_url(url: str) -> str:
+    parsed = urlparse(url)
+    if parsed.scheme.lower() != "https":
+        raise ValueError("Only HTTPS job URLs are allowed")
+
+    if not parsed.hostname:
+        raise ValueError("Invalid job URL")
+
+    hostname = parsed.hostname.lower().rstrip(".")
+    if hostname == "localhost":
+        raise ValueError("Local or private network addresses are not allowed")
+
+    try:
+        parsed_ip = ipaddress.ip_address(hostname)
+    except ValueError:
+        parsed_ip = None
+    if parsed_ip and _is_disallowed_ip(str(parsed_ip)):
+        raise ValueError("Local or private network addresses are not allowed")
+
+    if not _is_allowed_job_host(hostname):
+        raise ValueError("Job URL host is not supported")
+
+    loop = asyncio.get_running_loop()
+    try:
+        addrinfo = await loop.getaddrinfo(hostname, None, type=socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        raise ValueError("Unable to resolve job URL host") from exc
+
+    for entry in addrinfo:
+        ip_value = entry[4][0]
+        if _is_disallowed_ip(ip_value):
+            raise ValueError("Local or private network addresses are not allowed")
+
+    return parsed.geturl()
 
 
 def detect_platform(url: str) -> str | None:

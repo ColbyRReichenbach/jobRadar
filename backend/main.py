@@ -18,7 +18,7 @@ from backend.database import get_db
 from backend.dependencies import verify_api_key, create_jwt, create_refresh_token, decode_jwt, decode_refresh_token, get_current_user, set_refresh_cookie, clear_refresh_cookie, blacklist_token, REFRESH_COOKIE_NAME, generate_api_key, hash_api_key
 from backend.models import Application, Contact, EmailEvent, EmailFeedback, User, GmailToken, Company, RoleUmbrella, CompanyTechProfile, UserProfile, UserRoleInterest, AtsBehavior, WarmConnection, Alert, Interview, CompanyVisit, InterviewNote, NotificationPreference, ResumeDraft
 from backend.services.hunter import find_contacts, generate_linkedin_search_url
-from backend.services.scraper import extract_job
+from backend.services.scraper import extract_job, validate_job_parse_url
 
 app = FastAPI(title="AppTrail API")
 
@@ -293,7 +293,12 @@ async def health():
 
 @app.post("/api/jobs/parse", dependencies=[Depends(verify_api_key)])
 async def parse_job(req: JobParseRequest):
-    result = await extract_job(req.url)
+    try:
+        validated_url = await validate_job_parse_url(req.url)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    result = await extract_job(validated_url)
     return {"status": "ok", "data": result}
 
 
