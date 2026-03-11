@@ -407,17 +407,17 @@
 **Goal:** Containerize, automate CI/CD, configure production database.
 **Estimated effort:** 16 hours
 
-| # | Task | Gaps Addressed |
-|---|------|----------------|
-| 1 | Create backend Dockerfile (Python 3.10 + uvicorn) | GAP-029 |
-| 2 | Create dashboard Dockerfile (Node 18 + Vite static) | GAP-029 |
-| 3 | Create docker-compose.yml (backend, dashboard, postgres, redis) | GAP-029 |
-| 4 | Create Procfile for Railway/Render | GAP-029 |
-| 5 | Create GitHub Actions: test on PR | GAP-030 |
-| 6 | Create GitHub Actions: build+deploy on merge | GAP-030 |
-| 7 | Add connection pooling to database.py | GAP-031 |
-| 8 | Create gunicorn.conf.py / uvicorn production config | GAP-032 |
-| 9 | Add Celery worker production settings (concurrency, timeouts) | GAP-033 |
+| # | Task | Gaps Addressed | Status | Notes |
+|---|------|----------------|--------|-------|
+| 1 | Create backend Dockerfile (Python 3.10 + uvicorn) | GAP-029 | Done | Added `backend/Dockerfile` with Python 3.10, dependency install, Playwright Chromium support, and a uvicorn startup command |
+| 2 | Create dashboard Dockerfile (Node 18 + Vite static) | GAP-029 | Not Started |  |
+| 3 | Create docker-compose.yml (backend, dashboard, postgres, redis) | GAP-029 | Not Started |  |
+| 4 | Create Procfile for Railway/Render | GAP-029 | Not Started |  |
+| 5 | Create GitHub Actions: test on PR | GAP-030 | Not Started |  |
+| 6 | Create GitHub Actions: build+deploy on merge | GAP-030 | Not Started |  |
+| 7 | Add connection pooling to database.py | GAP-031 | Not Started |  |
+| 8 | Create gunicorn.conf.py / uvicorn production config | GAP-032 | Not Started |  |
+| 9 | Add Celery worker production settings (concurrency, timeouts) | GAP-033 | Not Started |  |
 
 ### Sprint H5: Monitoring, Logging & Observability
 **Goal:** Production-grade observability.
