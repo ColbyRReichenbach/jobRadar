@@ -29,6 +29,8 @@ develop-eggs/
 lib/
 lib64/
 .Python
+!dashboardv2/src/lib/
+!dashboardv2/src/lib/**
 
 # Virtual Environments
 .venv/
