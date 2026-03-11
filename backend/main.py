@@ -250,6 +250,7 @@ class EmailUpdate(BaseModel):
     application_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
     classification: Optional[str] = Field(None, max_length=MAX_SHORT_TEXT_LEN)
     resolved: Optional[bool] = None
+    hidden: Optional[bool] = None
 
 
 # --- Helpers ---
@@ -448,6 +449,7 @@ def _serialize_email_event(event: EmailEvent) -> dict:
         "summary": event.summary,
         "read": event.read,
         "collapsed": event.collapsed,
+        "hidden": event.hidden,
         "company_name": event.company_name,
         "company_logo_url": event.company_logo_url,
         "sender_domain": event.sender_domain,
@@ -884,7 +886,8 @@ async def list_emails(
     from sqlalchemy.orm import selectinload
 
     stmt = select(EmailEvent).options(selectinload(EmailEvent.application)).where(
-        EmailEvent.user_id == user_id
+        EmailEvent.user_id == user_id,
+        EmailEvent.hidden.is_(False),
     )
 
     if application_id:
@@ -938,6 +941,12 @@ async def update_email(
         event.classification = payload.classification
     if payload.resolved is not None:
         event.resolved = payload.resolved
+        if payload.resolved:
+            event.collapsed = True
+    if payload.hidden is not None:
+        event.hidden = payload.hidden
+        if payload.hidden:
+            event.collapsed = True
 
     await db.commit()
     await db.refresh(event)

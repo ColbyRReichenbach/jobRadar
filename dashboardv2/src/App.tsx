@@ -78,9 +78,8 @@ function AppContent() {
   const showInbox = activeTab !== 'emails' && activeTab !== 'conversations';
 
   const handleOpenEmail = useCallback((email: any) => {
-    const tab = email.email_type === 'conversation' || email.type === 'conversation' || email.thread_id || email.threadId
-      ? 'conversations'
-      : 'emails';
+    const emailKind = email.email_type || email.type;
+    const tab = emailKind === 'conversation' ? 'conversations' : 'emails';
     setActiveTab(tab);
     setEmailFocusRequest({
       emailId: email.id,

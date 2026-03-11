@@ -55,7 +55,11 @@ export interface Email {
   senderDomain?: string;
   confidence?: number;
   summary?: string;
+  category?: string;
+  colorCode?: string;
   inPipeline?: boolean;
   resolved?: boolean;
+  hidden?: boolean;
+  collapsed?: boolean;
   actionUrl?: string;
 }

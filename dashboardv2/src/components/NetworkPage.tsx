@@ -109,6 +109,8 @@ export function NetworkPage({ onOpenEmail, onRefreshData }: NetworkPageProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const contactFormCloseRef = useRef<HTMLButtonElement>(null);
   const composeCloseRef = useRef<HTMLButtonElement>(null);
+  const contactNameInputRef = useRef<HTMLInputElement>(null);
+  const composeToInputRef = useRef<HTMLInputElement>(null);
   const [contacts, setContacts] = useState<NetworkContact[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
@@ -402,7 +404,7 @@ export function NetworkPage({ onOpenEmail, onRefreshData }: NetworkPageProps) {
                         event.stopPropagation();
                         openCompose(contact);
                       }}
-                      className="text-xs font-medium text-indigo-600 hover:text-indigo-700 opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="text-[11px] font-medium text-indigo-600 hover:text-indigo-700 opacity-0 group-hover:opacity-100 transition-opacity"
                     >
                       Email
                     </button>
@@ -452,7 +454,7 @@ export function NetworkPage({ onOpenEmail, onRefreshData }: NetworkPageProps) {
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-slate-200 rounded-lg text-slate-700 hover:bg-slate-50"
                   >
                     <Pencil className="w-3.5 h-3.5" />
-                    {selectedContact.id.startsWith('email-') ? 'Save Contact' : 'Edit'}
+                    Edit Contact
                   </button>
                   <button
                     ref={closeButtonRef}
@@ -618,7 +620,7 @@ export function NetworkPage({ onOpenEmail, onRefreshData }: NetworkPageProps) {
           <DialogShell
             onClose={() => setShowComposeModal(false)}
             titleId={composeDialogTitleId}
-            initialFocusRef={composeCloseRef}
+            initialFocusRef={composeToInputRef}
             wrapperClassName="fixed inset-0 z-50 flex items-center justify-center p-4"
             overlayClassName="absolute inset-0 bg-slate-900/20 backdrop-blur-sm"
             panelClassName="bg-white w-full max-w-xl rounded-3xl shadow-2xl overflow-hidden"
@@ -641,6 +643,7 @@ export function NetworkPage({ onOpenEmail, onRefreshData }: NetworkPageProps) {
                   To
                 </label>
                 <input
+                  ref={composeToInputRef}
                   value={composeState.to}
                   onChange={(event) => setComposeState((prev) => ({ ...prev, to: event.target.value }))}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm"
@@ -694,7 +697,7 @@ export function NetworkPage({ onOpenEmail, onRefreshData }: NetworkPageProps) {
           <DialogShell
             onClose={() => setShowContactForm(false)}
             titleId={contactFormTitleId}
-            initialFocusRef={contactFormCloseRef}
+            initialFocusRef={contactNameInputRef}
             wrapperClassName="fixed inset-0 z-50 flex items-center justify-center p-4"
             overlayClassName="absolute inset-0 bg-slate-900/20 backdrop-blur-sm"
             panelClassName="bg-white w-full max-w-xl rounded-3xl shadow-2xl overflow-hidden"
@@ -717,6 +720,7 @@ export function NetworkPage({ onOpenEmail, onRefreshData }: NetworkPageProps) {
                   Name
                 </label>
                 <input
+                  ref={contactNameInputRef}
                   value={contactFormState.name}
                   onChange={(event) => setContactFormState((prev) => ({ ...prev, name: event.target.value }))}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm"

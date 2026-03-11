@@ -151,6 +151,7 @@ class EmailEvent(Base):
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     read: Mapped[bool] = mapped_column(Boolean, default=False)
     collapsed: Mapped[bool] = mapped_column(Boolean, default=False)
+    hidden: Mapped[bool] = mapped_column(Boolean, default=False)
     company_name: Mapped[str | None] = mapped_column(Text, nullable=True)
     company_logo_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     sender_domain: Mapped[str | None] = mapped_column(Text, nullable=True)

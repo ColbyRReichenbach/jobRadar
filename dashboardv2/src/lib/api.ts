@@ -336,8 +336,12 @@ function mapEmail(raw: any): Email {
     senderDomain: raw.sender_domain || undefined,
     confidence: raw.confidence || undefined,
     summary: raw.summary || undefined,
+    category: raw.classification || undefined,
+    colorCode: raw.color_code || undefined,
     inPipeline: raw.application_id ? true : false,
     resolved: raw.resolved || false,
+    hidden: raw.hidden || false,
+    collapsed: raw.collapsed || false,
     actionUrl: raw.action_url || undefined,
   };
 }
@@ -433,6 +437,23 @@ export async function markEmailResolved(id: string): Promise<void> {
     headers: authHeaders(),
     body: JSON.stringify({ resolved: true }),
   });
+}
+
+export async function updateEmail(id: string, payload: {
+  read?: boolean;
+  collapsed?: boolean;
+  application_id?: string;
+  classification?: string;
+  resolved?: boolean;
+  hidden?: boolean;
+}): Promise<Email> {
+  const res = await apiFetch(`${API_BASE}/api/emails/${id}`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to update email'));
+  return mapEmail(await res.json());
 }
 
 // --- Search API ---
