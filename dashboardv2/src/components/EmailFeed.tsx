@@ -15,7 +15,7 @@ interface EmailFeedProps {
   forceOpen?: boolean;
 }
 
-const EMAIL_ROW_HEIGHT = 148;
+const EMAIL_ROW_HEIGHT = 124;
 
 const NOISY_INBOX_DOMAINS = new Set([
   'github.com',
@@ -53,7 +53,7 @@ function EmailListRow({ index, style, data }: ListChildComponentProps<EmailListI
   const isSelected = data.selectedEmailId === email.id;
   const rowStyle: CSSProperties = {
     ...style,
-    padding: '0 16px 8px 16px',
+    padding: '0 12px 6px 12px',
   };
 
   return (
@@ -61,7 +61,7 @@ function EmailListRow({ index, style, data }: ListChildComponentProps<EmailListI
       <div
         onClick={() => data.onSelectEmail(email)}
         className={cn(
-          "p-4 transition-all cursor-pointer rounded-2xl border group relative",
+          "p-3 transition-all cursor-pointer rounded-2xl border group relative",
           isSelected
             ? "bg-indigo-50 border-indigo-200 shadow-sm"
             : email.read
@@ -75,7 +75,7 @@ function EmailListRow({ index, style, data }: ListChildComponentProps<EmailListI
           </div>
         )}
 
-        <div className="flex items-start justify-between mb-2">
+        <div className="flex items-start justify-between mb-1.5">
           <div className="flex items-center gap-3 min-w-0">
             {logoUrl ? (
               <img
@@ -102,15 +102,15 @@ function EmailListRow({ index, style, data }: ListChildComponentProps<EmailListI
           </span>
         </div>
 
-        <h3 className="mb-1 text-sm font-serif font-bold text-slate-900 truncate">
+        <h3 className="mb-0.5 text-sm font-serif font-bold text-slate-900 truncate">
           {email.subject}
         </h3>
 
-        <p className="text-xs line-clamp-2 mb-3 leading-relaxed text-slate-500">
+        <p className="text-xs line-clamp-2 mb-2 leading-relaxed text-slate-500">
           {email.snippet}
         </p>
 
-        <div className="flex items-center justify-between mt-2 pt-3 border-t border-slate-100/50">
+        <div className="flex items-center justify-between mt-1.5 pt-2 border-t border-slate-100/50">
           <div className={cn(
             "flex items-center gap-1.5 px-2 py-1 text-[10px] uppercase tracking-wider rounded-md font-semibold",
             data.getClassificationColor(email.classification)
