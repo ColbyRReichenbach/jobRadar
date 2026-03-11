@@ -2,6 +2,7 @@ import os
 import time
 from datetime import datetime, timezone
 from typing import Optional
+from uuid import uuid4
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
@@ -16,11 +17,16 @@ load_dotenv(override=True)
 
 from backend.database import async_session_factory, get_db
 from backend.dependencies import verify_api_key, create_jwt, create_refresh_token, decode_jwt, decode_refresh_token, get_current_user, set_refresh_cookie, clear_refresh_cookie, blacklist_token, REFRESH_COOKIE_NAME, generate_api_key, hash_api_key
+from backend.logging_config import configure_logging
 from backend.models import Application, Contact, EmailEvent, EmailFeedback, User, GmailToken, Company, RoleUmbrella, CompanyTechProfile, UserProfile, UserRoleInterest, AtsBehavior, WarmConnection, Alert, Interview, CompanyVisit, InterviewNote, NotificationPreference, ResumeDraft
 from backend.services.hunter import find_contacts, generate_linkedin_search_url
 from backend.services.scraper import extract_job, validate_job_parse_url
+import structlog
+
+configure_logging()
 
 app = FastAPI(title="AppTrail API")
+request_logger = structlog.get_logger("backend.request")
 
 _cors_origins = [
     "http://localhost:3000",
@@ -64,6 +70,39 @@ async def limit_request_body_size(request: Request, call_next):
             )
 
     return await call_next(request)
+
+
+@app.middleware("http")
+async def bind_request_logging_context(request: Request, call_next):
+    import structlog
+
+    structlog.contextvars.clear_contextvars()
+    request_id = (request.headers.get("x-request-id") or "").strip()[:255] or str(uuid4())
+    start_time = time.perf_counter()
+    structlog.contextvars.bind_contextvars(
+        request_id=request_id,
+        method=request.method,
+        path=request.url.path,
+    )
+
+    try:
+        response = await call_next(request)
+    except Exception:
+        request_logger.exception(
+            "request_failed",
+            duration_ms=round((time.perf_counter() - start_time) * 1000, 2),
+        )
+        structlog.contextvars.clear_contextvars()
+        raise
+
+    response.headers["X-Request-ID"] = request_id
+    request_logger.info(
+        "request_completed",
+        status_code=response.status_code,
+        duration_ms=round((time.perf_counter() - start_time) * 1000, 2),
+    )
+    structlog.contextvars.clear_contextvars()
+    return response
 
 
 # --- Schemas ---

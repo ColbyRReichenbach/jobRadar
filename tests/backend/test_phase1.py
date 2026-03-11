@@ -9,9 +9,17 @@ async def test_health_endpoint(client):
     data = resp.json()
     assert data["status"] == "ok"
     assert "timestamp" in data
+    assert "x-request-id" in resp.headers
     assert data["checks"]["api"]["status"] == "ok"
     assert data["checks"]["database"]["status"] == "ok"
     assert data["checks"]["redis"]["status"] == "not_configured"
+
+
+@pytest.mark.asyncio
+async def test_health_endpoint_echoes_request_id(client):
+    resp = await client.get("/api/health", headers={"X-Request-ID": "req-test-123"})
+    assert resp.status_code == 200
+    assert resp.headers["x-request-id"] == "req-test-123"
 
 
 @pytest.mark.asyncio
