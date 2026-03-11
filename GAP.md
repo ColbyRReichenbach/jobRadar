@@ -417,7 +417,7 @@
 | 6 | Create GitHub Actions: build+deploy on merge | GAP-030 | Done | Added `.github/workflows/deploy.yml` for `main` merges and manual runs; deploys backend via Railway CLI and dashboard via Vercel CLI when the required secrets are configured |
 | 7 | Add connection pooling to database.py | GAP-031 | Done | `backend/database.py` now applies configurable pool sizing, timeout, recycle, pre-ping, and LIFO settings for non-SQLite deployments while leaving SQLite test/dev setups unchanged |
 | 8 | Create gunicorn.conf.py / uvicorn production config | GAP-032 | Done | Added `gunicorn.conf.py`, added `gunicorn` to requirements, and switched backend container/Procfile web entrypoints to Gunicorn with Uvicorn workers |
-| 9 | Add Celery worker production settings (concurrency, timeouts) | GAP-033 | Not Started |  |
+| 9 | Add Celery worker production settings (concurrency, timeouts) | GAP-033 | Done | Celery now reads worker concurrency, prefetch, task limits, task recycling, retry-on-startup, and result expiry from config/env; Procfile worker no longer hardcodes concurrency |
 
 ### Sprint H5: Monitoring, Logging & Observability
 **Goal:** Production-grade observability.

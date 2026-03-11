@@ -20,8 +20,16 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="UTC",
     enable_utc=True,
+    broker_connection_retry_on_startup=True,
     task_default_retry_delay=60,
     task_default_max_retries=3,
+    task_acks_late=True,
+    worker_prefetch_multiplier=int(os.getenv("CELERY_PREFETCH_MULTIPLIER", "1")),
+    worker_concurrency=int(os.getenv("CELERY_CONCURRENCY", "4")),
+    worker_max_tasks_per_child=int(os.getenv("CELERY_MAX_TASKS_PER_CHILD", "100")),
+    task_soft_time_limit=int(os.getenv("CELERY_SOFT_TIME_LIMIT_SECONDS", "300")),
+    task_time_limit=int(os.getenv("CELERY_TIME_LIMIT_SECONDS", "600")),
+    result_expires=int(os.getenv("CELERY_RESULT_EXPIRES_SECONDS", "3600")),
     beat_schedule={
         "poll-gmail-every-15-min": {
             "task": "backend.tasks.poll_gmail.poll_gmail",
