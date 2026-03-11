@@ -175,12 +175,13 @@ async def get_current_user(authorization: str = Header(...), db: AsyncSession = 
 def set_refresh_cookie(response, refresh_token: str) -> None:
     """Set the refresh token as an HttpOnly secure cookie on the response."""
     is_prod = os.getenv("ENVIRONMENT", "development") != "development"
+    same_site = "none" if is_prod else "lax"
     response.set_cookie(
         key=REFRESH_COOKIE_NAME,
         value=refresh_token,
         httponly=True,
         secure=is_prod,
-        samesite="lax",
+        samesite=same_site,
         max_age=REFRESH_TOKEN_EXPIRY,
         path="/api/auth",
     )
@@ -188,7 +189,11 @@ def set_refresh_cookie(response, refresh_token: str) -> None:
 
 def clear_refresh_cookie(response) -> None:
     """Clear the refresh token cookie."""
+    is_prod = os.getenv("ENVIRONMENT", "development") != "development"
+    same_site = "none" if is_prod else "lax"
     response.delete_cookie(
         key=REFRESH_COOKIE_NAME,
+        secure=is_prod,
+        samesite=same_site,
         path="/api/auth",
     )
