@@ -412,7 +412,7 @@
 | 1 | Create backend Dockerfile (Python 3.10 + uvicorn) | GAP-029 | Done | Added `backend/Dockerfile` with Python 3.10, dependency install, Playwright Chromium support, and a uvicorn startup command |
 | 2 | Create dashboard Dockerfile (Node 18 + Vite static) | GAP-029 | Done | Added `dashboardv2/Dockerfile` with a Node 18 build stage and nginx static runtime, plus SPA fallback config in `dashboardv2/nginx.conf` |
 | 3 | Create docker-compose.yml (backend, dashboard, postgres, redis) | GAP-029 | Done | Added `docker-compose.yml` with backend, dashboard, Postgres, and Redis services plus health checks, volumes, and local dev environment defaults |
-| 4 | Create Procfile for Railway/Render | GAP-029 | Not Started |  |
+| 4 | Create Procfile for Railway/Render | GAP-029 | Done | Added root `Procfile` with `release`, `web`, `worker`, and `beat` processes for Alembic, uvicorn, Celery worker, and Celery beat |
 | 5 | Create GitHub Actions: test on PR | GAP-030 | Not Started |  |
 | 6 | Create GitHub Actions: build+deploy on merge | GAP-030 | Not Started |  |
 | 7 | Add connection pooling to database.py | GAP-031 | Not Started |  |
