@@ -25,3 +25,32 @@ def test_structlog_json_logging_includes_request_context():
     assert payload["level"] == "info"
 
     structlog.contextvars.clear_contextvars()
+
+
+def test_structlog_redacts_sensitive_values():
+    stream = io.StringIO()
+    configure_logging(stream=stream, force=True)
+
+    structlog.get_logger("backend.test").info(
+        "authorization failure",
+        api_key="secret-key",
+        authorization="Bearer secret-token",
+        nested={"refresh_token": "refresh-secret"},
+    )
+
+    payload = json.loads(stream.getvalue().strip())
+    assert payload["api_key"] == "[REDACTED]"
+    assert payload["authorization"] == "[REDACTED]"
+    assert payload["nested"]["refresh_token"] == "[REDACTED]"
+
+
+def test_stdlib_logging_redacts_bearer_tokens():
+    stream = io.StringIO()
+    configure_logging(stream=stream, force=True)
+
+    logging.getLogger("backend.test").error(
+        "Authorization header Bearer secret-token api_key=abc123"
+    )
+
+    payload = json.loads(stream.getvalue().strip())
+    assert payload["event"] == "Authorization header [REDACTED] api_key=[REDACTED]"

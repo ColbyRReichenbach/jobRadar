@@ -1,4 +1,5 @@
 import logging
+import re
 import sys
 from typing import TextIO
 
@@ -6,6 +7,53 @@ import structlog
 
 
 _LOGGING_CONFIGURED = False
+_REDACTED = "[REDACTED]"
+_SENSITIVE_KEYS = {
+    "authorization",
+    "cookie",
+    "set-cookie",
+    "password",
+    "secret",
+    "token",
+    "access_token",
+    "refresh_token",
+    "api_key",
+    "x-api-key",
+}
+_SENSITIVE_PATTERNS = [
+    re.compile(r"Bearer\s+[A-Za-z0-9._\-]+", re.IGNORECASE),
+    re.compile(r"(api[_-]?key=)([^&\s]+)", re.IGNORECASE),
+    re.compile(r"(token=)([^&\s]+)", re.IGNORECASE),
+]
+
+
+def _redact_string(value: str) -> str:
+    redacted = value
+    for pattern in _SENSITIVE_PATTERNS:
+        redacted = pattern.sub(lambda match: match.group(1) + _REDACTED if match.lastindex and match.lastindex > 1 else _REDACTED, redacted)
+    return redacted
+
+
+def _sanitize_value(value):
+    if isinstance(value, dict):
+        sanitized = {}
+        for key, item in value.items():
+            if key.lower() in _SENSITIVE_KEYS:
+                sanitized[key] = _REDACTED
+            else:
+                sanitized[key] = _sanitize_value(item)
+        return sanitized
+    if isinstance(value, list):
+        return [_sanitize_value(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_sanitize_value(item) for item in value)
+    if isinstance(value, str):
+        return _redact_string(value)
+    return value
+
+
+def redact_sensitive_data(_, __, event_dict):
+    return _sanitize_value(event_dict)
 
 
 def configure_logging(
@@ -27,6 +75,7 @@ def configure_logging(
         timestamper,
         structlog.processors.StackInfoRenderer(),
         structlog.processors.format_exc_info,
+        redact_sensitive_data,
     ]
 
     structlog.reset_defaults()
@@ -52,4 +101,3 @@ def configure_logging(
     root_logger.setLevel(level)
 
     _LOGGING_CONFIGURED = True
-

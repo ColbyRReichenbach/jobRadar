@@ -429,7 +429,7 @@
 | 2 | Add structlog with JSON output + request ID tracking | GAP-035 | Done | Added shared structlog JSON logging config, request-ID middleware with response header propagation, and request-scoped context binding for both structlog and stdlib loggers |
 | 3 | Integrate Sentry SDK for error tracking | GAP-036 | Done | Added environment-gated Sentry initialization with the FastAPI integration and configurable environment, release, and trace sampling |
 | 4 | Add Prometheus/metrics middleware | GAP-037 | Done | Added Prometheus request metrics, in-flight gauge, and a `/metrics` endpoint with multiprocess-aware exposition support |
-| 5 | Sanitize error logs (remove token/credential data) | GAP-040 | Not Started |  |
+| 5 | Sanitize error logs (remove token/credential data) | GAP-040 | Done | Added a shared log-redaction processor that scrubs common token, API key, cookie, and password fields and bearer/query-string credential patterns from both structlog and stdlib logs |
 
 ### Sprint H6: Frontend Resilience & UX Hardening
 **Goal:** Handle all error states, improve reliability.
