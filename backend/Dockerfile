@@ -20,6 +20,7 @@ RUN pip install --upgrade pip \
 
 COPY backend /app/backend
 COPY alembic.ini /app/alembic.ini
+COPY gunicorn.conf.py /app/gunicorn.conf.py
 
 EXPOSE 8000
 
