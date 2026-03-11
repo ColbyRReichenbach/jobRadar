@@ -401,7 +401,7 @@
 | 8 | Write privacy policy | GAP-047 | Partial | Drafted policy at `docs/privacy-policy.md`; still needs to be hosted at `https://apptrail.com/privacy` before Chrome Web Store submission |
 | 9 | Create store listing (description, screenshots) | GAP-048 | Partial | Added store copy and screenshot plan in `docs/chrome-web-store-listing.md`; actual Chrome Web Store screenshots still need to be captured manually |
 | 10 | Add missing manifest fields (homepage_url, short_name, action.default_icon) | GAP-049 | Done | Manifest now includes `short_name`, `homepage_url`, and `action.default_icon` mapped to the generated icon set |
-| 11 | Create extension packaging script | GAP-050 | Not Started |  |
+| 11 | Create extension packaging script | GAP-050 | Done | Added `scripts/package-extension.sh` to build a versioned Chrome Web Store ZIP directly from `extension/manifest.json` |
 
 ### Sprint H4: Infrastructure & Deployment
 **Goal:** Containerize, automate CI/CD, configure production database.
