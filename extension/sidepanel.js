@@ -43,6 +43,10 @@ function renderAlert(container, variant, message) {
   appendTextElement(container, "div", `alert alert-${variant}`, message);
 }
 
+function isNetworkError(error) {
+  return error instanceof TypeError;
+}
+
 function isSafeExternalUrl(url) {
   try {
     const parsed = new URL(url);
@@ -210,16 +214,40 @@ async function fallbackParse(url) {
       method: "POST",
       body: JSON.stringify({ url }),
     });
+
+    if (resp.status === 401 || resp.status === 403) {
+      hide("loading");
+      show("no-job");
+      renderAlert(
+        document.getElementById("no-job"),
+        "error",
+        "Extension authentication failed. Reconnect your API key in setup."
+      );
+      return;
+    }
+
     const result = await resp.json();
     if (result.status === "ok" && result.data) {
       displayJobData(result.data);
     } else {
       hide("loading");
       show("no-job");
+      renderAlert(
+        document.getElementById("no-job"),
+        "warning",
+        "This page could not be parsed. Try again from a supported job posting."
+      );
     }
-  } catch {
+  } catch (error) {
     hide("loading");
     show("no-job");
+    renderAlert(
+      document.getElementById("no-job"),
+      "error",
+      isNetworkError(error)
+        ? "You appear to be offline or the backend is unavailable."
+        : "Failed to load job data."
+    );
   }
 }
 
@@ -283,7 +311,13 @@ document.getElementById("track-btn").addEventListener("click", async () => {
       btn.textContent = "Track This Job";
     }
   } catch (e) {
-    renderAlert(statusEl, "error", "Error connecting to backend.");
+    renderAlert(
+      statusEl,
+      "error",
+      isNetworkError(e)
+        ? "You appear to be offline or the backend is unavailable."
+        : "Error connecting to backend."
+    );
     btn.disabled = false;
     btn.textContent = "Track This Job";
   }

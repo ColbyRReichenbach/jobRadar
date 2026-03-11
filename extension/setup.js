@@ -7,6 +7,10 @@ import {
   setApiKey,
 } from "./config.js";
 
+function isNetworkError(error) {
+  return error instanceof TypeError;
+}
+
 document.getElementById("saveBtn").addEventListener("click", async () => {
   const apiKey = document.getElementById("apiKey").value.trim();
   const apiBaseInput = document.getElementById("apiBase");
@@ -48,7 +52,9 @@ document.getElementById("saveBtn").addEventListener("click", async () => {
     }
   } catch (e) {
     statusEl.className = "status error";
-    statusEl.textContent = "Could not reach backend. Is the server running?";
+    statusEl.textContent = isNetworkError(e)
+      ? "Could not reach the backend. Check your network connection and backend URL."
+      : "Could not save extension settings.";
   }
 
   btn.disabled = false;

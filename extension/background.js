@@ -2,12 +2,20 @@
 import { detectPlatform } from "./detector.js";
 import { buildApiUrl, getApiBase, getApiKey } from "./config.js";
 
+const SYNC_QUEUE_KEY = "syncQueue";
+const MAX_SYNC_QUEUE_ITEMS = 50;
+
 // On install, open setup page if no API key stored
 chrome.runtime.onInstalled.addListener(async () => {
   const apiKey = await getApiKey();
   if (!apiKey) {
     chrome.tabs.create({ url: "setup.html" });
   }
+  await flushSyncQueue();
+});
+
+chrome.runtime.onStartup.addListener(async () => {
+  await flushSyncQueue();
 });
 
 // Enable side panel on action click
@@ -17,6 +25,65 @@ chrome.sidePanel
 
 function isTrustedExtensionSender(sender) {
   return sender?.id === chrome.runtime.id;
+}
+
+async function postToBackend(path, payload, apiKey, apiBase) {
+  const response = await fetch(buildApiUrl(apiBase, path), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  return response.ok;
+}
+
+async function enqueueSyncRequest(entry) {
+  const data = await chrome.storage.local.get(SYNC_QUEUE_KEY);
+  const queue = data[SYNC_QUEUE_KEY] || [];
+  queue.push({
+    ...entry,
+    enqueued_at: Date.now(),
+  });
+
+  await chrome.storage.local.set({
+    [SYNC_QUEUE_KEY]: queue.slice(-MAX_SYNC_QUEUE_ITEMS),
+  });
+}
+
+async function flushSyncQueue() {
+  const [apiKey, apiBase, queueData] = await Promise.all([
+    getApiKey(),
+    getApiBase(),
+    chrome.storage.local.get(SYNC_QUEUE_KEY),
+  ]);
+
+  if (!apiKey) {
+    return;
+  }
+
+  const queue = queueData[SYNC_QUEUE_KEY] || [];
+  if (queue.length === 0) {
+    return;
+  }
+
+  const remaining = [];
+  for (let i = 0; i < queue.length; i += 1) {
+    const entry = queue[i];
+    try {
+      const ok = await postToBackend(entry.path, entry.payload, apiKey, apiBase);
+      if (!ok) {
+        remaining.push(...queue.slice(i));
+        break;
+      }
+    } catch {
+      remaining.push(...queue.slice(i));
+      break;
+    }
+  }
+
+  await chrome.storage.local.set({ [SYNC_QUEUE_KEY]: remaining });
 }
 
 // --- Sprint 17: Handle tracker.js messages ---
@@ -53,16 +120,25 @@ async function handleCareerPageVisit({ domain, url, visitCount }) {
   const [apiKey, apiBase] = await Promise.all([getApiKey(), getApiBase()]);
   if (apiKey) {
     try {
-      await fetch(buildApiUrl(apiBase, "/api/company-visits"), {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({ domain, url, visit_count: visitCount }),
+      await flushSyncQueue();
+      const payload = { domain, url, visit_count: visitCount };
+      const ok = await postToBackend(
+        "/api/company-visits",
+        payload,
+        apiKey,
+        apiBase
+      );
+      if (!ok) {
+        await enqueueSyncRequest({
+          path: "/api/company-visits",
+          payload,
+        });
+      }
+    } catch {
+      await enqueueSyncRequest({
+        path: "/api/company-visits",
+        payload: { domain, url, visit_count: visitCount },
       });
-    } catch (e) {
-      // Silent fail — visit sync is best-effort
     }
   }
 }
@@ -72,17 +148,25 @@ async function handleApplicationSubmitted({ platform, url, domain, enrichment })
   if (!apiKey) return;
 
   try {
-    // Notify backend about auto-detected application submission
-    await fetch(buildApiUrl(apiBase, "/api/company-visits/submission"), {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({ platform, url, domain, enrichment }),
+    await flushSyncQueue();
+    const payload = { platform, url, domain, enrichment };
+    const ok = await postToBackend(
+      "/api/company-visits/submission",
+      payload,
+      apiKey,
+      apiBase
+    );
+    if (!ok) {
+      await enqueueSyncRequest({
+        path: "/api/company-visits/submission",
+        payload,
+      });
+    }
+  } catch {
+    await enqueueSyncRequest({
+      path: "/api/company-visits/submission",
+      payload: { platform, url, domain, enrichment },
     });
-  } catch (e) {
-    // Silent fail
   }
 }
 
