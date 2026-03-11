@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from tests.conftest import AUTH_HEADER
+from tests.conftest import AUTH_HEADER, TEST_USER_ID
 
 
 # --- 4.1 Job search tests ---
@@ -178,7 +178,7 @@ async def test_contact_response_tracking(db_session):
 
     assert contact.response_received is False
 
-    await _track_contact_response(db_session, "Test Contact <contact@trackco.com>")
+    await _track_contact_response(db_session, "Test Contact <contact@trackco.com>", TEST_USER_ID)
 
     await db_session.refresh(contact)
     assert contact.response_received is True

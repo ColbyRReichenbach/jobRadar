@@ -17,34 +17,14 @@ logger = logging.getLogger(__name__)
 
 GMAIL_CLIENT_ID = os.getenv("GMAIL_CLIENT_ID", "")
 GMAIL_CLIENT_SECRET = os.getenv("GMAIL_CLIENT_SECRET", "")
-GMAIL_REDIRECT_URI = os.getenv("GMAIL_REDIRECT_URI", "http://localhost:8000/api/auth/gmail/callback")
 
 
-def get_oauth_flow():
-    from google_auth_oauthlib.flow import Flow
-
-    flow = Flow.from_client_config(
-        {
-            "web": {
-                "client_id": GMAIL_CLIENT_ID,
-                "client_secret": GMAIL_CLIENT_SECRET,
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-                "redirect_uris": [GMAIL_REDIRECT_URI],
-            }
-        },
-        scopes=["https://www.googleapis.com/auth/gmail.readonly"],
-        redirect_uri=GMAIL_REDIRECT_URI,
-    )
-    return flow
-
-
-async def get_valid_token(db: AsyncSession):
+async def get_valid_token(db: AsyncSession, user_id: uuid.UUID | None = None):
     from google.oauth2.credentials import Credentials
 
     from backend.models import GmailToken
 
-    stmt = select(GmailToken).limit(1)
+    stmt = select(GmailToken).where(GmailToken.user_id == user_id) if user_id else select(GmailToken).limit(1)
     result = await db.execute(stmt)
     row = result.scalar_one_or_none()
 

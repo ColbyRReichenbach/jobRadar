@@ -592,21 +592,63 @@ Each sprint is a self-contained unit of work with clear deliverables and a defin
 
 ---
 
+## Sprint 21: Audit Remediation & Google Calendar Sync (IN PROGRESS)
+**Goal:** Close the gaps found in the post-hardening audit and fully ship Google Calendar interview sync.
+
+### Tasks
+1. ✅ **Fix live user-scoping leaks** — Scope company context assembly to `user_id` and add regression coverage so company detail cannot expose another user’s applications, contacts, emails, or warm paths.
+2. ✅ **Fix active background-task isolation** — Update `poll_gmail.py` and `email_matcher.py` to run per connected user instead of global matching / feedback / contact-response state.
+3. ✅ **Remove dead legacy Gmail OAuth entrypoint** — Retire the old standalone `/api/auth/gmail` flow so only the user-bound Google OAuth path remains.
+4. ✅ **Implement Google Calendar interview sync** — Add Calendar OAuth scope support, store connection state on `User`, add `POST /api/calendar/sync`, dedupe by `calendar_event_id`, and create/update `Interview` rows from primary-calendar events.
+5. ✅ **Hook dashboard calendar UI to sync flow** — Add connect/sync controls and visible status/error states in `dashboardv2/src/components/Calendar.tsx`.
+6. ☐ **Finish frontend pagination adoption** — Update dashboard collection fetches to page through the new bounded backend list endpoints instead of silently truncating after the first 100 records.
+7. ☐ **Close remaining silent-failure UX paths** — Replace `console.error`-only handling in settings, export, Gmail sync, and interview flows with user-visible states.
+8. ☐ **Fix optimistic-save rollback and draft detail hydration** — Roll back failed Job Search saves and load full resume draft detail when reopening history rows.
+
+### Definition of Done
+- Company detail and background Gmail sync are user-isolated
+- Google Calendar can be connected and synced from the dashboard
+- Interviews are created/updated without duplicate Calendar imports
+- Remaining frontend audit items are tracked as explicit sprint work, not hidden debt
+
+### Dependencies
+- Sprint 13 (interview records / calendar UI baseline)
+- Sprint H1 (per-user auth and data isolation)
+- Sprint H7 (Gmail token encryption and rate limiting)
+
+### Files Touched
+- `backend/main.py`
+- `backend/models.py`
+- `backend/alembic/versions/022_*.py`
+- `backend/services/calendar_sync.py`
+- `backend/services/email_matcher.py`
+- `backend/services/gmail_auth.py`
+- `backend/services/knowledge_graph.py`
+- `backend/tasks/poll_gmail.py`
+- `dashboardv2/src/lib/api.ts`
+- `dashboardv2/src/lib/AuthContext.tsx`
+- `dashboardv2/src/components/Calendar.tsx`
+- `tests/test_interviews.py`
+- `tests/test_knowledge_graph.py`
+- `tests/backend/test_phase4.py`
+
+---
+
 ## Future Sprints (Requires Scale)
 
-### Sprint 21: Cross-User Intelligence
+### Sprint 22: Cross-User Intelligence
 - Anonymized opt-in data sharing
 - Company response rate aggregates
 - Similar profile matching
 - *Prerequisite: 1000+ users*
 
-### Sprint 22: Mobile App
+### Sprint 23: Mobile App
 - React Native (Expo)
 - Core screens: Pipeline, Email Feed, Conversations, Calendar
 - Push notifications via Firebase
 - Offline support
 
-### Sprint 23: Monetization
+### Sprint 24: Monetization
 - Tiered pricing (Free/Pro/Enterprise)
 - Stripe integration for payments
 - Feature gating per tier

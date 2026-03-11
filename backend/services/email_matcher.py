@@ -34,17 +34,25 @@ STATUS_UPDATES = {
 }
 
 
-async def email_already_processed(db: AsyncSession, gmail_message_id: str) -> bool:
+async def email_already_processed(
+    db: AsyncSession,
+    gmail_message_id: str,
+    user_id=None,
+) -> bool:
     stmt = select(EmailEvent).where(EmailEvent.gmail_message_id == gmail_message_id)
+    if user_id:
+        stmt = stmt.where(EmailEvent.user_id == user_id)
     result = await db.execute(stmt)
     return result.scalar_one_or_none() is not None
 
 
-async def get_active_company_domains(db: AsyncSession) -> set[str]:
+async def get_active_company_domains(db: AsyncSession, user_id=None) -> set[str]:
     """Get set of domains from all non-archived applications."""
     stmt = select(Application.job_url, Application.company).where(
         Application.archived_at.is_(None)
     )
+    if user_id:
+        stmt = stmt.where(Application.user_id == user_id)
     result = await db.execute(stmt)
     rows = result.all()
 
@@ -72,7 +80,10 @@ def extract_domain_from_url(url: str) -> str:
 
 
 async def match_email_to_application(
-    db: AsyncSession, email: dict, classification: dict
+    db: AsyncSession,
+    email: dict,
+    classification: dict,
+    user_id=None,
 ) -> str | None:
     """Match an email to an application using 4-step priority.
 
@@ -90,6 +101,8 @@ async def match_email_to_application(
     stmt = select(Application).where(Application.archived_at.is_(None)).order_by(
         Application.applied_at.desc()
     )
+    if user_id:
+        stmt = stmt.where(Application.user_id == user_id)
     result = await db.execute(stmt)
     apps = result.scalars().all()
 
@@ -122,7 +135,11 @@ async def match_email_to_application(
 
 
 async def create_email_event(
-    db: AsyncSession, email: dict, classification: dict, application_id: str | None
+    db: AsyncSession,
+    email: dict,
+    classification: dict,
+    application_id: str | None,
+    user_id=None,
 ) -> EmailEvent:
     """Create an email_event record."""
     import uuid
@@ -131,6 +148,7 @@ async def create_email_event(
     is_ats = sender_domain in ATS_DOMAINS
 
     event = EmailEvent(
+        user_id=user_id,
         application_id=uuid.UUID(application_id) if application_id else None,
         gmail_message_id=email.get("message_id"),
         sender=email.get("sender"),
@@ -152,7 +170,10 @@ async def create_email_event(
 
 
 async def update_application_status(
-    db: AsyncSession, application_id: str | None, classification: dict
+    db: AsyncSession,
+    application_id: str | None,
+    classification: dict,
+    user_id=None,
 ):
     """Update application status based on email classification."""
     if not application_id:
@@ -165,6 +186,8 @@ async def update_application_status(
         return
 
     stmt = select(Application).where(Application.id == uuid.UUID(application_id))
+    if user_id:
+        stmt = stmt.where(Application.user_id == user_id)
     result = await db.execute(stmt)
     app = result.scalar_one_or_none()
     if not app:

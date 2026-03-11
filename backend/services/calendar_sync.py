@@ -1,13 +1,14 @@
-"""Sprint 13: Google Calendar sync for interview detection."""
+"""Sprint 13: Google Calendar sync helpers for interview detection."""
 
 import logging
 import re
-from datetime import datetime, timezone
+import uuid
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.models import Interview
+from backend.models import Application, Company, Interview
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,20 @@ TYPE_MAP = {
     "behavioral": "phone",
 }
 
+PUBLIC_EMAIL_DOMAINS = {
+    "gmail.com",
+    "googlemail.com",
+    "outlook.com",
+    "hotmail.com",
+    "live.com",
+    "yahoo.com",
+    "icloud.com",
+    "me.com",
+    "aol.com",
+    "proton.me",
+    "protonmail.com",
+}
+
 
 def _detect_interview_type(summary: str, description: str = "") -> str | None:
     """Detect interview type from calendar event text."""
@@ -49,97 +64,207 @@ def _is_interview_event(summary: str, description: str = "") -> bool:
     return any(kw in text for kw in INTERVIEW_KEYWORDS)
 
 
+def _parse_event_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+
+    from dateutil import parser as dateparser
+
+    parsed = dateparser.isoparse(value)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _extract_external_attendees(event: dict, user_email: str | None) -> tuple[str | None, str | None]:
+    user_email_lower = (user_email or "").lower()
+    candidates: list[tuple[str | None, str]] = []
+
+    for attendee in event.get("attendees", []):
+        email = (attendee.get("email") or "").lower()
+        if not email or attendee.get("self") or email == user_email_lower:
+            continue
+        candidates.append((attendee.get("displayName"), email))
+
+    organizer = event.get("organizer") or {}
+    organizer_email = (organizer.get("email") or "").lower()
+    if organizer_email and organizer_email != user_email_lower:
+        candidates.append((organizer.get("displayName"), organizer_email))
+
+    if not candidates:
+        return None, None
+
+    for name, email in candidates:
+        domain = email.split("@", 1)[-1]
+        if domain not in PUBLIC_EMAIL_DOMAINS:
+            return name, email
+
+    return candidates[0]
+
+
+def _extract_candidate_domains(event: dict, user_email: str | None) -> set[str]:
+    user_email_lower = (user_email or "").lower()
+    domains: set[str] = set()
+
+    for attendee in event.get("attendees", []):
+        email = (attendee.get("email") or "").lower()
+        if not email or attendee.get("self") or email == user_email_lower or "@" not in email:
+            continue
+        domain = email.split("@", 1)[-1]
+        if domain not in PUBLIC_EMAIL_DOMAINS:
+            domains.add(domain)
+
+    organizer = event.get("organizer") or {}
+    organizer_email = (organizer.get("email") or "").lower()
+    if organizer_email and organizer_email != user_email_lower and "@" in organizer_email:
+        domain = organizer_email.split("@", 1)[-1]
+        if domain not in PUBLIC_EMAIL_DOMAINS:
+            domains.add(domain)
+
+    return domains
+
+
+async def _match_application_for_event(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    event: dict,
+    user_email: str | None,
+) -> uuid.UUID | None:
+    domains = _extract_candidate_domains(event, user_email)
+    if not domains:
+        return None
+
+    stmt = (
+        select(Application.id)
+        .join(Company, Application.company_id == Company.id)
+        .where(
+            Application.user_id == user_id,
+            Application.archived_at.is_(None),
+            Company.domain.in_(domains),
+        )
+        .order_by(Application.applied_at.desc())
+        .limit(1)
+    )
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
+
+
 async def sync_calendar_events(
     db: AsyncSession,
     calendar_service,
-    user_id: str | None = None,
-) -> list[dict]:
-    """Scan Google Calendar for interview events and create Interview records."""
-    from datetime import timedelta
-
+    user_id: uuid.UUID,
+    user_email: str | None = None,
+) -> dict:
+    """Scan Google Calendar for interview events and upsert Interview records."""
     now = datetime.now(timezone.utc)
-    # Look at events from past 7 days to next 30 days
-    time_min = (now - timedelta(days=7)).isoformat()
-    time_max = (now + timedelta(days=30)).isoformat()
+    time_min = (now - timedelta(days=30)).isoformat()
+    time_max = (now + timedelta(days=90)).isoformat()
 
-    events_result = calendar_service.events().list(
-        calendarId="primary",
-        timeMin=time_min,
-        timeMax=time_max,
-        maxResults=100,
-        singleEvents=True,
-        orderBy="startTime",
-    ).execute()
+    events_result = (
+        calendar_service.events()
+        .list(
+            calendarId="primary",
+            timeMin=time_min,
+            timeMax=time_max,
+            maxResults=100,
+            singleEvents=True,
+            orderBy="startTime",
+        )
+        .execute()
+    )
 
     events = events_result.get("items", [])
-    synced = []
+    created = 0
+    updated = 0
+    skipped = 0
+    synced: list[dict] = []
 
     for event in events:
         summary = event.get("summary", "")
         description = event.get("description", "")
         event_id = event.get("id", "")
 
-        if not _is_interview_event(summary, description):
+        if event.get("status") == "cancelled" or not event_id or not _is_interview_event(summary, description):
+            skipped += 1
             continue
 
-        # Check if already synced
-        existing_stmt = select(Interview).where(Interview.calendar_event_id == event_id)
-        existing_result = await db.execute(existing_stmt)
-        if existing_result.scalar_one_or_none():
-            continue
-
-        # Parse datetime
         start = event.get("start", {})
-        scheduled_at = None
-        if "dateTime" in start:
-            scheduled_at = datetime.fromisoformat(start["dateTime"])
-        elif "date" in start:
-            scheduled_at = datetime.fromisoformat(start["date"]).replace(tzinfo=timezone.utc)
-
-        # Parse duration
-        duration_minutes = None
         end = event.get("end", {})
-        if scheduled_at and "dateTime" in end:
-            end_dt = datetime.fromisoformat(end["dateTime"])
-            duration_minutes = int((end_dt - scheduled_at).total_seconds() / 60)
+        scheduled_at = _parse_event_datetime(start.get("dateTime") or start.get("date"))
+        end_at = _parse_event_datetime(end.get("dateTime") or end.get("date"))
+        duration_minutes = None
+        if scheduled_at and end_at:
+            duration_minutes = int((end_at - scheduled_at).total_seconds() / 60)
 
-        # Extract attendees
-        attendees = event.get("attendees", [])
-        interviewer_email = None
-        interviewer_name = None
-        for a in attendees:
-            if not a.get("self", False):
-                interviewer_email = a.get("email")
-                interviewer_name = a.get("displayName")
-                break
-
-        # Location/link
+        interviewer_name, interviewer_email = _extract_external_attendees(event, user_email)
         location = event.get("location") or event.get("hangoutLink")
-
         interview_type = _detect_interview_type(summary, description) or "phone"
+        application_id = await _match_application_for_event(db, user_id, event, user_email)
+        auto_note = f"Auto-synced from Google Calendar: {summary}"
 
-        interview = Interview(
-            user_id=user_id,
-            interview_type=interview_type,
-            scheduled_at=scheduled_at,
-            duration_minutes=duration_minutes,
-            interviewer_name=interviewer_name,
-            interviewer_email=interviewer_email,
-            location_or_link=location,
-            notes=f"Auto-detected from calendar: {summary}",
-            calendar_event_id=event_id,
+        existing_stmt = select(Interview).where(
+            Interview.user_id == user_id,
+            Interview.calendar_event_id == event_id,
         )
-        db.add(interview)
-        synced.append({
-            "summary": summary,
-            "scheduled_at": scheduled_at.isoformat() if scheduled_at else None,
-            "interview_type": interview_type,
-        })
+        existing_result = await db.execute(existing_stmt)
+        interview = existing_result.scalar_one_or_none()
 
-    if synced:
+        if interview:
+            interview.interview_type = interview_type
+            interview.scheduled_at = scheduled_at
+            interview.duration_minutes = duration_minutes
+            interview.interviewer_name = interviewer_name or interview.interviewer_name
+            interview.interviewer_email = interviewer_email or interview.interviewer_email
+            interview.location_or_link = location or interview.location_or_link
+            if application_id and interview.application_id is None:
+                interview.application_id = application_id
+            if not interview.notes or interview.notes.startswith("Auto-synced from Google Calendar:"):
+                interview.notes = auto_note
+            updated += 1
+        else:
+            db.add(
+                Interview(
+                    user_id=user_id,
+                    application_id=application_id,
+                    interview_type=interview_type,
+                    scheduled_at=scheduled_at,
+                    duration_minutes=duration_minutes,
+                    interviewer_name=interviewer_name,
+                    interviewer_email=interviewer_email,
+                    location_or_link=location,
+                    notes=auto_note,
+                    calendar_event_id=event_id,
+                )
+            )
+            created += 1
+
+        synced.append(
+            {
+                "event_id": event_id,
+                "summary": summary,
+                "scheduled_at": scheduled_at.isoformat() if scheduled_at else None,
+                "interview_type": interview_type,
+            }
+        )
+
+    if created or updated:
         await db.commit()
 
-    return synced
+    logger.info(
+        "Synced %s Google Calendar interviews for user %s (%s created, %s updated, %s skipped)",
+        created + updated,
+        user_id,
+        created,
+        updated,
+        skipped,
+    )
+    return {
+        "created": created,
+        "updated": updated,
+        "skipped": skipped,
+        "total_events": len(events),
+        "synced": synced,
+    }
 
 
 def extract_interview_datetime(email_body: str, email_subject: str = "") -> dict | None:

@@ -82,6 +82,7 @@ export interface UserProfile {
   name: string;
   picture: string;
   gmail_connected: boolean;
+  calendar_connected: boolean;
 }
 
 export interface NotificationPrefs {
@@ -103,9 +104,17 @@ export interface ApiKeyCreateResponse {
   created_at: string;
 }
 
-export async function getGoogleAuthUrl(connectGmail = false): Promise<string> {
-  const params = connectGmail ? '?connect_gmail=true' : '';
-  const res = await fetch(`${API_BASE}/api/auth/google${params}`, { credentials: 'include' });
+export interface GoogleAuthOptions {
+  connectGmail?: boolean;
+  connectCalendar?: boolean;
+}
+
+export async function getGoogleAuthUrl(options: GoogleAuthOptions = {}): Promise<string> {
+  const params = new URLSearchParams();
+  if (options.connectGmail) params.set('connect_gmail', 'true');
+  if (options.connectCalendar) params.set('connect_calendar', 'true');
+  const query = params.toString();
+  const res = await fetch(`${API_BASE}/api/auth/google${query ? `?${query}` : ''}`, { credentials: 'include' });
   if (!res.ok) throw new Error('Failed to get auth URL');
   const data = await res.json();
   return data.auth_url;
@@ -135,6 +144,18 @@ export async function syncGmail(): Promise<{ new_emails: number; total_found: nu
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: 'Sync failed' }));
     throw new Error(err.detail || 'Gmail sync failed');
+  }
+  return await res.json();
+}
+
+export async function syncCalendar(): Promise<{ created: number; updated: number; skipped: number; total_events: number }> {
+  const res = await apiFetch(`${API_BASE}/api/calendar/sync`, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Calendar sync failed' }));
+    throw new Error(err.detail || 'Calendar sync failed');
   }
   return await res.json();
 }

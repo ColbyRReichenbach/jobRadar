@@ -211,6 +211,7 @@ class User(Base):
     name: Mapped[str | None] = mapped_column(Text, nullable=True)
     picture: Mapped[str | None] = mapped_column(Text, nullable=True)
     gmail_connected: Mapped[bool] = mapped_column(Boolean, default=False)
+    calendar_connected: Mapped[bool] = mapped_column(Boolean, default=False)
     api_key_hash: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
     api_key_last4: Mapped[str | None] = mapped_column(String(4), nullable=True)
     api_key_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

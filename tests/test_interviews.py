@@ -2,9 +2,12 @@
 
 import pytest
 from datetime import datetime, timezone, timedelta
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
-from tests.conftest import AUTH_HEADER
+from sqlalchemy import select
+
+from backend.gmail_token_crypto import encrypt_gmail_token
+from tests.conftest import AUTH_HEADER, TEST_USER_ID
 
 
 @pytest.mark.asyncio
@@ -195,3 +198,104 @@ async def test_extract_interview_datetime():
     assert "scheduled_at" in result
     assert result.get("duration_minutes") == 45
     assert "zoom.us" in result.get("location_or_link", "")
+
+
+@pytest.mark.asyncio
+async def test_calendar_sync_creates_and_updates_interview(client, db_session):
+    """POST /api/calendar/sync upserts interview events from Google Calendar."""
+    from backend.models import Application, Company, GmailToken, Interview, User
+
+    company = Company(domain="matchco.com", name="MatchCo")
+    db_session.add(company)
+    await db_session.commit()
+    await db_session.refresh(company)
+
+    app = Application(
+        user_id=TEST_USER_ID,
+        company="MatchCo",
+        role_title="Engineer",
+        company_id=company.id,
+    )
+    token = GmailToken(
+        user_id=TEST_USER_ID,
+        access_token=encrypt_gmail_token("access-token"),
+        refresh_token=encrypt_gmail_token("refresh-token"),
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+    )
+    db_session.add_all([app, token])
+    await db_session.commit()
+
+    user_result = await db_session.execute(select(User).where(User.id == TEST_USER_ID))
+    user = user_result.scalar_one()
+    user.calendar_connected = True
+    await db_session.commit()
+
+    calendar_service = MagicMock()
+    first_events = {
+        "items": [
+            {
+                "id": "calendar-event-1",
+                "summary": "Technical Interview with MatchCo",
+                "description": "Coding interview",
+                "start": {"dateTime": "2026-03-20T15:00:00+00:00"},
+                "end": {"dateTime": "2026-03-20T16:00:00+00:00"},
+                "attendees": [
+                    {"email": "test-user@apptrail.test", "self": True},
+                    {"email": "recruiter@matchco.com", "displayName": "Recruiter"},
+                ],
+                "organizer": {"email": "recruiter@matchco.com", "displayName": "Recruiter"},
+                "hangoutLink": "https://meet.google.com/first-sync",
+            }
+        ]
+    }
+    second_events = {
+        "items": [
+            {
+                "id": "calendar-event-1",
+                "summary": "Technical Interview with MatchCo (Updated)",
+                "description": "Coding interview",
+                "start": {"dateTime": "2026-03-20T16:30:00+00:00"},
+                "end": {"dateTime": "2026-03-20T17:15:00+00:00"},
+                "attendees": [
+                    {"email": "test-user@apptrail.test", "self": True},
+                    {"email": "recruiter@matchco.com", "displayName": "Recruiter"},
+                ],
+                "organizer": {"email": "recruiter@matchco.com", "displayName": "Recruiter"},
+                "location": "https://zoom.us/j/updated-sync",
+            }
+        ]
+    }
+
+    execute_mock = calendar_service.events.return_value.list.return_value.execute
+    execute_mock.return_value = first_events
+
+    with patch("googleapiclient.discovery.build", return_value=calendar_service):
+        first_response = await client.post("/api/calendar/sync", headers=AUTH_HEADER)
+
+        assert first_response.status_code == 200
+        assert first_response.json()["created"] == 1
+
+        execute_mock.return_value = second_events
+        second_response = await client.post("/api/calendar/sync", headers=AUTH_HEADER)
+
+    assert second_response.status_code == 200
+    assert second_response.json()["updated"] == 1
+
+    interview_result = await db_session.execute(
+        select(Interview).where(Interview.calendar_event_id == "calendar-event-1")
+    )
+    interviews = interview_result.scalars().all()
+    assert len(interviews) == 1
+    interview = interviews[0]
+    assert interview.application_id == app.id
+    assert interview.duration_minutes == 45
+    assert interview.location_or_link == "https://zoom.us/j/updated-sync"
+    assert interview.notes == "Auto-synced from Google Calendar: Technical Interview with MatchCo (Updated)"
+
+
+@pytest.mark.asyncio
+async def test_calendar_sync_requires_connected_calendar(client):
+    """POST /api/calendar/sync rejects users without Calendar access."""
+    response = await client.post("/api/calendar/sync", headers=AUTH_HEADER)
+    assert response.status_code == 400
+    assert "Calendar not connected" in response.json()["detail"]

@@ -7,6 +7,7 @@ interface AuthContextType {
   signIn: () => Promise<void>;
   signOut: () => void;
   connectGmail: () => Promise<void>;
+  connectCalendar: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
 
@@ -16,6 +17,7 @@ const AuthContext = createContext<AuthContextType>({
   signIn: async () => {},
   signOut: () => {},
   connectGmail: async () => {},
+  connectCalendar: async () => {},
   refreshUser: async () => {},
 });
 
@@ -54,7 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signIn = useCallback(async () => {
-    const url = await getGoogleAuthUrl(false);
+    const url = await getGoogleAuthUrl();
     window.location.href = url;
   }, []);
 
@@ -63,12 +65,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const connectGmail = useCallback(async () => {
-    const url = await getGoogleAuthUrl(true);
+    const url = await getGoogleAuthUrl({
+      connectGmail: true,
+      connectCalendar: !!user?.calendar_connected,
+    });
     window.location.href = url;
-  }, []);
+  }, [user]);
+
+  const connectCalendar = useCallback(async () => {
+    const url = await getGoogleAuthUrl({
+      connectGmail: !!user?.gmail_connected,
+      connectCalendar: true,
+    });
+    window.location.href = url;
+  }, [user]);
 
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, signOut, connectGmail, refreshUser }}>
+    <AuthContext.Provider value={{ user, loading, signIn, signOut, connectGmail, connectCalendar, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

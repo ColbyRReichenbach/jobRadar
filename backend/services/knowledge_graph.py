@@ -17,7 +17,7 @@ from backend.models import (
 logger = logging.getLogger(__name__)
 
 
-async def get_company_context(db: AsyncSession, domain: str) -> dict:
+async def get_company_context(db: AsyncSession, domain: str, user_id=None) -> dict:
     """Assemble full company context from all data sources.
 
     Returns a comprehensive profile including:
@@ -65,6 +65,8 @@ async def get_company_context(db: AsyncSession, domain: str) -> dict:
     app_stmt = select(Application).where(
         Application.company_id == company.id
     ).order_by(Application.applied_at.desc()).limit(50)
+    if user_id:
+        app_stmt = app_stmt.where(Application.user_id == user_id)
     app_result = await db.execute(app_stmt)
     applications = []
     for a in app_result.scalars().all():
@@ -82,6 +84,8 @@ async def get_company_context(db: AsyncSession, domain: str) -> dict:
     contact_stmt = select(Contact).where(
         Contact.company_id == company.id
     ).limit(50)
+    if user_id:
+        contact_stmt = contact_stmt.where(Contact.user_id == user_id)
     contact_result = await db.execute(contact_stmt)
     contacts = []
     for c in contact_result.scalars().all():
@@ -101,6 +105,8 @@ async def get_company_context(db: AsyncSession, domain: str) -> dict:
     ).where(
         EmailEvent.company_id == company.id
     ).order_by(EmailEvent.received_at.desc()).limit(20)
+    if user_id:
+        email_stmt = email_stmt.where(EmailEvent.user_id == user_id)
     email_result = await db.execute(email_stmt)
     emails = []
     for e in email_result.scalars().all():
@@ -158,6 +164,8 @@ async def get_company_context(db: AsyncSession, domain: str) -> dict:
     warm_stmt = select(WarmConnection).where(
         WarmConnection.company_domain == domain
     ).order_by(WarmConnection.email_count.desc()).limit(10)
+    if user_id:
+        warm_stmt = warm_stmt.where(WarmConnection.user_id == user_id)
     warm_result = await db.execute(warm_stmt)
     warm_connections = [
         {

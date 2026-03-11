@@ -1,7 +1,10 @@
 """Sprint 15: Tests for knowledge graph retrieval layer."""
 
+import uuid
+
 import pytest
-from tests.conftest import AUTH_HEADER
+
+from tests.conftest import AUTH_HEADER, make_auth_header
 
 
 @pytest.mark.asyncio
@@ -113,3 +116,115 @@ async def test_company_context_response_stats(client, db_session):
     assert data["response_stats"]["avg_response_days"] == 5.0
     assert data["response_stats"]["min_response_days"] == 3
     assert data["response_stats"]["max_response_days"] == 7
+
+
+@pytest.mark.asyncio
+async def test_company_context_is_user_scoped(client, db_session):
+    from backend.models import Application, Company, Contact, EmailEvent, User, WarmConnection
+
+    other_user_id = uuid.UUID("00000000-0000-0000-0000-00000000000f")
+    db_session.add(
+        User(
+            id=other_user_id,
+            google_id="other-google-id",
+            email="other-user@apptrail.test",
+            name="Other User",
+        )
+    )
+
+    company = Company(domain="privateco.com", name="PrivateCo")
+    db_session.add(company)
+    await db_session.commit()
+    await db_session.refresh(company)
+
+    own_app = Application(
+        company="PrivateCo",
+        role_title="Own Role",
+        company_id=company.id,
+    )
+    other_app = Application(
+        user_id=other_user_id,
+        company="PrivateCo",
+        role_title="Other Role",
+        company_id=company.id,
+    )
+    db_session.add_all([own_app, other_app])
+    await db_session.commit()
+    await db_session.refresh(own_app)
+    await db_session.refresh(other_app)
+
+    db_session.add_all([
+        Contact(
+            application_id=own_app.id,
+            company_id=company.id,
+            name="Own Contact",
+            email="own@privateco.com",
+            source="hunter",
+        ),
+        Contact(
+            user_id=other_user_id,
+            application_id=other_app.id,
+            company_id=company.id,
+            name="Other Contact",
+            email="other@privateco.com",
+            source="hunter",
+        ),
+        EmailEvent(
+            company_id=company.id,
+            application_id=own_app.id,
+            gmail_message_id="own-msg",
+            sender="Own Sender",
+            classification="update",
+            color_code="blue",
+            urgency="low",
+        ),
+        EmailEvent(
+            user_id=other_user_id,
+            company_id=company.id,
+            application_id=other_app.id,
+            gmail_message_id="other-msg",
+            sender="Other Sender",
+            classification="update",
+            color_code="blue",
+            urgency="low",
+        ),
+        WarmConnection(
+            company_domain="privateco.com",
+            contact_email="own@privateco.com",
+            contact_name="Own Warm Path",
+            email_count=2,
+        ),
+        WarmConnection(
+            user_id=other_user_id,
+            company_domain="privateco.com",
+            contact_email="other@privateco.com",
+            contact_name="Other Warm Path",
+            email_count=5,
+        ),
+    ])
+    await db_session.commit()
+
+    response = await client.get(
+        "/api/companies/privateco.com/context",
+        headers=AUTH_HEADER,
+    )
+    assert response.status_code == 200
+    data = response.json()
+
+    assert [app["role_title"] for app in data["applications"]] == ["Own Role"]
+    assert [contact["email"] for contact in data["contacts"]] == ["own@privateco.com"]
+    assert len(data["emails"]) == 1
+    assert data["emails"][0]["sender"] == "Own Sender"
+    assert [warm["contact_email"] for warm in data["warm_connections"]] == ["own@privateco.com"]
+
+    other_response = await client.get(
+        "/api/companies/privateco.com/context",
+        headers=make_auth_header(other_user_id, "other-user@apptrail.test", "Other User"),
+    )
+    assert other_response.status_code == 200
+    other_data = other_response.json()
+    assert [app["role_title"] for app in other_data["applications"]] == ["Other Role"]
+    assert [contact["email"] for contact in other_data["contacts"]] == ["other@privateco.com"]
+    assert len(other_data["emails"]) == 1
+    assert other_data["emails"][0]["sender"] == "Other Sender"
+    assert [warm["contact_email"] for warm in other_data["warm_connections"]] == ["other@privateco.com"]

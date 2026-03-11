@@ -364,6 +364,10 @@ def _gmail_sync_rate_limit() -> str:
     return os.getenv("APPTRAIL_GMAIL_SYNC_RATE_LIMIT", "5/minute")
 
 
+def _calendar_sync_rate_limit() -> str:
+    return os.getenv("APPTRAIL_CALENDAR_SYNC_RATE_LIMIT", "5/minute")
+
+
 def _send_email_rate_limit() -> str:
     return os.getenv("APPTRAIL_SEND_EMAIL_RATE_LIMIT", "10/minute")
 
@@ -977,10 +981,10 @@ async def check_email_pipeline(
 @app.get("/api/auth/gmail")
 @limiter.limit(_auth_rate_limit, error_message="Too many auth requests. Try again in a minute.")
 async def gmail_auth_redirect(request: Request):
-    from backend.services.gmail_auth import get_oauth_flow
-    flow = get_oauth_flow()
-    auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline")
-    return {"auth_url": auth_url}
+    raise HTTPException(
+        status_code=410,
+        detail="Legacy Gmail OAuth flow removed. Use /api/auth/google?connect_gmail=true instead.",
+    )
 
 
 @app.get("/api/auth/gmail/callback")
@@ -990,22 +994,10 @@ async def gmail_auth_callback(
     code: str = Query(...),
     db: AsyncSession = Depends(get_db),
 ):
-    from backend.services.gmail_auth import get_oauth_flow, store_tokens
-    flow = get_oauth_flow()
-    flow.fetch_token(code=code)
-    credentials = flow.credentials
-
-    expires_at = datetime.fromtimestamp(
-        credentials.expiry.timestamp(), tz=timezone.utc
-    ) if credentials.expiry else datetime.now(timezone.utc)
-
-    await store_tokens(
-        db,
-        access_token=credentials.token,
-        refresh_token=credentials.refresh_token,
-        expires_at=expires_at,
+    raise HTTPException(
+        status_code=410,
+        detail="Legacy Gmail OAuth callback removed. Use /api/auth/google for account and service connections.",
     )
-    return {"status": "ok", "message": "Gmail tokens stored successfully"}
 
 
 # --- Google Sign-In ---
@@ -1015,16 +1007,7 @@ GOOGLE_CLIENT_SECRET = os.getenv("GMAIL_CLIENT_SECRET", "")
 GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/api/auth/google/callback")
 
 
-@app.get("/api/auth/google")
-@limiter.limit(_auth_rate_limit, error_message="Too many auth requests. Try again in a minute.")
-async def google_auth_redirect(
-    request: Request,
-    connect_gmail: bool = Query(False),
-):
-    """Redirect to Google OAuth. Set connect_gmail=true to also request Gmail access."""
-    from google_auth_oauthlib.flow import Flow
-    import json, base64
-
+def _google_oauth_scopes(connect_gmail: bool, connect_calendar: bool) -> list[str]:
     scopes = [
         "openid",
         "https://www.googleapis.com/auth/userinfo.email",
@@ -1032,6 +1015,21 @@ async def google_auth_redirect(
     ]
     if connect_gmail:
         scopes.append("https://www.googleapis.com/auth/gmail.readonly")
+    if connect_calendar:
+        scopes.append("https://www.googleapis.com/auth/calendar.readonly")
+    return scopes
+
+
+@app.get("/api/auth/google")
+@limiter.limit(_auth_rate_limit, error_message="Too many auth requests. Try again in a minute.")
+async def google_auth_redirect(
+    request: Request,
+    connect_gmail: bool = Query(False),
+    connect_calendar: bool = Query(False),
+):
+    """Redirect to Google OAuth for sign-in and optional Gmail/Calendar access."""
+    from google_auth_oauthlib.flow import Flow
+    import json, base64
 
     flow = Flow.from_client_config(
         {
@@ -1043,7 +1041,7 @@ async def google_auth_redirect(
                 "redirect_uris": [GOOGLE_REDIRECT_URI],
             }
         },
-        scopes=scopes,
+        scopes=_google_oauth_scopes(connect_gmail, connect_calendar),
         redirect_uri=GOOGLE_REDIRECT_URI,
     )
 
@@ -1055,7 +1053,8 @@ async def google_auth_redirect(
 
     # Encode intent + code_verifier into state so the callback can use it
     state_data = {
-        "intent": "connect_gmail" if connect_gmail else "signin",
+        "connect_gmail": connect_gmail,
+        "connect_calendar": connect_calendar,
         "code_verifier": flow.code_verifier,
     }
     state_str = base64.urlsafe_b64encode(json.dumps(state_data).encode()).decode()
@@ -1079,7 +1078,7 @@ async def google_auth_callback(
     state: str = Query(""),
     db: AsyncSession = Depends(get_db),
 ):
-    """Handle Google OAuth callback. Creates/updates user and returns JWT."""
+    """Handle Google OAuth callback. Creates/updates user and stores service scopes."""
     from google_auth_oauthlib.flow import Flow
     from fastapi.responses import RedirectResponse
     import json, base64
@@ -1089,19 +1088,13 @@ async def google_auth_callback(
     # Decode state to get intent and PKCE code_verifier
     try:
         state_data = json.loads(base64.urlsafe_b64decode(state).decode())
-        intent = state_data.get("intent", "signin")
+        connect_gmail = bool(state_data.get("connect_gmail", False))
+        connect_calendar = bool(state_data.get("connect_calendar", False))
         code_verifier = state_data.get("code_verifier")
     except Exception:
-        intent = "signin"
+        connect_gmail = False
+        connect_calendar = False
         code_verifier = None
-
-    scopes = [
-        "openid",
-        "https://www.googleapis.com/auth/userinfo.email",
-        "https://www.googleapis.com/auth/userinfo.profile",
-    ]
-    if intent == "connect_gmail":
-        scopes.append("https://www.googleapis.com/auth/gmail.readonly")
 
     try:
         flow = Flow.from_client_config(
@@ -1114,7 +1107,7 @@ async def google_auth_callback(
                     "redirect_uris": [GOOGLE_REDIRECT_URI],
                 }
             },
-            scopes=scopes,
+            scopes=_google_oauth_scopes(connect_gmail, connect_calendar),
             redirect_uri=GOOGLE_REDIRECT_URI,
         )
         flow.code_verifier = code_verifier
@@ -1160,13 +1153,19 @@ async def google_auth_callback(
         db.add(user)
         await db.flush()
 
-    # Store Gmail tokens if connect_gmail was requested
-    if intent == "connect_gmail" and credentials.refresh_token:
+    if connect_gmail or connect_calendar:
+        if not credentials.refresh_token:
+            return RedirectResponse(
+                url=f"{frontend_url}/?auth_error=missing_refresh_token",
+                status_code=302,
+            )
+
         expires_at = datetime.fromtimestamp(
             credentials.expiry.timestamp(), tz=timezone.utc
         ) if credentials.expiry else datetime.now(timezone.utc)
 
         from backend.services.gmail_auth import store_tokens
+
         await store_tokens(
             db,
             access_token=credentials.token,
@@ -1174,7 +1173,10 @@ async def google_auth_callback(
             expires_at=expires_at,
             user_id=user.id,
         )
-        user.gmail_connected = True
+        if connect_gmail:
+            user.gmail_connected = True
+        if connect_calendar:
+            user.calendar_connected = True
 
     await db.commit()
     await db.refresh(user)
@@ -1199,6 +1201,7 @@ async def get_me(current_user: User = Depends(get_current_user)):
         "name": current_user.name,
         "picture": current_user.picture,
         "gmail_connected": current_user.gmail_connected,
+        "calendar_connected": current_user.calendar_connected,
     }
 
 
@@ -1508,6 +1511,50 @@ async def sync_gmail(
         "total_found": len(messages),
         "emails": emails_synced[:10],
     }
+
+
+@app.post("/api/calendar/sync")
+@limiter.limit(_calendar_sync_rate_limit, error_message="Too many Calendar sync requests. Try again in a minute.")
+async def sync_calendar(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Sync interview-like Google Calendar events into Interview records."""
+    from googleapiclient.discovery import build
+    from googleapiclient.errors import HttpError
+
+    from backend.services.calendar_sync import sync_calendar_events
+    from backend.services.gmail_auth import get_valid_token
+
+    if not current_user.calendar_connected:
+        raise HTTPException(
+            status_code=400,
+            detail="Google Calendar not connected. Please connect your Google Calendar first.",
+        )
+
+    try:
+        creds = await get_valid_token(db, user_id=current_user.id)
+        calendar_service = build("calendar", "v3", credentials=creds)
+        result = await sync_calendar_events(
+            db,
+            calendar_service,
+            user_id=current_user.id,
+            user_email=current_user.email,
+        )
+        return {
+            "status": "ok",
+            **result,
+        }
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except HttpError as exc:
+        if getattr(exc, "status_code", None) == 403 or getattr(getattr(exc, "resp", None), "status", None) == 403:
+            raise HTTPException(
+                status_code=400,
+                detail="Google Calendar access is missing. Reconnect your Google account with Calendar access.",
+            ) from exc
+        raise HTTPException(status_code=502, detail="Google Calendar sync failed.") from exc
 
 
 @app.get("/api/search", dependencies=[Depends(verify_api_key)])
@@ -2920,11 +2967,17 @@ async def generate_draft_endpoint(
 
 # --- Sprint 15: Knowledge Graph ---
 
-@app.get("/api/companies/{domain}/context", dependencies=[Depends(verify_api_key)])
-async def get_company_context_endpoint(domain: str, db: AsyncSession = Depends(get_db)):
+@app.get("/api/companies/{domain}/context")
+async def get_company_context_endpoint(
+    domain: str,
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
     """Get full assembled company context from knowledge graph."""
     from backend.services.knowledge_graph import get_company_context
-    return await get_company_context(db, domain)
+
+    user_id = _require_user_id(auth)
+    return await get_company_context(db, domain, user_id=user_id)
 
 
 # --- Sprint 16: Salary Intelligence ---

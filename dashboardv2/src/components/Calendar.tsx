@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo, useId, useRef } from 'react';
 import { AnimatePresence } from 'motion/react';
-import { ChevronLeft, ChevronRight, Plus, Phone, Code, Building2, Users, X, Clock, MapPin, MessageSquare, BookOpen, AlertCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Phone, Code, Building2, Users, X, Clock, MapPin, MessageSquare, BookOpen, AlertCircle, RefreshCw } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { apiFetch, authHeaders } from '../lib/api';
+import { apiFetch, authHeaders, syncCalendar } from '../lib/api';
 import { DialogShell } from './DialogShell';
+import { useAuth } from '../lib/AuthContext';
 
 interface InterviewData {
   id: string;
@@ -60,10 +61,12 @@ const OUTCOME_COLORS: Record<string, string> = {
 };
 
 export function Calendar() {
+  const { user, connectCalendar } = useAuth();
   const selectedInterviewTitleId = useId();
   const selectedInterviewCloseButtonRef = useRef<HTMLButtonElement>(null);
   const [interviews, setInterviews] = useState<InterviewData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [syncingCalendar, setSyncingCalendar] = useState(false);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<'month' | 'week'>('month');
   const [selectedInterview, setSelectedInterview] = useState<InterviewData | null>(null);
@@ -72,19 +75,33 @@ export function Calendar() {
   const [showNoteForm, setShowNoteForm] = useState(false);
   const [interviewNotes, setInterviewNotes] = useState<InterviewNoteData[]>([]);
   const [prepData, setPrepData] = useState<{ past_notes: InterviewNoteData[]; company_context: any } | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   useEffect(() => {
     loadInterviews();
     loadPastDue();
   }, []);
 
+  const getErrorMessage = async (res: Response, fallback: string) => {
+    const payload = await res.json().catch(() => null);
+    if (payload && typeof payload.detail === 'string') {
+      return payload.detail;
+    }
+    return fallback;
+  };
+
   const loadInterviews = async () => {
     setLoading(true);
     try {
       const res = await apiFetch('/api/interviews', { headers: authHeaders() });
-      if (res.ok) setInterviews(await res.json());
+      if (!res.ok) {
+        setErrorMessage(await getErrorMessage(res, 'Failed to load interviews.'));
+        return;
+      }
+      setInterviews(await res.json());
     } catch (err) {
-      console.error('Failed to load interviews:', err);
+      setErrorMessage('Failed to load interviews.');
     } finally {
       setLoading(false);
     }
@@ -93,31 +110,44 @@ export function Calendar() {
   const loadPastDue = async () => {
     try {
       const res = await apiFetch('/api/interviews/past-due', { headers: authHeaders() });
-      if (res.ok) setPastDueInterviews(await res.json());
-    } catch (err) {
-      console.error('Failed to load past-due interviews:', err);
+      if (!res.ok) {
+        setErrorMessage(await getErrorMessage(res, 'Failed to load past-due interviews.'));
+        return;
+      }
+      setPastDueInterviews(await res.json());
+    } catch {
+      setErrorMessage('Failed to load past-due interviews.');
     }
   };
 
   const loadNotes = async (interviewId: string) => {
     try {
       const res = await apiFetch(`/api/interviews/${interviewId}/notes`, { headers: authHeaders() });
-      if (res.ok) setInterviewNotes(await res.json());
-    } catch (err) {
-      console.error('Failed to load notes:', err);
+      if (!res.ok) {
+        setErrorMessage(await getErrorMessage(res, 'Failed to load interview notes.'));
+        return;
+      }
+      setInterviewNotes(await res.json());
+    } catch {
+      setErrorMessage('Failed to load interview notes.');
     }
   };
 
   const loadPrep = async (interviewId: string) => {
     try {
       const res = await apiFetch(`/api/interviews/${interviewId}/prep`, { headers: authHeaders() });
-      if (res.ok) setPrepData(await res.json());
-    } catch (err) {
-      console.error('Failed to load prep:', err);
+      if (!res.ok) {
+        setErrorMessage(await getErrorMessage(res, 'Failed to load interview prep.'));
+        return;
+      }
+      setPrepData(await res.json());
+    } catch {
+      setErrorMessage('Failed to load interview prep.');
     }
   };
 
   const handleSelectInterview = async (interview: InterviewData) => {
+    setErrorMessage(null);
     setSelectedInterview(interview);
     setShowNoteForm(false);
     setInterviewNotes([]);
@@ -136,13 +166,17 @@ export function Calendar() {
         headers: authHeaders(),
         body: JSON.stringify(note),
       });
-      if (res.ok) {
-        setShowNoteForm(false);
-        await loadNotes(interviewId);
-        await loadPastDue();
+      if (!res.ok) {
+        setErrorMessage(await getErrorMessage(res, 'Failed to save interview note.'));
+        return;
       }
-    } catch (err) {
-      console.error('Failed to save note:', err);
+      setErrorMessage(null);
+      setShowNoteForm(false);
+      setStatusMessage('Interview note saved.');
+      await loadNotes(interviewId);
+      await loadPastDue();
+    } catch {
+      setErrorMessage('Failed to save interview note.');
     }
   };
 
@@ -153,12 +187,16 @@ export function Calendar() {
         headers: authHeaders(),
         body: JSON.stringify(data),
       });
-      if (res.ok) {
-        setShowAddModal(false);
-        loadInterviews();
+      if (!res.ok) {
+        setErrorMessage(await getErrorMessage(res, 'Failed to create interview.'));
+        return;
       }
-    } catch (err) {
-      console.error('Failed to create interview:', err);
+      setErrorMessage(null);
+      setStatusMessage('Interview added.');
+      setShowAddModal(false);
+      loadInterviews();
+    } catch {
+      setErrorMessage('Failed to create interview.');
     }
   };
 
@@ -169,12 +207,36 @@ export function Calendar() {
         headers: authHeaders(),
         body: JSON.stringify(data),
       });
-      if (res.ok) {
-        setSelectedInterview(null);
-        loadInterviews();
+      if (!res.ok) {
+        setErrorMessage(await getErrorMessage(res, 'Failed to update interview.'));
+        return;
       }
+      setErrorMessage(null);
+      setStatusMessage('Interview updated.');
+      setSelectedInterview(null);
+      loadInterviews();
+    } catch {
+      setErrorMessage('Failed to update interview.');
+    }
+  };
+
+  const handleSyncCalendar = async () => {
+    setSyncingCalendar(true);
+    setErrorMessage(null);
+    setStatusMessage(null);
+    try {
+      const result = await syncCalendar();
+      await Promise.all([loadInterviews(), loadPastDue()]);
+      const totalSynced = result.created + result.updated;
+      setStatusMessage(
+        totalSynced > 0
+          ? `Google Calendar synced ${totalSynced} interviews (${result.created} new, ${result.updated} updated).`
+          : 'Google Calendar sync finished with no new interview events.'
+      );
     } catch (err) {
-      console.error('Failed to update interview:', err);
+      setErrorMessage(err instanceof Error ? err.message : 'Calendar sync failed.');
+    } finally {
+      setSyncingCalendar(false);
     }
   };
 
@@ -234,14 +296,47 @@ export function Calendar() {
             <p className="mt-1 text-slate-500 font-serif italic">
               Track your interviews and prep schedule.
             </p>
+            {user?.calendar_connected && (
+              <p className="mt-2 text-xs font-medium uppercase tracking-[0.2em] text-emerald-700">
+                Google Calendar connected
+              </p>
+            )}
           </div>
-          <button
-            onClick={() => setShowAddModal(true)}
-            className="px-4 py-2.5 text-sm bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-medium shadow-sm flex items-center gap-2"
-          >
-            <Plus className="w-4 h-4" /> Add Interview
-          </button>
+          <div className="flex items-center gap-3">
+            {!user?.calendar_connected ? (
+              <button
+                onClick={connectCalendar}
+                className="px-4 py-2.5 text-sm bg-emerald-100 hover:bg-emerald-200 text-emerald-900 rounded-xl font-medium shadow-sm"
+              >
+                Connect Google Calendar
+              </button>
+            ) : (
+              <button
+                onClick={handleSyncCalendar}
+                disabled={syncingCalendar}
+                className="px-4 py-2.5 text-sm bg-white hover:bg-slate-50 text-slate-700 rounded-xl font-medium shadow-sm border border-slate-200 flex items-center gap-2 disabled:opacity-60"
+              >
+                <RefreshCw className={cn('w-4 h-4', syncingCalendar && 'animate-spin')} />
+                {syncingCalendar ? 'Syncing...' : 'Sync Calendar'}
+              </button>
+            )}
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="px-4 py-2.5 text-sm bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-medium shadow-sm flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" /> Add Interview
+            </button>
+          </div>
         </div>
+
+        {(errorMessage || statusMessage) && (
+          <div className={cn(
+            'mb-6 rounded-2xl border px-4 py-3 text-sm',
+            errorMessage ? 'border-red-200 bg-red-50 text-red-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+          )}>
+            {errorMessage || statusMessage}
+          </div>
+        )}
 
         <div className="flex gap-6 flex-col xl:flex-row">
           {/* Calendar Grid */}
