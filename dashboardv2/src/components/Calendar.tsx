@@ -1,8 +1,9 @@
-import { useState, useEffect, useMemo } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { useState, useEffect, useMemo, useId, useRef } from 'react';
+import { AnimatePresence } from 'motion/react';
 import { ChevronLeft, ChevronRight, Plus, Phone, Code, Building2, Users, X, Clock, MapPin, MessageSquare, BookOpen, AlertCircle } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { apiFetch, authHeaders } from '../lib/api';
+import { DialogShell } from './DialogShell';
 
 interface InterviewData {
   id: string;
@@ -59,6 +60,8 @@ const OUTCOME_COLORS: Record<string, string> = {
 };
 
 export function Calendar() {
+  const selectedInterviewTitleId = useId();
+  const selectedInterviewCloseButtonRef = useRef<HTMLButtonElement>(null);
   const [interviews, setInterviews] = useState<InterviewData[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -244,11 +247,11 @@ export function Calendar() {
           {/* Calendar Grid */}
           <div className="flex-1 bg-white rounded-3xl shadow-sm border border-slate-100 p-6">
             <div className="flex items-center justify-between mb-6">
-              <button onClick={prevMonth} className="p-2 hover:bg-slate-100 rounded-lg"><ChevronLeft className="w-5 h-5" /></button>
+              <button onClick={prevMonth} aria-label="Show previous month" className="p-2 hover:bg-slate-100 rounded-lg"><ChevronLeft className="w-5 h-5" /></button>
               <h2 className="text-xl font-serif font-bold text-slate-900">
                 {currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
               </h2>
-              <button onClick={nextMonth} className="p-2 hover:bg-slate-100 rounded-lg"><ChevronRight className="w-5 h-5" /></button>
+              <button onClick={nextMonth} aria-label="Show next month" className="p-2 hover:bg-slate-100 rounded-lg"><ChevronRight className="w-5 h-5" /></button>
             </div>
 
             <div className="grid grid-cols-7 gap-px">
@@ -361,25 +364,24 @@ export function Calendar() {
       {/* Interview Detail Modal */}
       <AnimatePresence>
         {selectedInterview && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setSelectedInterview(null)}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/20 backdrop-blur-sm"
+          <DialogShell
+            onClose={() => setSelectedInterview(null)}
+            titleId={selectedInterviewTitleId}
+            initialFocusRef={selectedInterviewCloseButtonRef}
+            wrapperClassName="fixed inset-0 z-50 flex items-center justify-center p-4"
+            overlayClassName="absolute inset-0 bg-slate-900/20 backdrop-blur-sm"
+            panelClassName="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden"
           >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              onClick={e => e.stopPropagation()}
-              className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden"
-            >
               <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
-                <h2 className="text-xl font-serif font-bold text-slate-900 capitalize">
+                <h2 id={selectedInterviewTitleId} className="text-xl font-serif font-bold text-slate-900 capitalize">
                   {selectedInterview.interview_type} Interview
                 </h2>
-                <button onClick={() => setSelectedInterview(null)} className="p-1 hover:bg-slate-200 rounded-lg">
+                <button
+                  ref={selectedInterviewCloseButtonRef}
+                  onClick={() => setSelectedInterview(null)}
+                  aria-label="Close interview details"
+                  className="p-1 hover:bg-slate-200 rounded-lg"
+                >
                   <X className="w-5 h-5 text-slate-500" />
                 </button>
               </div>
@@ -497,8 +499,7 @@ export function Calendar() {
                   </button>
                 )}
               </div>
-            </motion.div>
-          </motion.div>
+          </DialogShell>
         )}
       </AnimatePresence>
 
@@ -514,6 +515,8 @@ export function Calendar() {
 
 
 function AddInterviewModal({ onClose, onAdd }: { onClose: () => void; onAdd: (data: any) => void }) {
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const titleId = useId();
   const [type, setType] = useState('phone');
   const [scheduledAt, setScheduledAt] = useState('');
   const [duration, setDuration] = useState('60');
@@ -536,23 +539,22 @@ function AddInterviewModal({ onClose, onAdd }: { onClose: () => void; onAdd: (da
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      onClick={onClose}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/20 backdrop-blur-sm"
+    <DialogShell
+      onClose={onClose}
+      titleId={titleId}
+      initialFocusRef={closeButtonRef}
+      wrapperClassName="fixed inset-0 z-50 flex items-center justify-center p-4"
+      overlayClassName="absolute inset-0 bg-slate-900/20 backdrop-blur-sm"
+      panelClassName="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden"
     >
-      <motion.div
-        initial={{ scale: 0.95, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.95, opacity: 0 }}
-        onClick={e => e.stopPropagation()}
-        className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden"
-      >
         <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
-          <h2 className="text-xl font-serif font-bold text-slate-900">Add Interview</h2>
-          <button onClick={onClose} className="p-1 hover:bg-slate-200 rounded-lg">
+          <h2 id={titleId} className="text-xl font-serif font-bold text-slate-900">Add Interview</h2>
+          <button
+            ref={closeButtonRef}
+            onClick={onClose}
+            aria-label="Close add interview dialog"
+            className="p-1 hover:bg-slate-200 rounded-lg"
+          >
             <X className="w-5 h-5 text-slate-500" />
           </button>
         </div>
@@ -592,8 +594,7 @@ function AddInterviewModal({ onClose, onAdd }: { onClose: () => void; onAdd: (da
             Add Interview
           </button>
         </form>
-      </motion.div>
-    </motion.div>
+    </DialogShell>
   );
 }
 

@@ -1,8 +1,9 @@
 import { Search, MapPin, Building2, X, ExternalLink, DollarSign } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import React, { useState } from 'react';
+import React, { useId, useRef, useState } from 'react';
 import { Job } from '../types';
 import { searchJobs, createJob } from '../lib/api';
+import { DialogShell } from './DialogShell';
 
 interface JobSearchProps {
   jobs: Job[];
@@ -10,6 +11,8 @@ interface JobSearchProps {
 }
 
 export function JobSearch({ jobs, setJobs }: JobSearchProps) {
+  const selectedJobTitleId = useId();
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
   const [selectedJob, setSelectedJob] = useState<any | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -121,7 +124,17 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
               transition={{ delay: i * 0.05 }}
               key={result.id} 
               onClick={() => setSelectedJob(result)}
-              className="p-5 group cursor-pointer transition-all bg-white rounded-3xl border border-slate-100 hover:shadow-[0_8px_30px_rgb(0,0,0,0.04)]"
+              onKeyDown={(event) => {
+                if (event.target !== event.currentTarget) return;
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  setSelectedJob(result);
+                }
+              }}
+              role="button"
+              tabIndex={0}
+              aria-label={`Open ${result.role} at ${result.company}`}
+              className="p-5 group cursor-pointer transition-all bg-white rounded-3xl border border-slate-100 hover:shadow-[0_8px_30px_rgb(0,0,0,0.04)] focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300"
             >
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center gap-3">
@@ -175,20 +188,14 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
 
       <AnimatePresence>
         {selectedJob && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setSelectedJob(null)}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/20 backdrop-blur-sm"
+          <DialogShell
+            onClose={() => setSelectedJob(null)}
+            titleId={selectedJobTitleId}
+            initialFocusRef={closeButtonRef}
+            wrapperClassName="fixed inset-0 z-50 flex items-center justify-center p-4"
+            overlayClassName="absolute inset-0 bg-slate-900/20 backdrop-blur-sm"
+            panelClassName="bg-white w-full max-w-2xl max-h-[90vh] flex flex-col rounded-3xl shadow-2xl border border-slate-100 relative overflow-hidden"
           >
-            <motion.div 
-              initial={{ scale: 0.95, opacity: 0, y: 20 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0.95, opacity: 0, y: 20 }}
-              onClick={(e) => e.stopPropagation()}
-              className="bg-white w-full max-w-2xl max-h-[90vh] flex flex-col rounded-3xl shadow-2xl border border-slate-100 relative overflow-hidden"
-            >
               {/* Modal Header */}
               <div className="p-6 border-b border-slate-100 flex items-start justify-between bg-slate-50/50 shrink-0">
                 <div className="flex items-start gap-4 pr-4">
@@ -200,12 +207,14 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
                     </div>
                   )}
                   <div className="min-w-0 flex-1">
-                    <h2 className="text-2xl tracking-tight font-serif font-bold text-slate-900 break-words">{selectedJob.role}</h2>
+                    <h2 id={selectedJobTitleId} className="text-2xl tracking-tight font-serif font-bold text-slate-900 break-words">{selectedJob.role}</h2>
                     <p className="text-lg text-slate-500 font-sans truncate">{selectedJob.company}</p>
                   </div>
                 </div>
                 <button 
+                  ref={closeButtonRef}
                   onClick={() => setSelectedJob(null)}
+                  aria-label="Close job search details"
                   className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-200/50 text-slate-500 hover:bg-slate-200 transition-colors shrink-0"
                 >
                   <X className="w-4 h-4" />
@@ -267,8 +276,7 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
                   </button>
                 )}
               </div>
-            </motion.div>
-          </motion.div>
+          </DialogShell>
         )}
       </AnimatePresence>
     </div>

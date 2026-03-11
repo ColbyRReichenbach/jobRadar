@@ -441,7 +441,7 @@
 | 2 | Add global 401 interceptor with auto-logout | GAP-017 | Done | `api.ts` now performs centralized 401 handling after failed refresh, clears auth state, clears the refresh cookie, and notifies `AuthContext` to return the dashboard to the signed-out state |
 | 3 | Replace silent mock data fallback with error banner | GAP-020 | Done | Dashboard data load failures now surface a visible retryable banner instead of silently swapping to mock data; successful refresh clears the banner |
 | 4 | Add optimistic update rollback on API failure | GAP-021 | Done | Kanban status changes now snapshot prior state, restore the board and selected job on API failure, and surface a visible rollback error message |
-| 5 | Add aria-labels, focus trapping, keyboard navigation | GAP-022 | Not Started |  |
+| 5 | Add aria-labels, focus trapping, keyboard navigation | GAP-022 | Done | Added a shared accessible dialog shell with escape handling, focus trapping, and focus restore; applied it to dashboard modals and made primary clickable cards keyboard operable with labels |
 
 ### Sprint H7: Performance & Data Security
 **Goal:** Rate limiting, query optimization, data encryption.

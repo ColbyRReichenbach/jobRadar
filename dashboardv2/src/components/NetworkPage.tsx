@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
-import { Search, Building2, Mail, ExternalLink, Linkedin, User } from 'lucide-react';
+import { useState, useEffect, useId, useRef } from 'react';
+import { Search, Building2, Mail, Linkedin, User, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { apiFetch, authHeaders } from '../lib/api';
+import { DialogShell } from './DialogShell';
 
 interface NetworkContact {
   id: string;
@@ -18,6 +19,8 @@ interface NetworkContact {
 }
 
 export function NetworkPage() {
+  const contactDialogTitleId = useId();
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
   const [contacts, setContacts] = useState<NetworkContact[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
@@ -119,7 +122,17 @@ export function NetworkPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.03 }}
                 onClick={() => openDetail(contact)}
-                className="p-5 group cursor-pointer transition-all bg-white rounded-2xl border border-slate-100 hover:shadow-[0_8px_30px_rgb(0,0,0,0.04)]"
+                onKeyDown={(event) => {
+                  if (event.target !== event.currentTarget) return;
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    openDetail(contact);
+                  }
+                }}
+                role="button"
+                tabIndex={0}
+                aria-label={`Open contact details for ${contact.name || contact.email || 'contact'}`}
+                className="p-5 group cursor-pointer transition-all bg-white rounded-2xl border border-slate-100 hover:shadow-[0_8px_30px_rgb(0,0,0,0.04)] focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300"
               >
                 <div className="flex items-start gap-3">
                   <div className="w-10 h-10 flex items-center justify-center rounded-full bg-slate-100 text-slate-600 font-bold text-sm shrink-0">
@@ -159,30 +172,34 @@ export function NetworkPage() {
       {/* Contact Detail Modal */}
       <AnimatePresence>
         {selectedContact && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => { setSelectedContact(null); setContactDetail(null); }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/20 backdrop-blur-sm"
+          <DialogShell
+            onClose={() => { setSelectedContact(null); setContactDetail(null); }}
+            titleId={contactDialogTitleId}
+            initialFocusRef={closeButtonRef}
+            wrapperClassName="fixed inset-0 z-50 flex items-center justify-center p-4"
+            overlayClassName="absolute inset-0 bg-slate-900/20 backdrop-blur-sm"
+            panelClassName="bg-white w-full max-w-lg max-h-[80vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden"
           >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              onClick={(e) => e.stopPropagation()}
-              className="bg-white w-full max-w-lg max-h-[80vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden"
-            >
               <div className="p-6 border-b border-slate-100 bg-slate-50/50">
-                <div className="flex items-center gap-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-center gap-4">
                   <div className="w-14 h-14 flex items-center justify-center rounded-full bg-slate-200 text-slate-700 font-bold text-xl">
                     {(selectedContact.name || selectedContact.email || '?')[0].toUpperCase()}
                   </div>
                   <div>
-                    <h2 className="text-xl font-serif font-bold text-slate-900">{selectedContact.name || 'Unknown'}</h2>
+                    <h2 id={contactDialogTitleId} className="text-xl font-serif font-bold text-slate-900">{selectedContact.name || 'Unknown'}</h2>
                     {selectedContact.title && <p className="text-sm text-slate-500">{selectedContact.title}</p>}
                     {selectedContact.company && <p className="text-sm text-slate-400">{selectedContact.company}</p>}
                   </div>
+                  </div>
+                  <button
+                    ref={closeButtonRef}
+                    onClick={() => { setSelectedContact(null); setContactDetail(null); }}
+                    aria-label="Close contact details"
+                    className="p-1 hover:bg-slate-200 rounded-lg shrink-0"
+                  >
+                    <X className="w-5 h-5 text-slate-500" />
+                  </button>
                 </div>
                 <div className="flex gap-2 mt-4">
                   {selectedContact.email && (
@@ -222,8 +239,7 @@ export function NetworkPage() {
                   <p className="text-sm text-slate-400 text-center py-8">No email history available.</p>
                 )}
               </div>
-            </motion.div>
-          </motion.div>
+          </DialogShell>
         )}
       </AnimatePresence>
     </div>

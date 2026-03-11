@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import { Job, JobStatus } from '../types';
 import { createJob } from '../lib/api';
 import { X } from 'lucide-react';
-import { motion } from 'motion/react';
+import { DialogShell } from './DialogShell';
 
 interface AddJobModalProps {
   isOpen: boolean;
@@ -11,6 +11,8 @@ interface AddJobModalProps {
 }
 
 export function AddJobModal({ isOpen, onClose, onJobAdded }: AddJobModalProps) {
+  const titleId = useId();
+  const companyInputRef = useRef<HTMLInputElement>(null);
   const [company, setCompany] = useState('');
   const [role, setRole] = useState('');
   const [url, setUrl] = useState('');
@@ -62,23 +64,19 @@ export function AddJobModal({ isOpen, onClose, onJobAdded }: AddJobModalProps) {
   };
 
   return (
-    <>
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        onClick={onClose}
-        className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-40"
-      />
-      <motion.div
-        initial={{ scale: 0.95, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.95, opacity: 0 }}
-        className="fixed inset-4 md:inset-auto md:top-1/2 md:left-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:w-full md:max-w-lg bg-white rounded-3xl shadow-2xl z-50 flex flex-col overflow-hidden"
-      >
+    <DialogShell
+      onClose={onClose}
+      titleId={titleId}
+      initialFocusRef={companyInputRef}
+      panelClassName="fixed inset-4 md:inset-auto md:top-1/2 md:left-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:w-full md:max-w-lg bg-white rounded-3xl shadow-2xl z-50 flex flex-col overflow-hidden"
+    >
         <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-          <h2 className="text-xl font-serif font-bold text-slate-900">Add Job</h2>
-          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-full transition-colors">
+          <h2 id={titleId} className="text-xl font-serif font-bold text-slate-900">Add Job</h2>
+          <button
+            onClick={onClose}
+            aria-label="Close add job dialog"
+            className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-full transition-colors"
+          >
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -93,6 +91,7 @@ export function AddJobModal({ isOpen, onClose, onJobAdded }: AddJobModalProps) {
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Company *</label>
             <input
+              ref={companyInputRef}
               type="text"
               value={company}
               onChange={(e) => setCompany(e.target.value)}
@@ -191,7 +190,6 @@ export function AddJobModal({ isOpen, onClose, onJobAdded }: AddJobModalProps) {
             </button>
           </div>
         </form>
-      </motion.div>
-    </>
+    </DialogShell>
   );
 }

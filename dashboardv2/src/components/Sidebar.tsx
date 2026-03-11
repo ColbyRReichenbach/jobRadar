@@ -138,6 +138,7 @@ export function Sidebar({ activeTab, setActiveTab, onGmailSync }: SidebarProps) 
               </div>
               <button
                 onClick={signOut}
+                aria-label="Sign out"
                 className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 rounded-lg transition-colors shrink-0"
                 title="Sign out"
               >

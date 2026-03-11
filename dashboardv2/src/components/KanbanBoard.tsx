@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useId, useRef } from 'react';
 import { Job, JobStatus } from '../types';
 import { MapPin, DollarSign, Calendar, Filter, Linkedin, Globe, Briefcase, ChevronDown, ChevronUp, X, AlignLeft, StickyNote, ExternalLink, Users, Building2, Link as LinkIcon, Check, Mail } from 'lucide-react';
 import { format, isAfter, subDays, subWeeks, subMonths, formatDistanceToNow } from 'date-fns';
@@ -6,6 +6,7 @@ import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { updateJob, getWarmPaths } from '../lib/api';
 import { AddJobModal } from './AddJobModal';
+import { DialogShell } from './DialogShell';
 
 function WarmConnectionsSection({ jobId, company }: { jobId: string; company: string }) {
   const [connections, setConnections] = useState<any[]>([]);
@@ -59,6 +60,8 @@ const SECTIONS: { id: JobStatus; title: string; color: string; bg: string; borde
 ];
 
 export function KanbanBoard({ jobs, setJobs }: { jobs: Job[], setJobs: (jobs: Job[]) => void }) {
+  const jobDialogTitleId = useId();
+  const selectedJobCloseButtonRef = useRef<HTMLButtonElement>(null);
   const [dateFilter, setDateFilter] = useState<string>('all');
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
@@ -165,6 +168,12 @@ export function KanbanBoard({ jobs, setJobs }: { jobs: Job[], setJobs: (jobs: Jo
     setJobs([newJob, ...jobs]);
   };
 
+  const closeSelectedJob = () => {
+    setSelectedJob(null);
+    setEditingNotes(false);
+    setEditingDescription(false);
+  };
+
   return (
     <div className="flex-1 h-full overflow-y-auto p-4 md:p-8 bg-[#F5F5F0] flex flex-col relative">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8 shrink-0">
@@ -240,7 +249,19 @@ export function KanbanBoard({ jobs, setJobs }: { jobs: Job[], setJobs: (jobs: Jo
                         setEditingNotes(false);
                         setEditingDescription(false);
                       }}
-                      className="group relative transition-all bg-white p-4 rounded-xl shadow-[0_4px_20px_rgb(0,0,0,0.03)] border border-slate-100 flex flex-col min-h-[140px] hover:shadow-md hover:border-indigo-300 cursor-pointer"
+                      onKeyDown={(event) => {
+                        if (event.target !== event.currentTarget) return;
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          setSelectedJob(job);
+                          setEditingNotes(false);
+                          setEditingDescription(false);
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Open ${job.role} at ${job.company}`}
+                      className="group relative transition-all bg-white p-4 rounded-xl shadow-[0_4px_20px_rgb(0,0,0,0.03)] border border-slate-100 flex flex-col min-h-[140px] hover:shadow-md hover:border-indigo-300 cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300"
                     >
                       <div className="absolute top-3 right-3" title={`Found via ${job.source || 'Unknown'}`}>
                         {getSourceIcon(job.source)}
@@ -354,16 +375,12 @@ export function KanbanBoard({ jobs, setJobs }: { jobs: Job[], setJobs: (jobs: Jo
       <AnimatePresence>
         {selectedJob && (
           <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => { setSelectedJob(null); setEditingNotes(false); setEditingDescription(false); }}
-              className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-40"
-            />
-            <motion.div
+            <DialogShell
+              onClose={closeSelectedJob}
+              titleId={jobDialogTitleId}
+              initialFocusRef={selectedJobCloseButtonRef}
               layoutId={`job-card-${selectedJob.id}`}
-              className="fixed inset-4 md:inset-auto md:top-1/2 md:left-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:w-full md:max-w-4xl md:max-h-[85vh] bg-white rounded-3xl shadow-2xl z-50 flex flex-col overflow-hidden"
+              panelClassName="fixed inset-4 md:inset-auto md:top-1/2 md:left-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:w-full md:max-w-4xl md:max-h-[85vh] bg-white rounded-3xl shadow-2xl z-50 flex flex-col overflow-hidden"
             >
               {/* Modal Header */}
               <div className="p-4 md:p-5 border-b border-slate-100 flex items-start justify-between bg-slate-50/50 shrink-0">
@@ -376,7 +393,7 @@ export function KanbanBoard({ jobs, setJobs }: { jobs: Job[], setJobs: (jobs: Jo
                     )}
                   </div>
                   <div>
-                    <h2 className="text-xl md:text-2xl font-serif font-bold text-slate-900 mb-0.5">{selectedJob.role}</h2>
+                    <h2 id={jobDialogTitleId} className="text-xl md:text-2xl font-serif font-bold text-slate-900 mb-0.5">{selectedJob.role}</h2>
                     <div className="flex items-center gap-2 text-sm text-slate-600 font-medium">
                       <span>{selectedJob.company}</span>
                       <span className="w-1 h-1 rounded-full bg-slate-300" />
@@ -396,7 +413,9 @@ export function KanbanBoard({ jobs, setJobs }: { jobs: Job[], setJobs: (jobs: Jo
                   </div>
                 </div>
                 <button
-                  onClick={() => { setSelectedJob(null); setEditingNotes(false); setEditingDescription(false); }}
+                  ref={selectedJobCloseButtonRef}
+                  onClick={closeSelectedJob}
+                  aria-label="Close job details"
                   className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-full transition-colors"
                 >
                   <X className="w-6 h-6" />
@@ -622,7 +641,7 @@ export function KanbanBoard({ jobs, setJobs }: { jobs: Job[], setJobs: (jobs: Jo
                   )}
                 </div>
               </div>
-            </motion.div>
+            </DialogShell>
           </>
         )}
       </AnimatePresence>

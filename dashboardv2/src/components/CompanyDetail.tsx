@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { Building2, Mail, Users, Code, BarChart2, X, ExternalLink, Briefcase } from 'lucide-react';
+import { useState, useEffect, useId, useRef } from 'react';
+import { Building2, Mail, Users, Code, BarChart2, X, Briefcase } from 'lucide-react';
 import { apiFetch, authHeaders } from '../lib/api';
+import { DialogShell } from './DialogShell';
 
 interface CompanyDetailProps {
   domain: string;
@@ -9,6 +9,8 @@ interface CompanyDetailProps {
 }
 
 export function CompanyDetail({ domain, onClose }: CompanyDetailProps) {
+  const titleId = useId();
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
   const [context, setContext] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
@@ -29,20 +31,14 @@ export function CompanyDetail({ domain, onClose }: CompanyDetailProps) {
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      onClick={onClose}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/20 backdrop-blur-sm"
+    <DialogShell
+      onClose={onClose}
+      titleId={titleId}
+      initialFocusRef={closeButtonRef}
+      wrapperClassName="fixed inset-0 z-50 flex items-center justify-center p-4"
+      overlayClassName="absolute inset-0 bg-slate-900/20 backdrop-blur-sm"
+      panelClassName="bg-white w-full max-w-2xl max-h-[85vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden"
     >
-      <motion.div
-        initial={{ scale: 0.95, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.95, opacity: 0 }}
-        onClick={e => e.stopPropagation()}
-        className="bg-white w-full max-w-2xl max-h-[85vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden"
-      >
         {/* Header */}
         <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-4">
@@ -54,11 +50,16 @@ export function CompanyDetail({ domain, onClose }: CompanyDetailProps) {
               </div>
             )}
             <div>
-              <h2 className="text-xl font-serif font-bold text-slate-900">{context?.identity?.name || domain}</h2>
+              <h2 id={titleId} className="text-xl font-serif font-bold text-slate-900">{context?.identity?.name || domain}</h2>
               <p className="text-sm text-slate-500">{domain}</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-1 hover:bg-slate-200 rounded-lg">
+          <button
+            ref={closeButtonRef}
+            onClick={onClose}
+            aria-label="Close company details"
+            className="p-1 hover:bg-slate-200 rounded-lg"
+          >
             <X className="w-5 h-5 text-slate-500" />
           </button>
         </div>
@@ -162,7 +163,6 @@ export function CompanyDetail({ domain, onClose }: CompanyDetailProps) {
             </>
           )}
         </div>
-      </motion.div>
-    </motion.div>
+    </DialogShell>
   );
 }
