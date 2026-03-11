@@ -414,7 +414,7 @@
 | 3 | Create docker-compose.yml (backend, dashboard, postgres, redis) | GAP-029 | Done | Added `docker-compose.yml` with backend, dashboard, Postgres, and Redis services plus health checks, volumes, and local dev environment defaults |
 | 4 | Create Procfile for Railway/Render | GAP-029 | Done | Added root `Procfile` with `release`, `web`, `worker`, and `beat` processes for Alembic, uvicorn, Celery worker, and Celery beat |
 | 5 | Create GitHub Actions: test on PR | GAP-030 | Done | Added `.github/workflows/test.yml` to run backend `pytest` and a dashboard production build on every pull request |
-| 6 | Create GitHub Actions: build+deploy on merge | GAP-030 | Not Started |  |
+| 6 | Create GitHub Actions: build+deploy on merge | GAP-030 | Done | Added `.github/workflows/deploy.yml` for `main` merges and manual runs; deploys backend via Railway CLI and dashboard via Vercel CLI when the required secrets are configured |
 | 7 | Add connection pooling to database.py | GAP-031 | Not Started |  |
 | 8 | Create gunicorn.conf.py / uvicorn production config | GAP-032 | Not Started |  |
 | 9 | Add Celery worker production settings (concurrency, timeouts) | GAP-033 | Not Started |  |
