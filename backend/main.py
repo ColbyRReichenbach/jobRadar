@@ -21,6 +21,7 @@ load_dotenv(override=True)
 
 from backend.database import async_session_factory, get_db
 from backend.dependencies import verify_api_key, create_jwt, create_refresh_token, decode_jwt, decode_refresh_token, get_current_user, set_refresh_cookie, clear_refresh_cookie, blacklist_token, REFRESH_COOKIE_NAME, generate_api_key, hash_api_key
+from backend.gmail_token_crypto import decrypt_gmail_token, encrypt_gmail_token, is_gmail_token_encrypted, validate_gmail_token_encryption_config
 from backend.logging_config import configure_logging
 from backend.metrics import (
     REQUESTS_IN_PROGRESS,
@@ -36,6 +37,7 @@ import structlog
 
 configure_logging()
 configure_sentry()
+validate_gmail_token_encryption_config()
 
 app = FastAPI(title="AppTrail API")
 request_logger = structlog.get_logger("backend.request")
@@ -1164,25 +1166,14 @@ async def google_auth_callback(
             credentials.expiry.timestamp(), tz=timezone.utc
         ) if credentials.expiry else datetime.now(timezone.utc)
 
-        # Check for existing token for this user
-        token_stmt = select(GmailToken).where(GmailToken.user_id == user.id)
-        token_result = await db.execute(token_stmt)
-        existing_token = token_result.scalar_one_or_none()
-
-        if existing_token:
-            existing_token.access_token = credentials.token
-            existing_token.refresh_token = credentials.refresh_token
-            existing_token.expires_at = expires_at
-            existing_token.updated_at = datetime.now(timezone.utc)
-        else:
-            gmail_token = GmailToken(
-                user_id=user.id,
-                access_token=credentials.token,
-                refresh_token=credentials.refresh_token,
-                expires_at=expires_at,
-            )
-            db.add(gmail_token)
-
+        from backend.services.gmail_auth import store_tokens
+        await store_tokens(
+            db,
+            access_token=credentials.token,
+            refresh_token=credentials.refresh_token,
+            expires_at=expires_at,
+            user_id=user.id,
+        )
         user.gmail_connected = True
 
     await db.commit()
@@ -1355,9 +1346,17 @@ async def sync_gmail(
     if not gmail_token:
         raise HTTPException(status_code=400, detail="Gmail not connected. Please connect your Gmail account first.")
 
+    access_token = decrypt_gmail_token(gmail_token.access_token)
+    refresh_token = decrypt_gmail_token(gmail_token.refresh_token)
+    if not is_gmail_token_encrypted(gmail_token.access_token) or not is_gmail_token_encrypted(gmail_token.refresh_token):
+        gmail_token.access_token = encrypt_gmail_token(access_token)
+        gmail_token.refresh_token = encrypt_gmail_token(refresh_token)
+        gmail_token.updated_at = datetime.now(timezone.utc)
+        await db.commit()
+
     creds = Credentials(
-        token=gmail_token.access_token,
-        refresh_token=gmail_token.refresh_token,
+        token=access_token,
+        refresh_token=refresh_token,
         token_uri="https://oauth2.googleapis.com/token",
         client_id=GOOGLE_CLIENT_ID,
         client_secret=GOOGLE_CLIENT_SECRET,
@@ -1367,7 +1366,7 @@ async def sync_gmail(
     if gmail_token.expires_at.timestamp() - time.time() < 300:
         from google.auth.transport.requests import Request
         creds.refresh(Request())
-        gmail_token.access_token = creds.token
+        gmail_token.access_token = encrypt_gmail_token(creds.token)
         gmail_token.expires_at = datetime.fromtimestamp(
             creds.expiry.timestamp(), tz=timezone.utc
         ) if creds.expiry else gmail_token.expires_at
@@ -2255,9 +2254,17 @@ async def send_email_endpoint(
     if not gmail_token:
         raise HTTPException(status_code=400, detail="Gmail not connected.")
 
+    access_token = decrypt_gmail_token(gmail_token.access_token)
+    refresh_token = decrypt_gmail_token(gmail_token.refresh_token)
+    if not is_gmail_token_encrypted(gmail_token.access_token) or not is_gmail_token_encrypted(gmail_token.refresh_token):
+        gmail_token.access_token = encrypt_gmail_token(access_token)
+        gmail_token.refresh_token = encrypt_gmail_token(refresh_token)
+        gmail_token.updated_at = datetime.now(timezone.utc)
+        await db.commit()
+
     creds = Credentials(
-        token=gmail_token.access_token,
-        refresh_token=gmail_token.refresh_token,
+        token=access_token,
+        refresh_token=refresh_token,
         token_uri="https://oauth2.googleapis.com/token",
         client_id=GOOGLE_CLIENT_ID,
         client_secret=GOOGLE_CLIENT_SECRET,

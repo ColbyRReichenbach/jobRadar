@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
+from backend.gmail_token_crypto import encrypt_gmail_token
 from backend.models import GmailToken
 from tests.conftest import AUTH_HEADER, TEST_USER_ID
 
@@ -61,8 +62,8 @@ async def test_send_email_endpoint_is_rate_limited(monkeypatch, client, db_sessi
     db_session.add(
         GmailToken(
             user_id=TEST_USER_ID,
-            access_token="access-token",
-            refresh_token="refresh-token",
+            access_token=encrypt_gmail_token("access-token"),
+            refresh_token=encrypt_gmail_token("refresh-token"),
             expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
         )
     )

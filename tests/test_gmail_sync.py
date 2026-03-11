@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from sqlalchemy import select
 
+from backend.gmail_token_crypto import encrypt_gmail_token
 from tests.conftest import AUTH_HEADER, TEST_USER_ID
 
 
@@ -24,8 +25,8 @@ async def test_gmail_sync_matches_application_by_company_domain(client, db_sessi
     )
     token = GmailToken(
         user_id=TEST_USER_ID,
-        access_token="access-token",
-        refresh_token="refresh-token",
+        access_token=encrypt_gmail_token("access-token"),
+        refresh_token=encrypt_gmail_token("refresh-token"),
         expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
     )
     db_session.add_all([app, token])
