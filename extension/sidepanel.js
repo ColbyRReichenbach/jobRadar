@@ -29,6 +29,117 @@ function hide(id) {
   document.getElementById(id).classList.add("hidden");
 }
 
+function clearElement(element) {
+  element.replaceChildren();
+}
+
+function appendTextElement(parent, tagName, className, text) {
+  const element = document.createElement(tagName);
+  if (className) {
+    element.className = className;
+  }
+  element.textContent = text;
+  parent.appendChild(element);
+  return element;
+}
+
+function renderAlert(container, variant, message) {
+  clearElement(container);
+  appendTextElement(container, "div", `alert alert-${variant}`, message);
+}
+
+function isSafeExternalUrl(url) {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" || parsed.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
+function createContactCard(contact) {
+  const card = document.createElement("div");
+  card.className = "contact-card";
+
+  appendTextElement(card, "div", "contact-name", contact.name || "Unknown");
+  appendTextElement(card, "div", "contact-title", contact.title || "");
+
+  if (contact.email) {
+    appendTextElement(card, "div", "contact-email", contact.email);
+  }
+
+  if (contact.confidence_score) {
+    const confidence = document.createElement("div");
+    confidence.style.fontSize = "11px";
+    confidence.style.color = "#94a3b8";
+    confidence.textContent = `Confidence: ${Math.round(contact.confidence_score * 100)}%`;
+    card.appendChild(confidence);
+  }
+
+  const label = document.createElement("label");
+  label.className = "contact-check";
+
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.dataset.contactId = String(contact.id);
+  checkbox.checked = Boolean(contact.reached_out);
+  label.appendChild(checkbox);
+  label.append(" I reached out to this person");
+
+  card.appendChild(label);
+  return card;
+}
+
+function renderLinkedinLink(container, url, company) {
+  clearElement(container);
+  if (!url || !isSafeExternalUrl(url)) {
+    return;
+  }
+
+  const link = document.createElement("a");
+  link.href = url;
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  link.style.display = "block";
+  link.style.marginTop = "8px";
+  link.style.fontSize = "12px";
+  link.textContent = `Search UNC alumni at ${company} on LinkedIn`;
+  container.appendChild(link);
+}
+
+function renderBrowsingNudge(container, domain, visitCount) {
+  clearElement(container);
+
+  const nudge = document.createElement("div");
+  nudge.className = "nudge";
+
+  appendTextElement(nudge, "div", "nudge-title", `Interested in ${domain}?`);
+  appendTextElement(
+    nudge,
+    "div",
+    "nudge-text",
+    `You've visited their careers page ${visitCount} times. Want to track this company?`
+  );
+
+  const button = document.createElement("button");
+  button.className = "btn-nudge";
+  button.id = "nudge-track-btn";
+  button.textContent = "Save to Pipeline";
+  nudge.appendChild(button);
+
+  container.appendChild(nudge);
+}
+
+function renderSavedNudge(container, domain) {
+  clearElement(container);
+
+  const nudge = document.createElement("div");
+  nudge.className = "nudge";
+  appendTextElement(nudge, "div", "nudge-title", "Saved!");
+  appendTextElement(nudge, "div", "nudge-text", `${domain} added to your pipeline.`);
+  container.appendChild(nudge);
+}
+
 function extractDomain(url) {
   try {
     const hostname = new URL(url).hostname;
@@ -90,8 +201,11 @@ async function init() {
   } catch (e) {
     hide("loading");
     show("no-job");
-    document.getElementById("no-job").innerHTML =
-      '<p class="alert alert-error">Failed to load job data.</p>';
+    renderAlert(
+      document.getElementById("no-job"),
+      "error",
+      "Failed to load job data."
+    );
   }
 }
 
@@ -134,7 +248,7 @@ document.getElementById("track-btn").addEventListener("click", async () => {
   const statusEl = document.getElementById("track-status");
   btn.disabled = true;
   btn.textContent = "Tracking...";
-  statusEl.innerHTML = "";
+  clearElement(statusEl);
 
   const payload = {
     company: currentJobData.company || "Unknown",
@@ -154,8 +268,7 @@ document.getElementById("track-btn").addEventListener("click", async () => {
 
     if (resp.status === 201) {
       const appData = await resp.json();
-      statusEl.innerHTML =
-        '<div class="alert alert-success">Job tracked successfully!</div>';
+      renderAlert(statusEl, "success", "Job tracked successfully!");
       btn.textContent = "Tracked";
 
       // Find contacts
@@ -163,17 +276,19 @@ document.getElementById("track-btn").addEventListener("click", async () => {
       await findContacts(appData.id, payload.company, domain);
     } else if (resp.status === 409) {
       const detail = (await resp.json()).detail;
-      statusEl.innerHTML = `<div class="alert alert-warning">Already tracked: ${detail.existing.company} - ${detail.existing.role_title}</div>`;
+      renderAlert(
+        statusEl,
+        "warning",
+        `Already tracked: ${detail.existing.company} - ${detail.existing.role_title}`
+      );
       btn.textContent = "Already Tracked";
     } else {
-      statusEl.innerHTML =
-        '<div class="alert alert-error">Failed to track job.</div>';
+      renderAlert(statusEl, "error", "Failed to track job.");
       btn.disabled = false;
       btn.textContent = "Track This Job";
     }
   } catch (e) {
-    statusEl.innerHTML =
-      '<div class="alert alert-error">Error connecting to backend.</div>';
+    renderAlert(statusEl, "error", "Error connecting to backend.");
     btn.disabled = false;
     btn.textContent = "Track This Job";
   }
@@ -201,22 +316,10 @@ async function findContacts(applicationId, company, domain) {
 
     show("contacts-section");
     const listEl = document.getElementById("contacts-list");
-    listEl.innerHTML = "";
+    clearElement(listEl);
 
     for (const contact of contacts) {
-      const card = document.createElement("div");
-      card.className = "contact-card";
-      card.innerHTML = `
-        <div class="contact-name">${contact.name || "Unknown"}</div>
-        <div class="contact-title">${contact.title || ""}</div>
-        ${contact.email ? `<div class="contact-email">${contact.email}</div>` : ""}
-        ${contact.confidence_score ? `<div style="font-size:11px;color:#94a3b8;">Confidence: ${Math.round(contact.confidence_score * 100)}%</div>` : ""}
-        <label class="contact-check">
-          <input type="checkbox" data-contact-id="${contact.id}" ${contact.reached_out ? "checked" : ""}>
-          I reached out to this person
-        </label>
-      `;
-      listEl.appendChild(card);
+      listEl.appendChild(createContactCard(contact));
     }
 
     // Checkbox handlers
@@ -234,11 +337,11 @@ async function findContacts(applicationId, company, domain) {
 
     // LinkedIn search URL
     if (data.linkedin_search_url) {
-      document.getElementById("linkedin-link").innerHTML = `
-        <a href="${data.linkedin_search_url}" target="_blank" style="display:block;margin-top:8px;font-size:12px;">
-          Search UNC alumni at ${company} on LinkedIn
-        </a>
-      `;
+      renderLinkedinLink(
+        document.getElementById("linkedin-link"),
+        data.linkedin_search_url,
+        company
+      );
     }
   } catch (e) {
     console.error("Failed to find contacts:", e);
@@ -263,13 +366,7 @@ async function checkBrowsingNudge() {
   if (!visits || visits.visitCount < 3) return; // Only nudge after 3+ visits
 
   const nudgeEl = document.getElementById("browsing-nudge");
-  nudgeEl.innerHTML = `
-    <div class="nudge">
-      <div class="nudge-title">Interested in ${domain}?</div>
-      <div class="nudge-text">You've visited their careers page ${visits.visitCount} times. Want to track this company?</div>
-      <button class="btn-nudge" id="nudge-track-btn">Save to Pipeline</button>
-    </div>
-  `;
+  renderBrowsingNudge(nudgeEl, domain, visits.visitCount);
   nudgeEl.classList.remove("hidden");
 
   document.getElementById("nudge-track-btn").addEventListener("click", async () => {
@@ -290,7 +387,7 @@ async function checkBrowsingNudge() {
 
       if (resp.status === 201) {
         btn.textContent = "Saved!";
-        nudgeEl.innerHTML = `<div class="nudge"><div class="nudge-title">Saved!</div><div class="nudge-text">${domain} added to your pipeline.</div></div>`;
+        renderSavedNudge(nudgeEl, domain);
       } else if (resp.status === 409) {
         btn.textContent = "Already Tracked";
       } else {
