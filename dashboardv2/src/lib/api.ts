@@ -583,6 +583,15 @@ export async function fetchNetworkContacts(query = ''): Promise<any[]> {
   });
 }
 
+export async function linkContactToApplication(contactId: string, applicationId: string | null): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/api/contacts/${contactId}`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify({ application_id: applicationId ?? '' }),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to link contact to application'));
+}
+
 export async function fetchResumeDrafts(applicationId: string): Promise<any[]> {
   return await fetchPaginatedArray<any>((limit, offset) => (
     `${API_BASE}/api/resume/drafts/${applicationId}?limit=${limit}&offset=${offset}`

@@ -227,6 +227,7 @@ class ContactUpdate(BaseModel):
     reached_out: Optional[bool] = None
     reached_out_at: Optional[str] = Field(None, max_length=MAX_ID_LEN)
     response_received: Optional[bool] = None
+    application_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
 
 
 class EmailUpdate(BaseModel):
@@ -790,6 +791,20 @@ async def update_contact(
         contact.reached_out_at = datetime.now(timezone.utc)
     if payload.response_received is not None:
         contact.response_received = payload.response_received
+    if payload.application_id is not None:
+        if payload.application_id == "":
+            contact.application_id = None
+        else:
+            app_id = _uuid.UUID(payload.application_id)
+            app_stmt = select(Application).where(
+                Application.id == app_id,
+                Application.user_id == user_id,
+            )
+            app_result = await db.execute(app_stmt)
+            app = app_result.scalar_one_or_none()
+            if not app:
+                raise HTTPException(status_code=404, detail="Application not found")
+            contact.application_id = app.id
 
     await db.commit()
     await db.refresh(contact)
@@ -1555,6 +1570,9 @@ async def sync_calendar(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except HttpError as exc:
         if getattr(exc, "status_code", None) == 403 or getattr(getattr(exc, "resp", None), "status", None) == 403:
+            current_user.calendar_connected = False
+            current_user.updated_at = datetime.now(timezone.utc)
+            await db.commit()
             raise HTTPException(
                 status_code=400,
                 detail="Google Calendar access is missing. Reconnect your Google account with Calendar access.",

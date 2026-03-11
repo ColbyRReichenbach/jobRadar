@@ -1,8 +1,8 @@
-import React, { CSSProperties, useEffect, useRef, useState } from 'react';
+import React, { CSSProperties, useEffect, useMemo, useRef, useState } from 'react';
 import { Email, Job } from '../types';
 import { format } from 'date-fns';
 import { cn } from '../lib/utils';
-import { Mail, AlertCircle, CheckCircle2, XCircle, Clock, ArrowRight, ChevronRight, ChevronLeft, ThumbsDown, AlertTriangle, Plus } from 'lucide-react';
+import { Mail, AlertCircle, CheckCircle2, XCircle, Clock, ArrowRight, ChevronRight, ChevronLeft, ThumbsDown, AlertTriangle, Plus, Search } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { submitEmailFeedback, checkEmailPipeline, createJob } from '../lib/api';
 import { FixedSizeList, ListChildComponentProps } from 'react-window';
@@ -120,6 +120,8 @@ function EmailListRow({ index, style, data }: ListChildComponentProps<EmailListI
 
 export function EmailFeed({ emails, jobs, isCollapsed, setIsCollapsed, forceOpen }: EmailFeedProps) {
   const [selectedEmail, setSelectedEmail] = useState<Email | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filter, setFilter] = useState<'all' | 'pipeline' | 'action_needed' | 'unlinked'>('all');
   const [pipelineAlert, setPipelineAlert] = useState<{
     in_pipeline: boolean;
     suggestion?: string;
@@ -150,6 +152,35 @@ export function EmailFeed({ emails, jobs, isCollapsed, setIsCollapsed, forceOpen
   const collapsed = forceOpen ? false : isCollapsed;
 
   const feedEmails = emails.filter(e => e.type !== 'conversation' && !dismissedEmails.has(e.id));
+  const filteredInboxEmails = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return feedEmails.filter((email) => {
+      const matchesSearch = !query || [
+        email.sender,
+        email.subject,
+        email.companyName,
+        email.senderEmail,
+        email.snippet,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+        .includes(query);
+
+      if (!matchesSearch) return false;
+      if (filter === 'pipeline') return !!email.jobId;
+      if (filter === 'action_needed') return email.classification === 'action_item' || !!email.actionUrl;
+      if (filter === 'unlinked') return !email.jobId;
+      return true;
+    });
+  }, [feedEmails, filter, searchQuery]);
+
+  useEffect(() => {
+    if (selectedEmail && !filteredInboxEmails.some((email) => email.id === selectedEmail.id)) {
+      setSelectedEmail(null);
+      setPipelineAlert(null);
+    }
+  }, [filteredInboxEmails, selectedEmail]);
 
   useEffect(() => {
     const element = listContainerRef.current;
@@ -227,7 +258,7 @@ export function EmailFeed({ emails, jobs, isCollapsed, setIsCollapsed, forceOpen
   };
 
   const listItemData: EmailListItemData = {
-    emails: feedEmails,
+    emails: filteredInboxEmails,
     jobs,
     selectedEmailId: selectedEmail?.id || null,
     onSelectEmail: handleSelectEmail,
@@ -263,11 +294,49 @@ export function EmailFeed({ emails, jobs, isCollapsed, setIsCollapsed, forceOpen
           {forceOpen ? (
             <div className="flex items-center justify-between mb-2">
               <h1 className="text-3xl tracking-tight font-serif font-bold text-slate-900">
-                Updates
+                Inbox
               </h1>
               <span className="text-xs px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full font-semibold">
                 {feedEmails.filter(e => !e.read).length} new
               </span>
+            </div>
+            <div className="flex flex-col gap-4 mt-4">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search updates, people, or companies..."
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+                />
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  onClick={() => setFilter('all')}
+                  className={cn("px-3 py-1.5 text-xs font-medium rounded-lg transition-colors", filter === 'all' ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200")}
+                >
+                  All Updates
+                </button>
+                <button
+                  onClick={() => setFilter('pipeline')}
+                  className={cn("px-3 py-1.5 text-xs font-medium rounded-lg transition-colors", filter === 'pipeline' ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200")}
+                >
+                  In Pipeline
+                </button>
+                <button
+                  onClick={() => setFilter('action_needed')}
+                  className={cn("px-3 py-1.5 text-xs font-medium rounded-lg transition-colors", filter === 'action_needed' ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200")}
+                >
+                  Action Needed
+                </button>
+                <button
+                  onClick={() => setFilter('unlinked')}
+                  className={cn("px-3 py-1.5 text-xs font-medium rounded-lg transition-colors", filter === 'unlinked' ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200")}
+                >
+                  Needs Matching
+                </button>
+              </div>
             </div>
           ) : (
             <>
@@ -406,11 +475,21 @@ export function EmailFeed({ emails, jobs, isCollapsed, setIsCollapsed, forceOpen
                 </div>
               ) : (
                 <div ref={listContainerRef} className="h-full overflow-hidden">
-                  {listHeight > 0 && (
+                  {filteredInboxEmails.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center px-8 text-center text-slate-400">
+                      <Mail className="w-10 h-10 mb-3 opacity-30" />
+                      <p className="text-base font-serif text-slate-500">No inbox updates found.</p>
+                      <p className="text-sm mt-1">
+                        {searchQuery || filter !== 'all'
+                          ? 'Adjust your search or filters.'
+                          : 'New application updates will appear here after Gmail sync.'}
+                      </p>
+                    </div>
+                  ) : listHeight > 0 && (
                     <FixedSizeList
                       height={listHeight}
                       width="100%"
-                      itemCount={feedEmails.length}
+                      itemCount={filteredInboxEmails.length}
                       itemSize={EMAIL_ROW_HEIGHT}
                       itemData={listItemData}
                       overscanCount={6}
@@ -534,7 +613,7 @@ export function EmailFeed({ emails, jobs, isCollapsed, setIsCollapsed, forceOpen
                 <Mail className="w-8 h-8 text-slate-300" />
               </div>
               <h3 className="text-2xl tracking-tight font-serif font-bold text-slate-900 mb-2">No Update Selected</h3>
-              <p className="text-slate-500 max-w-sm">Select an update from the list to view the full details.</p>
+              <p className="text-slate-500 max-w-sm">Select an inbox update from the list to view the full details.</p>
             </div>
           )}
         </div>

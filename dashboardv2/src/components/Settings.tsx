@@ -298,9 +298,12 @@ export function Settings() {
                 <p className="text-xs text-slate-500">Always enabled</p>
               </div>
             </div>
-            <p className="text-sm text-slate-500 ml-[52px]">
-              You'll always receive in-app alerts for dead listings, follow-up reminders, and status changes.
-            </p>
+            <div className="flex gap-3">
+              <div className="w-10 shrink-0" />
+              <p className="text-sm text-slate-500">
+                You'll always receive in-app alerts for dead listings, follow-up reminders, and status changes.
+              </p>
+            </div>
           </motion.div>
 
           {/* Save Button */}

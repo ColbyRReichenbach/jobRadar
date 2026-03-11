@@ -1,7 +1,7 @@
-import { useId, useRef, useState } from 'react';
-import { Job, JobStatus } from '../types';
-import { createJob } from '../lib/api';
-import { X } from 'lucide-react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Contact, Job, JobStatus } from '../types';
+import { createJob, fetchNetworkContacts, linkContactToApplication } from '../lib/api';
+import { Link2, Search, X } from 'lucide-react';
 import { DialogShell } from './DialogShell';
 
 interface AddJobModalProps {
@@ -20,8 +20,38 @@ export function AddJobModal({ isOpen, onClose, onJobAdded }: AddJobModalProps) {
   const [salary, setSalary] = useState('');
   const [status, setStatus] = useState<JobStatus>('saved');
   const [notes, setNotes] = useState('');
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [contactsQuery, setContactsQuery] = useState('');
+  const [selectedContactIds, setSelectedContactIds] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!isOpen) return;
+    fetchNetworkContacts()
+      .then((items) => {
+        setContacts(
+          items
+            .filter((item: any) => item.email)
+            .map((item: any) => ({
+              id: item.id,
+              name: item.name || item.email || '',
+              role: item.title || '',
+              email: item.email || '',
+              linkedin: item.linkedin_url || undefined,
+            })),
+        );
+      })
+      .catch(() => setContacts([]));
+  }, [isOpen]);
+
+  const filteredContacts = useMemo(() => {
+    const query = contactsQuery.trim().toLowerCase();
+    if (!query) return contacts.slice(0, 8);
+    return contacts
+      .filter((contact) => `${contact.name} ${contact.role} ${contact.email}`.toLowerCase().includes(query))
+      .slice(0, 8);
+  }, [contacts, contactsQuery]);
 
   if (!isOpen) return null;
 
@@ -42,6 +72,11 @@ export function AddJobModal({ isOpen, onClose, onJobAdded }: AddJobModalProps) {
         status,
         notes: notes.trim() || undefined,
       });
+      if (selectedContactIds.length > 0) {
+        await Promise.all(
+          selectedContactIds.map((contactId) => linkContactToApplication(contactId, newJob.id)),
+        );
+      }
       onJobAdded(newJob);
       onClose();
       // Reset form
@@ -52,6 +87,8 @@ export function AddJobModal({ isOpen, onClose, onJobAdded }: AddJobModalProps) {
       setSalary('');
       setStatus('saved');
       setNotes('');
+      setContactsQuery('');
+      setSelectedContactIds([]);
     } catch (err: any) {
       if (err.message?.includes('409')) {
         setError('This job is already in your pipeline.');
@@ -61,6 +98,14 @@ export function AddJobModal({ isOpen, onClose, onJobAdded }: AddJobModalProps) {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const toggleContact = (contactId: string) => {
+    setSelectedContactIds((current) => (
+      current.includes(contactId)
+        ? current.filter((id) => id !== contactId)
+        : [...current, contactId]
+    ));
   };
 
   return (
@@ -171,6 +216,68 @@ export function AddJobModal({ isOpen, onClose, onJobAdded }: AddJobModalProps) {
               className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 resize-y"
               placeholder="Any notes about this opportunity..."
             />
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Link2 className="w-4 h-4 text-slate-400" />
+              <label className="block text-sm font-medium text-slate-700">Link Existing Contacts</label>
+            </div>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                value={contactsQuery}
+                onChange={(e) => setContactsQuery(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                placeholder="Search your network..."
+              />
+            </div>
+            {selectedContactIds.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {selectedContactIds.map((contactId) => {
+                  const contact = contacts.find((item) => item.id === contactId);
+                  if (!contact) return null;
+                  return (
+                    <button
+                      key={contactId}
+                      type="button"
+                      onClick={() => toggleContact(contactId)}
+                      className="inline-flex items-center gap-2 rounded-full bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700"
+                    >
+                      {contact.name || contact.email}
+                      <X className="w-3 h-3" />
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            <div className="max-h-44 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50/60 p-2 space-y-2">
+              {filteredContacts.length === 0 ? (
+                <p className="px-2 py-4 text-center text-sm text-slate-400">No matching contacts found.</p>
+              ) : (
+                filteredContacts.map((contact) => {
+                  const selected = selectedContactIds.includes(contact.id);
+                  return (
+                    <button
+                      key={contact.id}
+                      type="button"
+                      onClick={() => toggleContact(contact.id)}
+                      className={`w-full rounded-xl border px-3 py-2 text-left transition-colors ${
+                        selected
+                          ? 'border-indigo-200 bg-indigo-50 text-indigo-900'
+                          : 'border-transparent bg-white hover:border-slate-200'
+                      }`}
+                    >
+                      <div className="text-sm font-medium">{contact.name || contact.email}</div>
+                      <div className="text-xs text-slate-500">
+                        {[contact.role, contact.email].filter(Boolean).join(' • ')}
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
           </div>
 
           <div className="flex gap-3 pt-2">

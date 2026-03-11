@@ -26,7 +26,24 @@ export function Conversations({ emails, jobs }: ConversationsProps) {
     setReplyText('');
   }, [selectedThreadId]);
 
-  const conversations = emails.filter(e => e.type === 'conversation');
+  const noisyConversationDomains = new Set([
+    'github.com',
+    'notifications.github.com',
+    'railway.app',
+    'railway.com',
+    'vercel.com',
+    'account.vercel.com',
+  ]);
+  const noisyConversationPattern = /\b(update|digest|newsletter|billing|invoice|receipt|usage|deployment|security|verification|notification|password|team invite|product update)\b/i;
+
+  const conversations = emails.filter((email) => {
+    if (email.type !== 'conversation') return false;
+    const senderDomain = (email.senderDomain || email.senderEmail?.split('@')[1] || '').toLowerCase();
+    const noisyByDomain = senderDomain ? noisyConversationDomains.has(senderDomain) : false;
+    const noisyByContent = noisyConversationPattern.test(`${email.subject} ${email.snippet}`);
+    if (email.inPipeline || email.requiresFollowUp) return true;
+    return !noisyByDomain && !noisyByContent;
+  });
 
   const filteredConversations = conversations.filter(email => {
     const matchesSearch = email.sender.toLowerCase().includes(searchQuery.toLowerCase()) ||

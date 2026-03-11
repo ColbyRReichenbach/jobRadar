@@ -56,6 +56,7 @@ export function Sidebar({ activeTab, setActiveTab, onGmailSync }: SidebarProps) 
         initial="initial"
         animate="animate"
         whileHover="hover"
+        onClick={() => setActiveTab('dashboard')}
       >
         <div className="w-8 h-8 flex items-center justify-center bg-slate-800 rounded-xl shadow-sm">
           <Logo className="w-5 h-5 text-white" />
@@ -132,18 +133,22 @@ export function Sidebar({ activeTab, setActiveTab, onGmailSync }: SidebarProps) 
                   {syncing ? 'Syncing...' : 'Sync Gmail'}
                 </button>
                 {(syncError || syncMessage) && (
-                  <p className={cn(
-                    'px-2 text-[11px] leading-5',
-                    syncError ? 'text-red-700' : 'text-emerald-700'
-                  )}>
+                  <div
+                    className={cn(
+                      'rounded-xl border px-3 py-2 text-[11px] leading-5',
+                      syncError
+                        ? 'border-red-200 bg-red-50 text-red-800'
+                        : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                    )}
+                  >
                     {syncError || syncMessage}
-                  </p>
+                  </div>
                 )}
               </div>
             )}
 
             {/* User profile */}
-            <div className="flex items-center gap-3 px-3">
+            <div className="flex items-center gap-3 rounded-2xl bg-white px-3 py-3 border border-slate-200/60 shadow-sm">
               {user.picture ? (
                 <img src={user.picture} alt={user.name || 'User'} className="w-8 h-8 rounded-full border border-slate-200" referrerPolicy="no-referrer" />
               ) : (

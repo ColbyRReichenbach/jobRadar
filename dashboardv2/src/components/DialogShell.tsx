@@ -113,7 +113,7 @@ export function DialogShell({
         aria-describedby={describedById}
         tabIndex={-1}
         onClick={(event) => event.stopPropagation()}
-        className={panelClassName}
+        className={`${panelClassName} relative z-10`}
       >
         {children}
       </motion.div>

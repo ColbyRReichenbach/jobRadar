@@ -1,4 +1,4 @@
-import { useState, useEffect, useId, useRef } from 'react';
+import { useState, useEffect, useId, useMemo, useRef } from 'react';
 import { Search, Building2, Mail, Linkedin, User, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { apiFetch, authHeaders, fetchNetworkContacts } from '../lib/api';
@@ -44,12 +44,27 @@ export function NetworkPage() {
     }
   };
 
-  const handleSearch = () => {
-    loadContacts(searchQuery || undefined);
-  };
+  const filteredContacts = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return contacts;
+    return contacts.filter((contact) => {
+      const haystack = [
+        contact.name,
+        contact.email,
+        contact.title,
+        contact.company,
+        contact.source,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [contacts, searchQuery]);
 
   const openDetail = async (contact: NetworkContact) => {
     setSelectedContact(contact);
+    setContactDetail(null);
     setErrorMessage(null);
     if (contact.email) {
       try {
@@ -90,17 +105,14 @@ export function NetworkPage() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+              onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
               placeholder="Search by name or company..."
               className="bg-transparent border-none outline-none w-full text-sm text-slate-900 placeholder:text-slate-400"
             />
           </div>
-          <button
-            onClick={handleSearch}
-            className="px-6 py-3 text-sm bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-medium shadow-sm"
-          >
-            Search
-          </button>
+          <div className="px-4 py-3 text-xs font-medium uppercase tracking-[0.18em] text-slate-400">
+            {filteredContacts.length} results
+          </div>
         </div>
 
         {errorMessage && (
@@ -114,15 +126,17 @@ export function NetworkPage() {
             <div className="w-8 h-8 border-2 rounded-full border-slate-300 border-t-slate-600 animate-spin mx-auto mb-4" />
             <p className="font-serif">Loading your network...</p>
           </div>
-        ) : contacts.length === 0 ? (
+        ) : filteredContacts.length === 0 ? (
           <div className="text-center py-16 text-slate-400">
             <User className="w-12 h-12 mx-auto mb-4 opacity-30" />
             <p className="text-lg font-serif">No contacts found</p>
-            <p className="text-sm mt-1">Contacts will appear as you track jobs and sync emails.</p>
+            <p className="text-sm mt-1">
+              {searchQuery ? 'Try a different search term.' : 'Contacts will appear as you track jobs and sync emails.'}
+            </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {contacts.map((contact, i) => (
+            {filteredContacts.map((contact, i) => (
               <motion.div
                 key={contact.id}
                 initial={{ opacity: 0, y: 10 }}

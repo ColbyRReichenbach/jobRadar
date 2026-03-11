@@ -61,7 +61,7 @@ const OUTCOME_COLORS: Record<string, string> = {
 };
 
 export function Calendar() {
-  const { user, connectCalendar } = useAuth();
+  const { user, connectCalendar, refreshUser } = useAuth();
   const selectedInterviewTitleId = useId();
   const selectedInterviewCloseButtonRef = useRef<HTMLButtonElement>(null);
   const [interviews, setInterviews] = useState<InterviewData[]>([]);
@@ -230,7 +230,11 @@ export function Calendar() {
           : 'Google Calendar sync finished with no new interview events.'
       );
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : 'Calendar sync failed.');
+      const message = err instanceof Error ? err.message : 'Calendar sync failed.';
+      setErrorMessage(message);
+      if (message.includes('Reconnect your Google account with Calendar access')) {
+        await refreshUser();
+      }
     } finally {
       setSyncingCalendar(false);
     }
