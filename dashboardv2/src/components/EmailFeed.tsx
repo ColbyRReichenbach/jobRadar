@@ -15,7 +15,20 @@ interface EmailFeedProps {
   forceOpen?: boolean;
 }
 
-const EMAIL_ROW_HEIGHT = 184;
+const EMAIL_ROW_HEIGHT = 148;
+
+const NOISY_INBOX_DOMAINS = new Set([
+  'github.com',
+  'notifications.github.com',
+  'noreply.github.com',
+  'railway.app',
+  'railway.com',
+  'vercel.com',
+  'mailer.vercel.com',
+  'linear.app',
+]);
+
+const NOISY_INBOX_PATTERN = /\b(update|digest|newsletter|billing|invoice|receipt|usage|deployment|security|verification|notification|password|team invite|product update|workflow run failed)\b/i;
 
 function openExternal(url: string) {
   window.open(url, '_blank', 'noopener,noreferrer');
@@ -63,32 +76,33 @@ function EmailListRow({ index, style, data }: ListChildComponentProps<EmailListI
         )}
 
         <div className="flex items-start justify-between mb-2">
-          <div className="flex items-center gap-2 min-w-0">
+          <div className="flex items-center gap-3 min-w-0">
             {logoUrl ? (
               <img
                 src={logoUrl}
                 alt={companyName || ''}
-                className="w-6 h-6 rounded-full border border-slate-100 shrink-0"
+                className="w-8 h-8 rounded-full border border-slate-100 shrink-0"
                 referrerPolicy="no-referrer"
                 onError={(event) => { (event.target as HTMLImageElement).style.display = 'none'; }}
               />
             ) : (
-              <div className="w-6 h-6 flex items-center justify-center text-[10px] font-medium rounded-full bg-slate-100 text-slate-500 shrink-0">
+              <div className="w-8 h-8 flex items-center justify-center text-xs font-medium rounded-full bg-slate-100 text-slate-500 shrink-0">
                 {(companyName || email.sender || '?').charAt(0)}
               </div>
             )}
-            <span className="text-sm font-serif font-bold text-slate-900 truncate">{email.sender}</span>
+            <div className="min-w-0">
+              <div className="text-base font-serif font-bold text-slate-900 truncate">{email.sender}</div>
+              <div className="text-xs text-slate-500 truncate">
+                {companyName || 'General update'}
+              </div>
+            </div>
           </div>
           <span className="text-[10px] font-medium text-slate-400 shrink-0">
             {format(new Date(email.date), 'MMM d')}
           </span>
         </div>
 
-        {companyName && (
-          <p className="text-[10px] text-slate-400 font-medium mb-1 truncate">{companyName}</p>
-        )}
-
-        <h3 className="mb-1 text-base font-serif font-bold text-slate-900 truncate">
+        <h3 className="mb-1 text-sm font-serif font-bold text-slate-900 truncate">
           {email.subject}
         </h3>
 
@@ -151,7 +165,17 @@ export function EmailFeed({ emails, jobs, isCollapsed, setIsCollapsed, forceOpen
 
   const collapsed = forceOpen ? false : isCollapsed;
 
-  const feedEmails = emails.filter(e => e.type !== 'conversation' && !dismissedEmails.has(e.id));
+  const feedEmails = emails.filter((email) => {
+    if (email.type === 'conversation' || dismissedEmails.has(email.id)) return false;
+    const senderDomain = (email.senderDomain || email.senderEmail?.split('@')[1] || '').toLowerCase();
+    const isNoise = senderDomain
+      ? NOISY_INBOX_DOMAINS.has(senderDomain) && NOISY_INBOX_PATTERN.test(`${email.subject} ${email.snippet}`)
+      : false;
+    if (email.inPipeline || email.classification === 'interview' || email.classification === 'action_item') {
+      return true;
+    }
+    return !isNoise;
+  });
   const filteredInboxEmails = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     return feedEmails.filter((email) => {

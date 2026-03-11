@@ -33,6 +33,7 @@ export function Conversations({ emails, jobs }: ConversationsProps) {
     'railway.com',
     'vercel.com',
     'account.vercel.com',
+    'mailer.vercel.com',
   ]);
   const noisyConversationPattern = /\b(update|digest|newsletter|billing|invoice|receipt|usage|deployment|security|verification|notification|password|team invite|product update)\b/i;
 

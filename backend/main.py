@@ -1065,6 +1065,7 @@ async def google_auth_redirect(
     auth_url, _ = flow.authorization_url(
         prompt="consent",
         access_type="offline",
+        include_granted_scopes="true",
     )
 
     # Encode intent + code_verifier into state so the callback can use it
@@ -1174,12 +1175,21 @@ async def google_auth_callback(
         await db.flush()
 
     if connect_gmail or connect_calendar:
-        if not credentials.refresh_token:
+        existing_token_stmt = select(GmailToken).where(GmailToken.user_id == user.id)
+        existing_token_result = await db.execute(existing_token_stmt)
+        existing_token = existing_token_result.scalar_one_or_none()
+
+        refresh_token_value = credentials.refresh_token
+        if not refresh_token_value and existing_token:
+            refresh_token_value = decrypt_gmail_token(existing_token.refresh_token)
+
+        if not refresh_token_value:
             return RedirectResponse(
                 url=f"{frontend_url}/?auth_error=missing_refresh_token",
                 status_code=302,
             )
 
+        granted_scopes = set(credentials.granted_scopes or credentials.scopes or [])
         expires_at = datetime.fromtimestamp(
             credentials.expiry.timestamp(), tz=timezone.utc
         ) if credentials.expiry else datetime.now(timezone.utc)
@@ -1189,13 +1199,19 @@ async def google_auth_callback(
         await store_tokens(
             db,
             access_token=credentials.token,
-            refresh_token=credentials.refresh_token,
+            refresh_token=refresh_token_value,
             expires_at=expires_at,
             user_id=user.id,
         )
-        if connect_gmail:
+        if connect_gmail and (
+            not granted_scopes
+            or "https://www.googleapis.com/auth/gmail.readonly" in granted_scopes
+        ):
             user.gmail_connected = True
-        if connect_calendar:
+        if connect_calendar and (
+            not granted_scopes
+            or "https://www.googleapis.com/auth/calendar.readonly" in granted_scopes
+        ):
             user.calendar_connected = True
 
     await db.commit()
@@ -1570,12 +1586,41 @@ async def sync_calendar(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except HttpError as exc:
         if getattr(exc, "status_code", None) == 403 or getattr(getattr(exc, "resp", None), "status", None) == 403:
-            current_user.calendar_connected = False
-            current_user.updated_at = datetime.now(timezone.utc)
-            await db.commit()
+            error_text = ""
+            try:
+                content = getattr(exc, "content", b"")
+                if isinstance(content, bytes):
+                    error_text = content.decode("utf-8", errors="ignore")
+                else:
+                    error_text = str(content)
+            except Exception:
+                error_text = str(exc)
+
+            lowered = error_text.lower()
+            if (
+                "insufficient authentication scopes" in lowered
+                or "insufficientpermissions" in lowered
+                or "access_token_scope_insufficient" in lowered
+            ):
+                current_user.calendar_connected = False
+                current_user.updated_at = datetime.now(timezone.utc)
+                await db.commit()
+                raise HTTPException(
+                    status_code=400,
+                    detail="Google Calendar access is missing. Reconnect your Google account with Calendar access.",
+                ) from exc
+            if (
+                "accessnotconfigured" in lowered
+                or "service_disabled" in lowered
+                or "google calendar api has not been used" in lowered
+            ):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Google Calendar API is not enabled for this Google Cloud project. Enable the Calendar API, then try again.",
+                ) from exc
             raise HTTPException(
                 status_code=400,
-                detail="Google Calendar access is missing. Reconnect your Google account with Calendar access.",
+                detail="Google Calendar access failed. Check the Calendar API configuration in Google Cloud and try again.",
             ) from exc
         raise HTTPException(status_code=502, detail="Google Calendar sync failed.") from exc
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useId, useRef } from 'react';
 import { AnimatePresence } from 'motion/react';
-import { ChevronLeft, ChevronRight, Plus, Phone, Code, Building2, Users, X, Clock, MapPin, MessageSquare, BookOpen, AlertCircle, RefreshCw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Phone, Code, Building2, Users, X, Clock, MapPin, MessageSquare, BookOpen, AlertCircle, RefreshCw, Video, Mail } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { apiFetch, authHeaders, fetchInterviews, syncCalendar } from '../lib/api';
 import { DialogShell } from './DialogShell';
@@ -45,6 +45,7 @@ const TYPE_ICONS: Record<string, typeof Phone> = {
   technical: Code,
   onsite: Building2,
   panel: Users,
+  virtual: Video,
 };
 
 const TYPE_COLORS: Record<string, string> = {
@@ -52,6 +53,7 @@ const TYPE_COLORS: Record<string, string> = {
   technical: 'bg-purple-50 text-purple-700 border-purple-200',
   onsite: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   panel: 'bg-amber-50 text-amber-700 border-amber-200',
+  virtual: 'bg-cyan-50 text-cyan-700 border-cyan-200',
 };
 
 const OUTCOME_COLORS: Record<string, string> = {
@@ -496,6 +498,14 @@ export function Calendar() {
                     <span>{selectedInterview.interviewer_name}</span>
                   </div>
                 )}
+                {selectedInterview.interviewer_email && (
+                  <div className="flex items-center gap-3 text-sm">
+                    <Mail className="w-4 h-4 text-slate-400" />
+                    <a href={`mailto:${selectedInterview.interviewer_email}`} className="text-indigo-600 hover:underline">
+                      {selectedInterview.interviewer_email}
+                    </a>
+                  </div>
+                )}
                 {selectedInterview.location_or_link && (
                   <div className="flex items-center gap-3 text-sm">
                     <MapPin className="w-4 h-4 text-slate-400" />
@@ -661,6 +671,7 @@ function AddInterviewModal({ onClose, onAdd }: { onClose: () => void; onAdd: (da
               <option value="technical">Technical</option>
               <option value="onsite">Onsite</option>
               <option value="panel">Panel</option>
+              <option value="virtual">Virtual</option>
             </select>
           </div>
           <div>
@@ -676,6 +687,10 @@ function AddInterviewModal({ onClose, onAdd }: { onClose: () => void; onAdd: (da
               <label className="text-xs font-medium text-slate-500 mb-1 block">Interviewer</label>
               <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Name" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm" />
             </div>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-500 mb-1 block">Contact Email</label>
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="recruiter@company.com" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm" />
           </div>
           <div>
             <label className="text-xs font-medium text-slate-500 mb-1 block">Location / Link</label>

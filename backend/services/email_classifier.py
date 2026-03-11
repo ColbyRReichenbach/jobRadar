@@ -24,6 +24,17 @@ logger = logging.getLogger(__name__)
 
 client = anthropic.AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
+NON_JOB_NOTIFICATION_DOMAINS = {
+    "github.com",
+    "notifications.github.com",
+    "noreply.github.com",
+    "railway.app",
+    "railway.com",
+    "vercel.com",
+    "mailer.vercel.com",
+    "linear.app",
+}
+
 CLASSIFIER_MODEL = "claude-haiku-4-5-20251001"
 
 SYSTEM_PROMPT = """You are an email classifier for a job search tracking application.
@@ -37,6 +48,10 @@ Categories:
 - job_update: Application received/confirmed, status update, under review, moved to next stage
 - conversation: Personal message from recruiter/hiring manager, networking, informational
 - not_relevant: Marketing, newsletters, product updates, promotions, account notifications, unrelated to job search
+
+Important exclusions:
+- Developer tooling notifications such as GitHub, Railway, Vercel, Linear, billing emails, deployment alerts, repository updates, account security notices, invoices, and newsletters are NOT job search emails.
+- Product updates from a company domain are still not_relevant unless they directly concern an active application, interview, or recruiting conversation.
 
 Return ONLY valid JSON with these fields:
 {
@@ -124,9 +139,22 @@ def _fallback_classify(subject: str, body: str, sender_email: str) -> dict:
     lower_subject = subject.lower()
     lower_body = (body[:500] if body else "").lower()
     combined = f"{lower_subject} {lower_body}"
+    sender_domain = sender_email.lower().split("@")[-1] if "@" in sender_email else ""
 
     classification = "job_update"
     action_needed = False
+
+    if sender_domain in NON_JOB_NOTIFICATION_DOMAINS:
+        return {
+            "classification": "not_relevant",
+            "confidence": 0.8,
+            "company_name": None,
+            "sender_role": "automated",
+            "key_sentence": subject,
+            "summary": f"Non-job product or account notification from {sender_email}",
+            "action_needed": False,
+            "is_automated": True,
+        }
 
     if any(w in lower_subject for w in ["interview", "schedule", "phone screen", "onsite", "technical"]):
         classification = "interview_request"
