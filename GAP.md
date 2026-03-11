@@ -423,13 +423,13 @@
 **Goal:** Production-grade observability.
 **Estimated effort:** 10 hours
 
-| # | Task | Gaps Addressed |
-|---|------|----------------|
-| 1 | Enhance /api/health with DB + Redis checks | GAP-034 |
-| 2 | Add structlog with JSON output + request ID tracking | GAP-035 |
-| 3 | Integrate Sentry SDK for error tracking | GAP-036 |
-| 4 | Add Prometheus/metrics middleware | GAP-037 |
-| 5 | Sanitize error logs (remove token/credential data) | GAP-040 |
+| # | Task | Gaps Addressed | Status | Notes |
+|---|------|----------------|--------|-------|
+| 1 | Enhance /api/health with DB + Redis checks | GAP-034 | Done | `/api/health` now runs a database query, conditionally pings Redis when configured, and returns per-component status in the response body |
+| 2 | Add structlog with JSON output + request ID tracking | GAP-035 | Not Started |  |
+| 3 | Integrate Sentry SDK for error tracking | GAP-036 | Not Started |  |
+| 4 | Add Prometheus/metrics middleware | GAP-037 | Not Started |  |
+| 5 | Sanitize error logs (remove token/credential data) | GAP-040 | Not Started |  |
 
 ### Sprint H6: Frontend Resilience & UX Hardening
 **Goal:** Handle all error states, improve reliability.

@@ -8,13 +8,13 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 load_dotenv(override=True)
 
-from backend.database import get_db
+from backend.database import async_session_factory, get_db
 from backend.dependencies import verify_api_key, create_jwt, create_refresh_token, decode_jwt, decode_refresh_token, get_current_user, set_refresh_cookie, clear_refresh_cookie, blacklist_token, REFRESH_COOKIE_NAME, generate_api_key, hash_api_key
 from backend.models import Application, Contact, EmailEvent, EmailFeedback, User, GmailToken, Company, RoleUmbrella, CompanyTechProfile, UserProfile, UserRoleInterest, AtsBehavior, WarmConnection, Alert, Interview, CompanyVisit, InterviewNote, NotificationPreference, ResumeDraft
 from backend.services.hunter import find_contacts, generate_linkedin_search_url
@@ -288,7 +288,39 @@ def _serialize_contact(contact_row: Contact) -> dict:
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
+    component_status = {
+        "api": {"status": "ok"},
+        "database": {"status": "ok"},
+        "redis": {"status": "not_configured"},
+    }
+    overall_status = "ok"
+
+    try:
+        async with async_session_factory() as session:
+            await session.execute(text("SELECT 1"))
+    except Exception as exc:
+        component_status["database"] = {"status": "error", "detail": str(exc)}
+        overall_status = "degraded"
+
+    redis_url = os.getenv("REDIS_URL")
+    if redis_url:
+        import redis.asyncio as redis
+
+        redis_client = redis.from_url(redis_url)
+        try:
+            await redis_client.ping()
+            component_status["redis"] = {"status": "ok"}
+        except Exception as exc:
+            component_status["redis"] = {"status": "error", "detail": str(exc)}
+            overall_status = "degraded"
+        finally:
+            await redis_client.aclose()
+
+    return {
+        "status": overall_status,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "checks": component_status,
+    }
 
 
 @app.post("/api/jobs/parse", dependencies=[Depends(verify_api_key)])

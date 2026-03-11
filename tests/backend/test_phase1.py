@@ -9,6 +9,9 @@ async def test_health_endpoint(client):
     data = resp.json()
     assert data["status"] == "ok"
     assert "timestamp" in data
+    assert data["checks"]["api"]["status"] == "ok"
+    assert data["checks"]["database"]["status"] == "ok"
+    assert data["checks"]["redis"]["status"] == "not_configured"
 
 
 @pytest.mark.asyncio
