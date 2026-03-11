@@ -435,13 +435,13 @@
 **Goal:** Handle all error states, improve reliability.
 **Estimated effort:** 8 hours
 
-| # | Task | Gaps Addressed |
-|---|------|----------------|
-| 1 | Add React ErrorBoundary with fallback UI | GAP-016 |
-| 2 | Add global 401 interceptor with auto-logout | GAP-017 |
-| 3 | Replace silent mock data fallback with error banner | GAP-020 |
-| 4 | Add optimistic update rollback on API failure | GAP-021 |
-| 5 | Add aria-labels, focus trapping, keyboard navigation | GAP-022 |
+| # | Task | Gaps Addressed | Status | Notes |
+|---|------|----------------|--------|-------|
+| 1 | Add React ErrorBoundary with fallback UI | GAP-016 | Done | Added a root dashboard `ErrorBoundary` with a branded fallback state and recovery actions around the full app tree |
+| 2 | Add global 401 interceptor with auto-logout | GAP-017 | Not Started |  |
+| 3 | Replace silent mock data fallback with error banner | GAP-020 | Not Started |  |
+| 4 | Add optimistic update rollback on API failure | GAP-021 | Not Started |  |
+| 5 | Add aria-labels, focus trapping, keyboard navigation | GAP-022 | Not Started |  |
 
 ### Sprint H7: Performance & Data Security
 **Goal:** Rate limiting, query optimization, data encryption.

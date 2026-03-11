@@ -10,6 +10,7 @@ import { NetworkPage } from './components/NetworkPage';
 import { Calendar } from './components/Calendar';
 import { Settings } from './components/Settings';
 import { LoginPage } from './components/LoginPage';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { initialJobs, initialEmails } from './data/mockData';
 import { Job, Email } from './types';
 import { Menu, X } from 'lucide-react';
@@ -161,8 +162,10 @@ function AppContent() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
