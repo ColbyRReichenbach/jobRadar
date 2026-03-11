@@ -15,6 +15,8 @@ interface SidebarProps {
 export function Sidebar({ activeTab, setActiveTab, onGmailSync }: SidebarProps) {
   const { user, signIn, signOut, connectGmail } = useAuth();
   const [syncing, setSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   const navItems = [
     { id: 'dashboard', label: 'Pipeline', icon: LayoutDashboard },
@@ -30,11 +32,18 @@ export function Sidebar({ activeTab, setActiveTab, onGmailSync }: SidebarProps) 
 
   const handleSyncGmail = async () => {
     setSyncing(true);
+    setSyncError(null);
+    setSyncMessage(null);
     try {
-      await syncGmail();
+      const result = await syncGmail();
       onGmailSync?.();
+      setSyncMessage(
+        result.new_emails > 0
+          ? `Synced ${result.new_emails} new emails from Gmail.`
+          : 'Gmail sync finished with no new emails.'
+      );
     } catch (err) {
-      console.error('Gmail sync failed:', err);
+      setSyncError(err instanceof Error ? err.message : 'Gmail sync failed.');
     } finally {
       setSyncing(false);
     }
@@ -113,14 +122,24 @@ export function Sidebar({ activeTab, setActiveTab, onGmailSync }: SidebarProps) 
                 Connect Gmail
               </button>
             ) : (
-              <button
-                onClick={handleSyncGmail}
-                disabled={syncing}
-                className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200 transition-colors disabled:opacity-50"
-              >
-                <RefreshCw className={cn("w-3.5 h-3.5", syncing && "animate-spin")} />
-                {syncing ? 'Syncing...' : 'Sync Gmail'}
-              </button>
+              <div className="space-y-2">
+                <button
+                  onClick={handleSyncGmail}
+                  disabled={syncing}
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200 transition-colors disabled:opacity-50"
+                >
+                  <RefreshCw className={cn("w-3.5 h-3.5", syncing && "animate-spin")} />
+                  {syncing ? 'Syncing...' : 'Sync Gmail'}
+                </button>
+                {(syncError || syncMessage) && (
+                  <p className={cn(
+                    'px-2 text-[11px] leading-5',
+                    syncError ? 'text-red-700' : 'text-emerald-700'
+                  )}>
+                    {syncError || syncMessage}
+                  </p>
+                )}
+              </div>
             )}
 
             {/* User profile */}

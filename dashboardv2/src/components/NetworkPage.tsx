@@ -1,7 +1,7 @@
 import { useState, useEffect, useId, useRef } from 'react';
 import { Search, Building2, Mail, Linkedin, User, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { apiFetch, authHeaders } from '../lib/api';
+import { apiFetch, authHeaders, fetchNetworkContacts } from '../lib/api';
 import { DialogShell } from './DialogShell';
 
 interface NetworkContact {
@@ -26,6 +26,7 @@ export function NetworkPage() {
   const [loading, setLoading] = useState(true);
   const [selectedContact, setSelectedContact] = useState<NetworkContact | null>(null);
   const [contactDetail, setContactDetail] = useState<any>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     loadContacts();
@@ -33,15 +34,11 @@ export function NetworkPage() {
 
   const loadContacts = async (q?: string) => {
     setLoading(true);
+    setErrorMessage(null);
     try {
-      const params = new URLSearchParams();
-      if (q) params.set('q', q);
-      const res = await apiFetch(`/api/network?${params}`, { headers: authHeaders() });
-      if (res.ok) {
-        setContacts(await res.json());
-      }
+      setContacts(await fetchNetworkContacts(q || ''));
     } catch (err) {
-      console.error('Failed to load network:', err);
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to load network.');
     } finally {
       setLoading(false);
     }
@@ -53,14 +50,18 @@ export function NetworkPage() {
 
   const openDetail = async (contact: NetworkContact) => {
     setSelectedContact(contact);
+    setErrorMessage(null);
     if (contact.email) {
       try {
         const res = await apiFetch(`/api/network/${encodeURIComponent(contact.email)}`, { headers: authHeaders() });
         if (res.ok) {
           setContactDetail(await res.json());
+        } else {
+          const err = await res.json().catch(() => null);
+          setErrorMessage(err?.detail || 'Failed to load contact detail.');
         }
       } catch (err) {
-        console.error('Failed to load contact detail:', err);
+        setErrorMessage(err instanceof Error ? err.message : 'Failed to load contact detail.');
       }
     }
   };
@@ -101,6 +102,12 @@ export function NetworkPage() {
             Search
           </button>
         </div>
+
+        {errorMessage && (
+          <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+            {errorMessage}
+          </div>
+        )}
 
         {loading ? (
           <div className="text-center py-16 text-slate-400">

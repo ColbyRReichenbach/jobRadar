@@ -1,6 +1,7 @@
 import { Job, Email, Contact } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const PAGE_SIZE = 100;
 
 let _accessToken: string | null = null;
 let _unauthorizedHandler: (() => void) | null = null;
@@ -23,6 +24,39 @@ function resolveUrl(pathOrUrl: string): string {
     return pathOrUrl;
   }
   return `${API_BASE}${pathOrUrl}`;
+}
+
+async function readErrorDetail(res: Response, fallback: string): Promise<string> {
+  const payload = await res.json().catch(() => null);
+  if (typeof payload?.detail === 'string') return payload.detail;
+  if (typeof payload?.message === 'string') return payload.message;
+  if (typeof payload?.detail?.message === 'string') return payload.detail.message;
+  return fallback;
+}
+
+async function fetchPaginatedArray<T>(buildPath: (limit: number, offset: number) => string): Promise<T[]> {
+  const items: T[] = [];
+  let offset = 0;
+
+  while (true) {
+    const res = await apiFetch(buildPath(PAGE_SIZE, offset), { headers: authHeaders() });
+    if (!res.ok) {
+      throw new Error(await readErrorDetail(res, 'Failed to load data.'));
+    }
+
+    const batch = await res.json();
+    if (!Array.isArray(batch)) {
+      throw new Error('Expected a list response from the API.');
+    }
+
+    items.push(...batch);
+    if (batch.length < PAGE_SIZE) {
+      break;
+    }
+    offset += PAGE_SIZE;
+  }
+
+  return items;
 }
 
 function notifyUnauthorized() {
@@ -162,7 +196,7 @@ export async function syncCalendar(): Promise<{ created: number; updated: number
 
 export async function fetchNotificationPreferences(): Promise<NotificationPrefs> {
   const res = await apiFetch(`${API_BASE}/api/notifications/preferences`, { headers: authHeaders() });
-  if (!res.ok) throw new Error('Failed to load notification preferences');
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to load notification preferences'));
   return await res.json();
 }
 
@@ -172,13 +206,13 @@ export async function updateNotificationPreferences(payload: NotificationPrefs):
     headers: authHeaders(),
     body: JSON.stringify(payload),
   });
-  if (!res.ok) throw new Error('Failed to save notification preferences');
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to save notification preferences'));
   return await res.json();
 }
 
 export async function fetchApiKeyStatus(): Promise<ApiKeyStatus> {
   const res = await apiFetch(`${API_BASE}/api/auth/api-key`, { headers: authHeaders() });
-  if (!res.ok) throw new Error('Failed to load API key status');
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to load API key status'));
   return await res.json();
 }
 
@@ -187,7 +221,7 @@ export async function generateApiKey(): Promise<ApiKeyCreateResponse> {
     method: 'POST',
     headers: authHeaders(),
   });
-  if (!res.ok) throw new Error('Failed to generate API key');
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to generate API key'));
   return await res.json();
 }
 
@@ -297,9 +331,7 @@ function mapEmail(raw: any): Email {
 // --- Jobs API ---
 
 export async function fetchJobs(): Promise<Job[]> {
-  const res = await apiFetch(`${API_BASE}/api/jobs`, { headers: authHeaders() });
-  if (!res.ok) throw new Error(`Failed to fetch jobs: ${res.status}`);
-  const data = await res.json();
+  const data = await fetchPaginatedArray<any>((limit, offset) => `${API_BASE}/api/jobs?limit=${limit}&offset=${offset}`);
   return data.map(mapJob);
 }
 
@@ -321,7 +353,7 @@ export async function createJob(job: Partial<Job>): Promise<Job> {
     headers: authHeaders(),
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`Failed to create job: ${res.status}`);
+  if (!res.ok) throw new Error(await readErrorDetail(res, `Failed to create job: ${res.status}`));
   return mapJob(await res.json());
 }
 
@@ -343,16 +375,14 @@ export async function updateJob(id: string, updates: Partial<Job>): Promise<Job>
     headers: authHeaders(),
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`Failed to update job: ${res.status}`);
+  if (!res.ok) throw new Error(await readErrorDetail(res, `Failed to update job: ${res.status}`));
   return mapJob(await res.json());
 }
 
 // --- Emails API ---
 
 export async function fetchEmails(): Promise<Email[]> {
-  const res = await apiFetch(`${API_BASE}/api/emails`, { headers: authHeaders() });
-  if (!res.ok) throw new Error(`Failed to fetch emails: ${res.status}`);
-  const data = await res.json();
+  const data = await fetchPaginatedArray<any>((limit, offset) => `${API_BASE}/api/emails?limit=${limit}&offset=${offset}`);
   return data.map(mapEmail);
 }
 
@@ -396,7 +426,7 @@ export async function markEmailResolved(id: string): Promise<void> {
 export async function searchJobs(query: string, location: string = ''): Promise<any[]> {
   const params = new URLSearchParams({ q: query, location });
   const res = await apiFetch(`${API_BASE}/api/search?${params}`, { headers: authHeaders() });
-  if (!res.ok) throw new Error(`Failed to search: ${res.status}`);
+  if (!res.ok) throw new Error(await readErrorDetail(res, `Failed to search: ${res.status}`));
   const data = await res.json();
   return data.results || [];
 }
@@ -511,10 +541,13 @@ export async function getCompanyContext(domain: string): Promise<any> {
 // --- Interview API ---
 
 export async function fetchInterviews(applicationId?: string): Promise<any[]> {
-  const params = applicationId ? `?application_id=${applicationId}` : '';
-  const res = await apiFetch(`${API_BASE}/api/interviews${params}`, { headers: authHeaders() });
-  if (!res.ok) throw new Error(`Failed to fetch interviews: ${res.status}`);
-  return await res.json();
+  return await fetchPaginatedArray<any>((limit, offset) => {
+    const params = new URLSearchParams();
+    params.set('limit', String(limit));
+    params.set('offset', String(offset));
+    if (applicationId) params.set('application_id', applicationId);
+    return `${API_BASE}/api/interviews?${params.toString()}`;
+  });
 }
 
 export async function createInterview(data: any): Promise<any> {
@@ -523,7 +556,29 @@ export async function createInterview(data: any): Promise<any> {
     headers: authHeaders(),
     body: JSON.stringify(data),
   });
-  if (!res.ok) throw new Error(`Failed to create interview: ${res.status}`);
+  if (!res.ok) throw new Error(await readErrorDetail(res, `Failed to create interview: ${res.status}`));
+  return await res.json();
+}
+
+export async function fetchNetworkContacts(query = ''): Promise<any[]> {
+  return await fetchPaginatedArray<any>((limit, offset) => {
+    const params = new URLSearchParams();
+    params.set('limit', String(limit));
+    params.set('offset', String(offset));
+    if (query) params.set('q', query);
+    return `${API_BASE}/api/network?${params.toString()}`;
+  });
+}
+
+export async function fetchResumeDrafts(applicationId: string): Promise<any[]> {
+  return await fetchPaginatedArray<any>((limit, offset) => (
+    `${API_BASE}/api/resume/drafts/${applicationId}?limit=${limit}&offset=${offset}`
+  ));
+}
+
+export async function fetchResumeDraft(applicationId: string, draftId: string): Promise<any> {
+  const res = await apiFetch(`${API_BASE}/api/resume/drafts/${applicationId}/${draftId}`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to load resume draft'));
   return await res.json();
 }
 
@@ -535,7 +590,7 @@ export function getExportUrl(): string {
 
 export async function exportCsv(): Promise<void> {
   const res = await apiFetch(`${API_BASE}/api/export/csv`, { headers: authHeaders() });
-  if (!res.ok) throw new Error(`Failed to export: ${res.status}`);
+  if (!res.ok) throw new Error(await readErrorDetail(res, `Failed to export: ${res.status}`));
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

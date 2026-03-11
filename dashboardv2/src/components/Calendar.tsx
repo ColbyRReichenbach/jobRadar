@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useId, useRef } from 'react';
 import { AnimatePresence } from 'motion/react';
 import { ChevronLeft, ChevronRight, Plus, Phone, Code, Building2, Users, X, Clock, MapPin, MessageSquare, BookOpen, AlertCircle, RefreshCw } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { apiFetch, authHeaders, syncCalendar } from '../lib/api';
+import { apiFetch, authHeaders, fetchInterviews, syncCalendar } from '../lib/api';
 import { DialogShell } from './DialogShell';
 import { useAuth } from '../lib/AuthContext';
 
@@ -94,13 +94,9 @@ export function Calendar() {
   const loadInterviews = async () => {
     setLoading(true);
     try {
-      const res = await apiFetch('/api/interviews', { headers: authHeaders() });
-      if (!res.ok) {
-        setErrorMessage(await getErrorMessage(res, 'Failed to load interviews.'));
-        return;
-      }
-      setInterviews(await res.json());
-    } catch (err) {
+      setInterviews(await fetchInterviews());
+      setErrorMessage(null);
+    } catch {
       setErrorMessage('Failed to load interviews.');
     } finally {
       setLoading(false);

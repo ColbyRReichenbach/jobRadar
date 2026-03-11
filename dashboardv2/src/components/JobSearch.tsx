@@ -1,13 +1,14 @@
 import { Search, MapPin, Building2, X, ExternalLink, DollarSign } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import React, { useId, useRef, useState } from 'react';
+import type { Dispatch, MouseEvent, SetStateAction } from 'react';
+import { useId, useRef, useState } from 'react';
 import { Job } from '../types';
 import { searchJobs, createJob } from '../lib/api';
 import { DialogShell } from './DialogShell';
 
 interface JobSearchProps {
   jobs: Job[];
-  setJobs: (jobs: Job[]) => void;
+  setJobs: Dispatch<SetStateAction<Job[]>>;
 }
 
 export function JobSearch({ jobs, setJobs }: JobSearchProps) {
@@ -17,10 +18,19 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+
+  const openExternal = (url?: string) => {
+    if (!url) return;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
     setIsSearching(true);
+    setErrorMessage(null);
+    setStatusMessage(null);
     try {
       const results = await searchJobs(searchQuery);
       setSearchResults(results.map((r: any) => ({
@@ -35,19 +45,23 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
         logoUrl: `https://logo.clearbit.com/${(r.company || '').toLowerCase().replace(/\s+/g, '')}.com`,
         url: r.url,
       })));
+      if (results.length === 0) {
+        setStatusMessage('No matching jobs found for that search.');
+      }
     } catch (err) {
-      console.error('Search failed:', err);
+      setErrorMessage(err instanceof Error ? err.message : 'Search failed.');
     } finally {
       setIsSearching(false);
     }
   };
 
-  const handleSave = async (e: React.MouseEvent, result: any) => {
+  const handleSave = async (e: MouseEvent, result: any) => {
     e.stopPropagation();
     if (jobs.some(j => j.company === result.company && j.role === result.role)) return;
 
+    const optimisticId = result.id || `search-${crypto.randomUUID()}`;
     const newJob: Job = {
-      id: result.id,
+      id: optimisticId,
       company: result.company,
       role: result.role,
       location: result.location,
@@ -60,15 +74,17 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
       description: result.description,
     };
 
-    // Optimistic update
-    setJobs([...jobs, newJob]);
+    setErrorMessage(null);
+    setStatusMessage(null);
+    setJobs(prev => [...prev, newJob]);
 
-    // Persist to backend
     try {
       const saved = await createJob(newJob);
-      setJobs(prev => prev.map(j => j.id === result.id ? saved : j));
+      setJobs(prev => prev.map(j => j.id === optimisticId ? saved : j));
+      setStatusMessage(`Saved ${result.role} at ${result.company} to your pipeline.`);
     } catch (err) {
-      console.error('Failed to save job:', err);
+      setJobs(prev => prev.filter(j => j.id !== optimisticId));
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to save job.');
     }
   };
   return (
@@ -105,6 +121,14 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
             </button>
           </div>
         </div>
+
+        {(errorMessage || statusMessage) && (
+          <div className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${
+            errorMessage ? 'border-red-200 bg-red-50 text-red-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+          }`}>
+            {errorMessage || statusMessage}
+          </div>
+        )}
 
         {searchResults.length === 0 && !isSearching && (
           <div className="text-center py-16 text-slate-400">
@@ -261,7 +285,7 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
                 </button>
                 {selectedJob?.url ? (
                   <button
-                    onClick={() => window.open(selectedJob.url, '_blank')}
+                    onClick={() => openExternal(selectedJob.url)}
                     className="flex items-center justify-center gap-2 w-full sm:flex-1 py-3 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl font-medium transition-colors"
                   >
                     Apply on Company Site <ExternalLink className="w-4 h-4 shrink-0" />

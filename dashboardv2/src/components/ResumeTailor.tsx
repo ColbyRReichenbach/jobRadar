@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { FileText, Sparkles, Clock, Trash2, ChevronDown, ChevronUp, Loader2, Download } from 'lucide-react';
-import { apiFetch, authHeaders } from '../lib/api';
+import { apiFetch, authHeaders, fetchResumeDraft, fetchResumeDrafts } from '../lib/api';
 
 interface ResumeDraft {
   id: string;
@@ -28,19 +28,19 @@ export function ResumeTailor({ applicationId, company, role, onClose }: ResumeTa
   const [showDiff, setShowDiff] = useState(false);
   const [customResume, setCustomResume] = useState('');
   const [showCustomInput, setShowCustomInput] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   useEffect(() => {
     loadDrafts();
   }, [applicationId]);
 
   const loadDrafts = async () => {
+    setErrorMessage(null);
     try {
-      const res = await apiFetch(`/api/resume/drafts/${applicationId}`, { headers: authHeaders() });
-      if (res.ok) {
-        setDrafts(await res.json());
-      }
+      setDrafts(await fetchResumeDrafts(applicationId));
     } catch (err) {
-      console.error('Failed to load drafts:', err);
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to load resume drafts.');
     } finally {
       setLoading(false);
     }
@@ -48,6 +48,8 @@ export function ResumeTailor({ applicationId, company, role, onClose }: ResumeTa
 
   const generateTailored = async () => {
     setGenerating(true);
+    setErrorMessage(null);
+    setStatusMessage(null);
     try {
       const body: Record<string, string> = {};
       if (customResume.trim()) {
@@ -63,30 +65,49 @@ export function ResumeTailor({ applicationId, company, role, onClose }: ResumeTa
         setDrafts(prev => [draft, ...prev]);
         setSelectedDraft(draft);
         setShowDiff(true);
+        setStatusMessage('Tailored resume generated.');
       } else {
         const err = await res.json();
-        alert(err.detail || 'Failed to generate tailored resume');
+        setErrorMessage(err.detail || 'Failed to generate tailored resume');
       }
     } catch (err) {
-      console.error('Failed to generate:', err);
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to generate tailored resume.');
     } finally {
       setGenerating(false);
     }
   };
 
   const deleteDraft = async (draftId: string) => {
+    setErrorMessage(null);
     try {
-      await apiFetch(`/api/resume/drafts/${applicationId}/${draftId}`, {
+      const res = await apiFetch(`/api/resume/drafts/${applicationId}/${draftId}`, {
         method: 'DELETE',
         headers: authHeaders(),
       });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        setErrorMessage(err?.detail || 'Failed to delete draft.');
+        return;
+      }
       setDrafts(prev => prev.filter(d => d.id !== draftId));
       if (selectedDraft?.id === draftId) {
         setSelectedDraft(null);
         setShowDiff(false);
       }
+      setStatusMessage('Draft deleted.');
     } catch (err) {
-      console.error('Failed to delete draft:', err);
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to delete draft.');
+    }
+  };
+
+  const selectDraft = async (draft: ResumeDraft) => {
+    setErrorMessage(null);
+    try {
+      const fullDraft = await fetchResumeDraft(applicationId, draft.id);
+      setSelectedDraft(fullDraft);
+      setShowDiff(true);
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to load draft details.');
     }
   };
 
@@ -126,6 +147,14 @@ export function ResumeTailor({ applicationId, company, role, onClose }: ResumeTa
       </div>
 
       {/* Generate Section */}
+      {(errorMessage || statusMessage) && (
+        <div className={`rounded-2xl border px-4 py-3 text-sm ${
+          errorMessage ? 'border-red-200 bg-red-50 text-red-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+        }`}>
+          {errorMessage || statusMessage}
+        </div>
+      )}
+
       <div className="bg-gradient-to-br from-indigo-50 to-blue-50 rounded-2xl border border-indigo-100 p-5">
         <div className="flex items-start gap-3">
           <div className="w-10 h-10 rounded-xl bg-indigo-100 flex items-center justify-center shrink-0">
@@ -265,10 +294,7 @@ export function ResumeTailor({ applicationId, company, role, onClose }: ResumeTa
                     ? 'border-indigo-200 bg-indigo-50/50'
                     : 'border-slate-200/60 bg-white hover:bg-slate-50'
                 }`}
-                onClick={() => {
-                  setSelectedDraft(draft);
-                  setShowDiff(true);
-                }}
+                onClick={() => selectDraft(draft)}
               >
                 <div className="flex items-center gap-3">
                   <FileText className="w-4 h-4 text-slate-400" />

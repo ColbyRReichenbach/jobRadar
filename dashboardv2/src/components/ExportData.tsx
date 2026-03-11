@@ -6,15 +6,17 @@ import { exportCsv } from '../lib/api';
 export function ExportData() {
   const [isExporting, setIsExporting] = useState(false);
   const [exported, setExported] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const handleExport = async () => {
     setIsExporting(true);
+    setErrorMessage(null);
     try {
       await exportCsv();
       setExported(true);
       setTimeout(() => setExported(false), 3000);
     } catch (err) {
-      console.error('Export failed:', err);
+      setErrorMessage(err instanceof Error ? err.message : 'Export failed.');
     } finally {
       setIsExporting(false);
     }
@@ -34,6 +36,12 @@ export function ExportData() {
         <p className="mb-8 text-slate-500 font-serif italic">
           Download a complete CSV of your job pipeline, contacts, and AI-classified email history.
         </p>
+
+        {errorMessage && (
+          <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+            {errorMessage}
+          </div>
+        )}
 
         <button 
           onClick={handleExport}

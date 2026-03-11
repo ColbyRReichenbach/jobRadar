@@ -2,7 +2,7 @@
 
 **Audit Date:** 2026-03-10
 **Audited by:** Senior domain experts (Security, Frontend, DevOps/SRE)
-**Follow-on delivery:** Post-hardening audit remediation and Google Calendar sync are now tracked in `SPRINTS.md` Sprint 21.
+**Follow-on delivery:** Post-hardening audit remediation and Google Calendar sync were completed in `SPRINTS.md` Sprint 21.
 **Codebase:** 195 passing tests, 20 sprints complete, 67+ API endpoints
 
 ---

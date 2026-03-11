@@ -2759,7 +2759,7 @@ async def get_interview_prep(interview_id: str, db: AsyncSession = Depends(get_d
         company = company_result.scalar_one_or_none()
         if company and company.domain:
             from backend.services.knowledge_graph import get_company_context
-            company_context = await get_company_context(db, company.domain)
+            company_context = await get_company_context(db, company.domain, user_id=user_id)
 
     return {"past_notes": past_notes, "company_context": company_context}
 

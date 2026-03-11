@@ -592,7 +592,7 @@ Each sprint is a self-contained unit of work with clear deliverables and a defin
 
 ---
 
-## Sprint 21: Audit Remediation & Google Calendar Sync (IN PROGRESS)
+## Sprint 21: Audit Remediation & Google Calendar Sync ✅ COMPLETE
 **Goal:** Close the gaps found in the post-hardening audit and fully ship Google Calendar interview sync.
 
 ### Tasks
@@ -601,9 +601,9 @@ Each sprint is a self-contained unit of work with clear deliverables and a defin
 3. ✅ **Remove dead legacy Gmail OAuth entrypoint** — Retire the old standalone `/api/auth/gmail` flow so only the user-bound Google OAuth path remains.
 4. ✅ **Implement Google Calendar interview sync** — Add Calendar OAuth scope support, store connection state on `User`, add `POST /api/calendar/sync`, dedupe by `calendar_event_id`, and create/update `Interview` rows from primary-calendar events.
 5. ✅ **Hook dashboard calendar UI to sync flow** — Add connect/sync controls and visible status/error states in `dashboardv2/src/components/Calendar.tsx`.
-6. ☐ **Finish frontend pagination adoption** — Update dashboard collection fetches to page through the new bounded backend list endpoints instead of silently truncating after the first 100 records.
-7. ☐ **Close remaining silent-failure UX paths** — Replace `console.error`-only handling in settings, export, Gmail sync, and interview flows with user-visible states.
-8. ☐ **Fix optimistic-save rollback and draft detail hydration** — Roll back failed Job Search saves and load full resume draft detail when reopening history rows.
+6. ✅ **Finish frontend pagination adoption** — Dashboard collection loaders now page through jobs, emails, interviews, network contacts, and resume drafts instead of silently truncating at the first 100 records.
+7. ✅ **Close remaining silent-failure UX paths** — Settings, export, Gmail sync, calendar actions, network detail loads, and resume tailoring now surface visible error/success states instead of `console.error` only.
+8. ✅ **Fix optimistic-save rollback and draft detail hydration** — Job Search now rolls back failed optimistic saves and resume history rows now fetch the full draft detail endpoint before opening the diff view.
 
 ### Definition of Done
 - Company detail and background Gmail sync are user-isolated
@@ -628,6 +628,14 @@ Each sprint is a self-contained unit of work with clear deliverables and a defin
 - `dashboardv2/src/lib/api.ts`
 - `dashboardv2/src/lib/AuthContext.tsx`
 - `dashboardv2/src/components/Calendar.tsx`
+- `dashboardv2/src/components/EmailFeed.tsx`
+- `dashboardv2/src/components/ExportData.tsx`
+- `dashboardv2/src/components/JobSearch.tsx`
+- `dashboardv2/src/components/NetworkPage.tsx`
+- `dashboardv2/src/components/ResumeTailor.tsx`
+- `dashboardv2/src/components/Settings.tsx`
+- `dashboardv2/src/components/Sidebar.tsx`
+- `tests/test_interview_notes.py`
 - `tests/test_interviews.py`
 - `tests/test_knowledge_graph.py`
 - `tests/backend/test_phase4.py`

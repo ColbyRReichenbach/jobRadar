@@ -1,8 +1,10 @@
 """Sprint 18: Tests for interview notes / second brain."""
 
+import uuid
+
 import pytest
 from datetime import datetime, timezone, timedelta
-from tests.conftest import AUTH_HEADER
+from tests.conftest import AUTH_HEADER, make_auth_header
 
 
 @pytest.mark.asyncio
@@ -245,6 +247,123 @@ async def test_interview_prep(client, db_session):
     data = resp.json()
     assert len(data["past_notes"]) >= 1
     assert data["past_notes"][0]["questions_asked"] == "Why PrepCo?"
+
+
+@pytest.mark.asyncio
+async def test_interview_prep_scopes_company_context_to_user(client, db_session):
+    """GET /api/interviews/{id}/prep should not leak another user's company context."""
+    from backend.models import Application, Company, Contact, EmailEvent, Interview, InterviewNote, User, WarmConnection
+
+    other_user_id = uuid.UUID("00000000-0000-0000-0000-000000000020")
+    db_session.add(
+        User(
+            id=other_user_id,
+            google_id="prep-other-user",
+            email="prep-other@apptrail.test",
+            name="Prep Other",
+        )
+    )
+
+    company = Company(domain="prepco.com", name="PrepCo")
+    db_session.add(company)
+    await db_session.commit()
+    await db_session.refresh(company)
+
+    own_app = Application(company="PrepCo", role_title="Engineer", status="interviewing", company_id=company.id)
+    other_app = Application(user_id=other_user_id, company="PrepCo", role_title="Other Engineer", status="interviewing", company_id=company.id)
+    db_session.add_all([own_app, other_app])
+    await db_session.commit()
+    await db_session.refresh(own_app)
+
+    old_interview = Interview(
+        application_id=own_app.id,
+        interview_type="phone",
+        scheduled_at=datetime.now(timezone.utc) - timedelta(days=10),
+        outcome="passed",
+    )
+    next_interview = Interview(
+        application_id=own_app.id,
+        interview_type="technical",
+        scheduled_at=datetime.now(timezone.utc) + timedelta(days=2),
+    )
+    db_session.add_all([old_interview, next_interview])
+    await db_session.commit()
+    await db_session.refresh(next_interview)
+
+    db_session.add(
+        InterviewNote(
+            interview_id=old_interview.id,
+            application_id=own_app.id,
+            questions_asked="Why us?",
+            went_well="Good examples",
+            overall_feeling="good",
+        )
+    )
+    db_session.add_all([
+        Contact(
+            application_id=own_app.id,
+            company_id=company.id,
+            name="Own Contact",
+            email="own@prepco.com",
+            source="hunter",
+        ),
+        Contact(
+            user_id=other_user_id,
+            application_id=other_app.id,
+            company_id=company.id,
+            name="Other Contact",
+            email="other@prepco.com",
+            source="hunter",
+        ),
+        EmailEvent(
+            company_id=company.id,
+            application_id=own_app.id,
+            gmail_message_id="prep-own-email",
+            sender="Own Sender",
+            classification="update",
+            color_code="blue",
+            urgency="low",
+        ),
+        EmailEvent(
+            user_id=other_user_id,
+            company_id=company.id,
+            application_id=other_app.id,
+            gmail_message_id="prep-other-email",
+            sender="Other Sender",
+            classification="update",
+            color_code="blue",
+            urgency="low",
+        ),
+        WarmConnection(
+            company_domain="prepco.com",
+            contact_email="own@prepco.com",
+            contact_name="Own Warm Path",
+            email_count=2,
+        ),
+        WarmConnection(
+            user_id=other_user_id,
+            company_domain="prepco.com",
+            contact_email="other@prepco.com",
+            contact_name="Other Warm Path",
+            email_count=5,
+        ),
+    ])
+    await db_session.commit()
+
+    resp = await client.get(f"/api/interviews/{next_interview.id}/prep", headers=AUTH_HEADER)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["company_context"] is not None
+    assert [app["role_title"] for app in data["company_context"]["applications"]] == ["Engineer"]
+    assert [contact["email"] for contact in data["company_context"]["contacts"]] == ["own@prepco.com"]
+    assert [email["sender"] for email in data["company_context"]["emails"]] == ["Own Sender"]
+    assert [warm["contact_email"] for warm in data["company_context"]["warm_connections"]] == ["own@prepco.com"]
+
+    other_resp = await client.get(
+        f"/api/interviews/{next_interview.id}/prep",
+        headers=make_auth_header(other_user_id, "prep-other@apptrail.test", "Prep Other"),
+    )
+    assert other_resp.status_code == 404
 
 
 @pytest.mark.asyncio

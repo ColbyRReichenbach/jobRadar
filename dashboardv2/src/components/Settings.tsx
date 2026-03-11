@@ -24,12 +24,15 @@ export function Settings() {
   const [newApiKey, setNewApiKey] = useState('');
   const [copySaved, setCopySaved] = useState(false);
   const [generatingKey, setGeneratingKey] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   useEffect(() => {
     loadPrefs();
   }, []);
 
   const loadPrefs = async () => {
+    setErrorMessage(null);
     try {
       const [prefsData, keyStatus] = await Promise.all([
         fetchNotificationPreferences(),
@@ -39,7 +42,7 @@ export function Settings() {
       setPhone(prefsData.sms_phone || '');
       setApiKeyStatus(keyStatus);
     } catch (err) {
-      console.error('Failed to load settings:', err);
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to load settings.');
     } finally {
       setLoading(false);
     }
@@ -48,6 +51,8 @@ export function Settings() {
   const savePrefs = async () => {
     setSaving(true);
     setSaved(false);
+    setErrorMessage(null);
+    setStatusMessage(null);
     try {
       const data = await updateNotificationPreferences({
         sms_enabled: prefs.sms_enabled,
@@ -56,9 +61,10 @@ export function Settings() {
       });
       setPrefs(data);
       setSaved(true);
+      setStatusMessage('Preferences saved.');
       setTimeout(() => setSaved(false), 3000);
     } catch (err) {
-      console.error('Failed to save preferences:', err);
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to save preferences.');
     } finally {
       setSaving(false);
     }
@@ -67,6 +73,8 @@ export function Settings() {
   const createNewApiKey = async () => {
     setGeneratingKey(true);
     setCopySaved(false);
+    setErrorMessage(null);
+    setStatusMessage(null);
     try {
       const data = await generateApiKey();
       setNewApiKey(data.api_key);
@@ -76,8 +84,9 @@ export function Settings() {
         created_at: data.created_at,
         last_used_at: null,
       });
+      setStatusMessage('New API key generated. Copy it now; it will only be shown once.');
     } catch (err) {
-      console.error('Failed to generate API key:', err);
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to generate API key.');
     } finally {
       setGeneratingKey(false);
     }
@@ -88,9 +97,10 @@ export function Settings() {
     try {
       await navigator.clipboard.writeText(newApiKey);
       setCopySaved(true);
+      setStatusMessage('API key copied to clipboard.');
       setTimeout(() => setCopySaved(false), 2500);
     } catch (err) {
-      console.error('Failed to copy API key:', err);
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to copy API key.');
     }
   };
 
@@ -107,6 +117,14 @@ export function Settings() {
       <div className="max-w-2xl mx-auto">
         <h1 className="text-2xl font-serif font-bold text-slate-900 mb-1">Settings</h1>
         <p className="text-sm text-slate-500 mb-8">Manage your notification preferences</p>
+
+        {(errorMessage || statusMessage) && (
+          <div className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${
+            errorMessage ? 'border-red-200 bg-red-50 text-red-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+          }`}>
+            {errorMessage || statusMessage}
+          </div>
+        )}
 
         <div className="space-y-6">
           {/* SMS Notifications */}

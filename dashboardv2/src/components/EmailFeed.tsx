@@ -17,6 +17,10 @@ interface EmailFeedProps {
 
 const EMAIL_ROW_HEIGHT = 184;
 
+function openExternal(url: string) {
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
 interface EmailListItemData {
   emails: Email[];
   jobs: Job[];
@@ -370,7 +374,7 @@ export function EmailFeed({ emails, jobs, isCollapsed, setIsCollapsed, forceOpen
               <div className="p-3 border-t border-slate-100 flex gap-2">
                 {selectedEmail.classification === 'action_item' && selectedEmail.actionUrl && (
                   <button
-                    onClick={() => window.open(selectedEmail.actionUrl, '_blank')}
+                    onClick={() => openExternal(selectedEmail.actionUrl)}
                     className="flex-1 px-3 py-2 bg-indigo-600 text-white text-xs font-medium rounded-xl shadow-sm hover:bg-indigo-700 transition-colors"
                   >
                     Take Action
@@ -502,7 +506,7 @@ export function EmailFeed({ emails, jobs, isCollapsed, setIsCollapsed, forceOpen
                 <div className="max-w-3xl mx-auto flex gap-3">
                   {selectedEmail.classification === 'action_item' && selectedEmail.actionUrl && (
                     <button
-                      onClick={() => window.open(selectedEmail.actionUrl, '_blank')}
+                      onClick={() => openExternal(selectedEmail.actionUrl)}
                       className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-xl shadow-sm hover:bg-indigo-700 transition-colors"
                     >
                       Take Action
