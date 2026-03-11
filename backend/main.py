@@ -9,6 +9,9 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, EmailStr, Field
+from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -52,6 +55,29 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _get_request_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
+
+
+_rate_limit_storage_uri = os.getenv("RATE_LIMIT_STORAGE_URI") or os.getenv("REDIS_URL")
+limiter = Limiter(
+    key_func=_get_request_ip,
+    storage_uri=_rate_limit_storage_uri,
+    in_memory_fallback_enabled=bool(_rate_limit_storage_uri),
+)
+app.state.limiter = limiter
+app.add_exception_handler(
+    RateLimitExceeded,
+    lambda request, exc: JSONResponse({"detail": str(exc.detail)}, status_code=429),
+)
+app.add_middleware(SlowAPIMiddleware)
 
 MAX_REQUEST_BODY_BYTES = 1024 * 1024
 
@@ -235,37 +261,32 @@ def _contains_like(value: str) -> str:
     return f"%{_escape_like(value.lower())}%"
 
 
-_AUTH_RATE_LIMIT_WINDOW_SECONDS = 60
-_AUTH_RATE_LIMIT_MAX_REQUESTS = 5
-_auth_rate_limit_hits: dict[str, list[float]] = {}
+def _auth_rate_limit() -> str:
+    return os.getenv("APPTRAIL_AUTH_RATE_LIMIT", "5/minute")
 
 
-def _get_request_ip(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for", "")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    if request.client and request.client.host:
-        return request.client.host
-    return "unknown"
+def _job_parse_rate_limit() -> str:
+    return os.getenv("APPTRAIL_JOB_PARSE_RATE_LIMIT", "10/minute")
 
 
-async def rate_limit_auth_requests(request: Request):
-    """Simple per-IP auth route rate limiting.
+def _search_rate_limit() -> str:
+    return os.getenv("APPTRAIL_SEARCH_RATE_LIMIT", "30/minute")
 
-    This is in-memory for now. GAP-003/H1.3 still tracks the Redis-backed version.
-    """
-    now = time.time()
-    ip = _get_request_ip(request)
-    recent_hits = [
-        ts
-        for ts in _auth_rate_limit_hits.get(ip, [])
-        if now - ts < _AUTH_RATE_LIMIT_WINDOW_SECONDS
-    ]
-    if len(recent_hits) >= _AUTH_RATE_LIMIT_MAX_REQUESTS:
-        raise HTTPException(status_code=429, detail="Too many auth requests. Try again in a minute.")
 
-    recent_hits.append(now)
-    _auth_rate_limit_hits[ip] = recent_hits
+def _global_search_rate_limit() -> str:
+    return os.getenv("APPTRAIL_GLOBAL_SEARCH_RATE_LIMIT", "60/minute")
+
+
+def _contact_find_rate_limit() -> str:
+    return os.getenv("APPTRAIL_CONTACT_FIND_RATE_LIMIT", "10/minute")
+
+
+def _gmail_sync_rate_limit() -> str:
+    return os.getenv("APPTRAIL_GMAIL_SYNC_RATE_LIMIT", "5/minute")
+
+
+def _send_email_rate_limit() -> str:
+    return os.getenv("APPTRAIL_SEND_EMAIL_RATE_LIMIT", "10/minute")
 
 
 def _serialize_app(app_row: Application, include_contacts: bool = False) -> dict:
@@ -403,7 +424,8 @@ async def prometheus_metrics():
 
 
 @app.post("/api/jobs/parse", dependencies=[Depends(verify_api_key)])
-async def parse_job(req: JobParseRequest):
+@limiter.limit(_job_parse_rate_limit, error_message="Too many job parse requests. Try again in a minute.")
+async def parse_job(request: Request, req: JobParseRequest):
     try:
         validated_url = await validate_job_parse_url(req.url)
     except ValueError as exc:
@@ -589,7 +611,9 @@ async def list_contacts(auth: dict = Depends(verify_api_key)):
 
 
 @app.post("/api/contacts/find")
+@limiter.limit(_contact_find_rate_limit, error_message="Too many contact lookup requests. Try again in a minute.")
 async def find_contacts_endpoint(
+    request: Request,
     req: ContactsFindRequest,
     db: AsyncSession = Depends(get_db),
     auth: dict = Depends(verify_api_key),
@@ -865,16 +889,19 @@ async def check_email_pipeline(
     }
 
 
-@app.get("/api/auth/gmail", dependencies=[Depends(rate_limit_auth_requests)])
-async def gmail_auth_redirect():
+@app.get("/api/auth/gmail")
+@limiter.limit(_auth_rate_limit, error_message="Too many auth requests. Try again in a minute.")
+async def gmail_auth_redirect(request: Request):
     from backend.services.gmail_auth import get_oauth_flow
     flow = get_oauth_flow()
     auth_url, _ = flow.authorization_url(prompt="consent", access_type="offline")
     return {"auth_url": auth_url}
 
 
-@app.get("/api/auth/gmail/callback", dependencies=[Depends(rate_limit_auth_requests)])
+@app.get("/api/auth/gmail/callback")
+@limiter.limit(_auth_rate_limit, error_message="Too many auth requests. Try again in a minute.")
 async def gmail_auth_callback(
+    request: Request,
     code: str = Query(...),
     db: AsyncSession = Depends(get_db),
 ):
@@ -903,8 +930,10 @@ GOOGLE_CLIENT_SECRET = os.getenv("GMAIL_CLIENT_SECRET", "")
 GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/api/auth/google/callback")
 
 
-@app.get("/api/auth/google", dependencies=[Depends(rate_limit_auth_requests)])
+@app.get("/api/auth/google")
+@limiter.limit(_auth_rate_limit, error_message="Too many auth requests. Try again in a minute.")
 async def google_auth_redirect(
+    request: Request,
     connect_gmail: bool = Query(False),
 ):
     """Redirect to Google OAuth. Set connect_gmail=true to also request Gmail access."""
@@ -957,8 +986,10 @@ async def google_auth_redirect(
     return {"auth_url": auth_url}
 
 
-@app.get("/api/auth/google/callback", dependencies=[Depends(rate_limit_auth_requests)])
+@app.get("/api/auth/google/callback")
+@limiter.limit(_auth_rate_limit, error_message="Too many auth requests. Try again in a minute.")
 async def google_auth_callback(
+    request: Request,
     code: str = Query(...),
     state: str = Query(""),
     db: AsyncSession = Depends(get_db),
@@ -1097,7 +1128,8 @@ async def get_me(current_user: User = Depends(get_current_user)):
     }
 
 
-@app.post("/api/auth/refresh", dependencies=[Depends(rate_limit_auth_requests)])
+@app.post("/api/auth/refresh")
+@limiter.limit(_auth_rate_limit, error_message="Too many auth requests. Try again in a minute.")
 async def refresh_access_token(request: Request, db: AsyncSession = Depends(get_db)):
     """Exchange a valid refresh token cookie for a new access token."""
     refresh = request.cookies.get(REFRESH_COOKIE_NAME)
@@ -1186,8 +1218,9 @@ async def create_or_rotate_api_key(
     }
 
 
-@app.post("/api/auth/api-key/validate", dependencies=[Depends(rate_limit_auth_requests)])
-async def validate_api_key(auth: dict = Depends(verify_api_key), db: AsyncSession = Depends(get_db)):
+@app.post("/api/auth/api-key/validate")
+@limiter.limit(_auth_rate_limit, error_message="Too many auth requests. Try again in a minute.")
+async def validate_api_key(request: Request, auth: dict = Depends(verify_api_key), db: AsyncSession = Depends(get_db)):
     """Validate an extension API key and return the owning user metadata."""
     user_id = _require_user_id(auth)
     stmt = select(User).where(User.id == user_id)
@@ -1210,7 +1243,9 @@ async def validate_api_key(auth: dict = Depends(verify_api_key), db: AsyncSessio
 # --- Gmail Sync ---
 
 @app.post("/api/gmail/sync")
+@limiter.limit(_gmail_sync_rate_limit, error_message="Too many Gmail sync requests. Try again in a minute.")
 async def sync_gmail(
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -1397,7 +1432,9 @@ async def sync_gmail(
 
 
 @app.get("/api/search", dependencies=[Depends(verify_api_key)])
+@limiter.limit(_search_rate_limit, error_message="Too many search requests. Try again in a minute.")
 async def search_jobs_endpoint(
+    request: Request,
     q: str = Query(""),
     location: str = Query(""),
     db: AsyncSession = Depends(get_db),
@@ -1454,7 +1491,9 @@ async def search_jobs_endpoint(
 
 
 @app.get("/api/search/global")
+@limiter.limit(_global_search_rate_limit, error_message="Too many global search requests. Try again in a minute.")
 async def global_search(
+    request: Request,
     q: str = Query(""),
     db: AsyncSession = Depends(get_db),
     auth: dict = Depends(verify_api_key),
@@ -2095,7 +2134,9 @@ class SendEmailPayload(BaseModel):
 
 
 @app.post("/api/emails/send", status_code=201)
+@limiter.limit(_send_email_rate_limit, error_message="Too many send email requests. Try again in a minute.")
 async def send_email_endpoint(
+    request: Request,
     payload: SendEmailPayload,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),

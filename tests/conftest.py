@@ -16,7 +16,7 @@ os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 
 from backend.database import get_db
 from backend.dependencies import create_jwt
-from backend.main import app, _auth_rate_limit_hits
+from backend.main import app, limiter
 from backend.models import Base, User
 
 TEST_API_KEY = os.environ["APPTRAIL_API_KEY"]
@@ -97,5 +97,7 @@ async def client(db_engine):
 
 
 @pytest.fixture(autouse=True)
-def reset_auth_rate_limit():
-    _auth_rate_limit_hits.clear()
+def reset_rate_limits():
+    storage = limiter._storage
+    if hasattr(storage, "reset"):
+        storage.reset()
