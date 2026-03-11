@@ -10,6 +10,7 @@
     .container { max-width: 480px; margin: 0 auto; background: white; border-radius: 12px; padding: 32px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
     h1 { font-size: 24px; color: #1e293b; margin-bottom: 8px; }
     p { color: #64748b; font-size: 14px; margin-bottom: 24px; line-height: 1.5; }
+    .hint { margin-top: 6px; margin-bottom: 18px; font-size: 12px; color: #64748b; }
     label { display: block; font-weight: 600; font-size: 14px; color: #334155; margin-bottom: 6px; }
     input { width: 100%; padding: 10px 14px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; outline: none; }
     input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
@@ -25,11 +26,14 @@
   <div class="container">
     <h1>AppTrail Setup</h1>
     <p>Enter the personal API key generated in your AppTrail dashboard Settings page. This key is tied to your account and is used to connect the extension securely.</p>
+    <label for="apiBase">Backend URL</label>
+    <input type="url" id="apiBase" placeholder="https://api.apptrail.com">
+    <p class="hint">Default is the production API. Use `http://localhost:8000` only for local development.</p>
     <label for="apiKey">API Key</label>
     <input type="text" id="apiKey" placeholder="Paste your API key here...">
     <button id="saveBtn">Save & Validate</button>
     <div id="status" class="status"></div>
   </div>
-  <script src="setup.js"></script>
+  <script type="module" src="setup.js"></script>
 </body>
 </html>

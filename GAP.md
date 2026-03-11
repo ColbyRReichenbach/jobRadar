@@ -389,19 +389,19 @@
 **Goal:** Secure extension and prepare for Chrome Web Store submission.
 **Estimated effort:** 12 hours
 
-| # | Task | Gaps Addressed |
-|---|------|----------------|
-| 1 | Make API_BASE configurable (chrome.storage), default to HTTPS prod URL | GAP-004 |
-| 2 | Add sender origin validation to all message handlers | GAP-023 |
-| 3 | Move API key to chrome.storage.session or encrypt | GAP-024 |
-| 4 | Reduce host_permissions, use optional_host_permissions | GAP-026 |
-| 5 | Add offline detection, retry queue, error states | GAP-027 |
-| 6 | Change API key input to type="password" | GAP-028 |
-| 7 | Design and add extension icons (16, 48, 128px) | GAP-046 |
-| 8 | Write privacy policy | GAP-047 |
-| 9 | Create store listing (description, screenshots) | GAP-048 |
-| 10 | Add missing manifest fields (homepage_url, short_name, action.default_icon) | GAP-049 |
-| 11 | Create extension packaging script | GAP-050 |
+| # | Task | Gaps Addressed | Status | Notes |
+|---|------|----------------|--------|-------|
+| 1 | Make API_BASE configurable (chrome.storage), default to HTTPS prod URL | GAP-004 | Done | Extension now reads a stored backend URL from `chrome.storage.local`, defaults to `https://api.apptrail.com`, and allows localhost overrides via setup |
+| 2 | Add sender origin validation to all message handlers | GAP-023 | Not Started |  |
+| 3 | Move API key to chrome.storage.session or encrypt | GAP-024 | Not Started |  |
+| 4 | Reduce host_permissions, use optional_host_permissions | GAP-026 | Not Started |  |
+| 5 | Add offline detection, retry queue, error states | GAP-027 | Not Started |  |
+| 6 | Change API key input to type="password" | GAP-028 | Not Started |  |
+| 7 | Design and add extension icons (16, 48, 128px) | GAP-046 | Not Started |  |
+| 8 | Write privacy policy | GAP-047 | Not Started |  |
+| 9 | Create store listing (description, screenshots) | GAP-048 | Not Started |  |
+| 10 | Add missing manifest fields (homepage_url, short_name, action.default_icon) | GAP-049 | Not Started |  |
+| 11 | Create extension packaging script | GAP-050 | Not Started |  |
 
 ### Sprint H4: Infrastructure & Deployment
 **Goal:** Containerize, automate CI/CD, configure production database.

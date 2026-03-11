@@ -9,7 +9,9 @@
     "storage"
   ],
   "host_permissions": [
-    "http://localhost:8000/*",
+    "https://api.apptrail.com/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*",
     "https://boards.greenhouse.io/*",
     "https://boards-api.greenhouse.io/*",
     "https://job-boards.greenhouse.io/*",

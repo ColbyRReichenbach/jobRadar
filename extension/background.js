@@ -1,5 +1,6 @@
 // Service worker: URL detection only. No backend calls.
-importScripts("detector.js");
+import { detectPlatform } from "./detector.js";
+import { buildApiUrl, getApiBase, getApiKey } from "./config.js";
 
 // On install, open setup page if no API key stored
 chrome.runtime.onInstalled.addListener(async () => {
@@ -40,10 +41,10 @@ async function handleCareerPageVisit({ domain, url, visitCount }) {
   await chrome.storage.local.set({ [key]: existing });
 
   // Sync to backend if API key is set
-  const apiKey = (await chrome.storage.local.get("apiKey")).apiKey;
+  const [apiKey, apiBase] = await Promise.all([getApiKey(), getApiBase()]);
   if (apiKey) {
     try {
-      await fetch("http://localhost:8000/api/company-visits", {
+      await fetch(buildApiUrl(apiBase, "/api/company-visits"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -58,12 +59,12 @@ async function handleCareerPageVisit({ domain, url, visitCount }) {
 }
 
 async function handleApplicationSubmitted({ platform, url, domain, enrichment }) {
-  const apiKey = (await chrome.storage.local.get("apiKey")).apiKey;
+  const [apiKey, apiBase] = await Promise.all([getApiKey(), getApiBase()]);
   if (!apiKey) return;
 
   try {
     // Notify backend about auto-detected application submission
-    await fetch("http://localhost:8000/api/company-visits/submission", {
+    await fetch(buildApiUrl(apiBase, "/api/company-visits/submission"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

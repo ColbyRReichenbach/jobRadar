@@ -1,18 +1,13 @@
-const API_BASE = "http://localhost:8000";
+import { buildApiUrl, getApiBase, getApiKey } from "./config.js";
 
 let currentJobData = null;
 let currentUrl = null;
 
 // --- Helpers ---
 
-async function getApiKey() {
-  const data = await chrome.storage.local.get("apiKey");
-  return data.apiKey || "";
-}
-
 async function apiFetch(path, options = {}) {
-  const apiKey = await getApiKey();
-  return fetch(`${API_BASE}${path}`, {
+  const [apiBase, apiKey] = await Promise.all([getApiBase(), getApiKey()]);
+  return fetch(buildApiUrl(apiBase, path), {
     ...options,
     headers: {
       "Content-Type": "application/json",

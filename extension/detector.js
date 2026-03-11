@@ -47,7 +47,7 @@ const PLATFORM_PATTERNS = [
   },
 ];
 
-function detectPlatform(url) {
+export function detectPlatform(url) {
   for (const pattern of PLATFORM_PATTERNS) {
     const match = url.match(pattern.regex);
     if (match) {
@@ -61,8 +61,4 @@ function detectPlatform(url) {
   return null;
 }
 
-// Export for use in background.js (service worker module)
-if (typeof globalThis !== "undefined") {
-  globalThis.detectPlatform = detectPlatform;
-  globalThis.PLATFORM_PATTERNS = PLATFORM_PATTERNS;
-}
+export { PLATFORM_PATTERNS };
