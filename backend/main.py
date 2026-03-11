@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1866,15 +1866,16 @@ async def list_network(
 
 
 @app.get("/api/network/{email}")
-async def get_network_contact(email: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+async def get_network_contact(email: EmailStr, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
     """Full contact profile: emails, linked applications, company info."""
     from sqlalchemy.orm import selectinload
     from sqlalchemy import func
 
     user_id = _require_user_id(auth)
+    email_value = str(email)
     # Get contact record
     contact_stmt = select(Contact).where(
-        Contact.email == email,
+        Contact.email == email_value,
         Contact.user_id == user_id,
     ).limit(1)
     contact_result = await db.execute(contact_stmt)
@@ -1885,7 +1886,7 @@ async def get_network_contact(email: str, db: AsyncSession = Depends(get_db), au
         selectinload(EmailEvent.application)
     ).where(
         EmailEvent.user_id == user_id,
-        EmailEvent.sender_email == email,
+        EmailEvent.sender_email == email_value,
     ).order_by(EmailEvent.received_at.desc()).limit(50)
     email_result = await db.execute(email_stmt)
     emails = [_serialize_email_event(e) for e in email_result.scalars().all()]
@@ -1903,7 +1904,7 @@ async def get_network_contact(email: str, db: AsyncSession = Depends(get_db), au
             linked_apps.append(_serialize_app(app))
 
     return {
-        "contact": _serialize_contact(contact) if contact else {"email": email},
+        "contact": _serialize_contact(contact) if contact else {"email": email_value},
         "emails": emails,
         "applications": linked_apps,
     }
@@ -1974,7 +1975,7 @@ async def alert_count(db: AsyncSession = Depends(get_db), auth: dict = Depends(v
 # --- Sprint 12: Send Email ---
 
 class SendEmailPayload(BaseModel):
-    to: str = Field(..., max_length=MAX_EMAIL_LEN)
+    to: EmailStr
     subject: str = Field(..., max_length=MAX_NAME_LEN)
     body: str = Field(..., max_length=MAX_LONG_TEXT_LEN)
     application_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
@@ -2043,7 +2044,7 @@ class InterviewCreate(BaseModel):
     scheduled_at: Optional[str] = Field(None, max_length=MAX_ID_LEN)
     duration_minutes: Optional[int] = None
     interviewer_name: Optional[str] = Field(None, max_length=MAX_NAME_LEN)
-    interviewer_email: Optional[str] = Field(None, max_length=MAX_EMAIL_LEN)
+    interviewer_email: Optional[EmailStr] = None
     location_or_link: Optional[str] = Field(None, max_length=MAX_URL_LEN)
     notes: Optional[str] = Field(None, max_length=MAX_LONG_TEXT_LEN)
 
@@ -2053,7 +2054,7 @@ class InterviewUpdate(BaseModel):
     scheduled_at: Optional[str] = Field(None, max_length=MAX_ID_LEN)
     duration_minutes: Optional[int] = None
     interviewer_name: Optional[str] = Field(None, max_length=MAX_NAME_LEN)
-    interviewer_email: Optional[str] = Field(None, max_length=MAX_EMAIL_LEN)
+    interviewer_email: Optional[EmailStr] = None
     location_or_link: Optional[str] = Field(None, max_length=MAX_URL_LEN)
     notes: Optional[str] = Field(None, max_length=MAX_LONG_TEXT_LEN)
     outcome: Optional[str] = Field(None, max_length=MAX_SHORT_TEXT_LEN)
@@ -2574,7 +2575,7 @@ async def get_interview_patterns(db: AsyncSession = Depends(get_db), auth: dict 
 
 class DraftRequest(BaseModel):
     application_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
-    contact_email: Optional[str] = Field(None, max_length=MAX_EMAIL_LEN)
+    contact_email: Optional[EmailStr] = None
     draft_type: str = Field("follow_up", max_length=MAX_SHORT_TEXT_LEN)  # follow_up/introduction/reply/thank_you
     additional_context: Optional[str] = Field(None, max_length=MAX_LONG_TEXT_LEN)
 

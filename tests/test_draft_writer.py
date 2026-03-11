@@ -84,6 +84,20 @@ async def test_generate_draft_introduction(client):
 
 
 @pytest.mark.asyncio
+async def test_generate_draft_rejects_invalid_contact_email(client):
+    """POST /api/drafts/generate rejects invalid contact_email values."""
+    resp = await client.post(
+        "/api/drafts/generate",
+        json={
+            "draft_type": "introduction",
+            "contact_email": "bad-email",
+        },
+        headers=AUTH_HEADER,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_generate_draft_with_conversation_history(client, db_session):
     """Draft generation includes conversation history context."""
     from backend.models import Application, EmailEvent, Contact

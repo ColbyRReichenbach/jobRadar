@@ -103,3 +103,10 @@ async def test_network_contact_detail(client, db_session):
     assert resp.status_code == 200
     data = resp.json()
     assert data["contact"]["name"] == "Detail Person"
+
+
+@pytest.mark.asyncio
+async def test_network_contact_detail_rejects_invalid_email(client):
+    """GET /api/network/{email} rejects invalid email path values."""
+    resp = await client.get("/api/network/not-an-email", headers=AUTH_HEADER)
+    assert resp.status_code == 422

@@ -57,6 +57,20 @@ async def test_create_interview(client):
 
 
 @pytest.mark.asyncio
+async def test_create_interview_rejects_invalid_interviewer_email(client):
+    """POST /api/interviews rejects invalid interviewer emails."""
+    resp = await client.post(
+        "/api/interviews",
+        json={
+            "interview_type": "phone",
+            "interviewer_email": "not-an-email",
+        },
+        headers=AUTH_HEADER,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_list_interviews(client):
     """GET /api/interviews returns list."""
     # Create one first

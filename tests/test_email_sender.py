@@ -21,6 +21,21 @@ async def test_send_email_no_gmail(client):
 
 
 @pytest.mark.asyncio
+async def test_send_email_rejects_invalid_recipient(client):
+    """POST /api/emails/send rejects invalid or header-injection email input."""
+    resp = await client.post(
+        "/api/emails/send",
+        json={
+            "to": "victim@example.com\nBcc: attacker@example.com",
+            "subject": "Hello",
+            "body": "Test email",
+        },
+        headers=AUTH_HEADER,
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_email_sender_service(db_session):
     """send_email creates EmailEvent and Contact records."""
     from backend.models import Application, EmailEvent, Contact

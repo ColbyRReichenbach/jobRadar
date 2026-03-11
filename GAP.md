@@ -381,7 +381,7 @@
 | 3 | Add request body size limit middleware (1MB default) | GAP-011 | Done | Global request middleware now rejects payloads larger than 1MB with HTTP 413 |
 | 4 | Validate URLs: HTTPS only, block private IPs, whitelist job boards | GAP-012 | Done | `/api/jobs/parse` now rejects non-HTTPS, private/local address targets, and unsupported hosts before any fetch occurs |
 | 5 | Replace all `innerHTML` with `textContent` in extension | GAP-013 | Done | `extension/sidepanel.js` now builds status cards, contact rows, links, and nudges with DOM APIs instead of HTML string injection |
-| 6 | Use Pydantic `EmailStr` for email fields | GAP-014 | Not Started |  |
+| 6 | Use Pydantic `EmailStr` for email fields | GAP-014 | Done | Email inputs now use `EmailStr` validation on send-email, interview, network detail, and draft-generation routes; `email-validator` added to requirements |
 | 7 | Add CSP to dashboard index.html | GAP-019 | Not Started |  |
 | 8 | Add CSP to extension manifest.json | GAP-025 | Not Started |  |
 
