@@ -56,8 +56,33 @@ export async function setApiBase(value) {
 }
 
 export async function getApiKey() {
-  const data = await chrome.storage.local.get(API_KEY_STORAGE_KEY);
-  return data[API_KEY_STORAGE_KEY] || "";
+  const sessionData = await chrome.storage.session.get(API_KEY_STORAGE_KEY);
+  if (sessionData[API_KEY_STORAGE_KEY]) {
+    return sessionData[API_KEY_STORAGE_KEY];
+  }
+
+  // Migrate legacy installs off persistent local storage.
+  const legacyData = await chrome.storage.local.get(API_KEY_STORAGE_KEY);
+  if (legacyData[API_KEY_STORAGE_KEY]) {
+    await chrome.storage.session.set({
+      [API_KEY_STORAGE_KEY]: legacyData[API_KEY_STORAGE_KEY],
+    });
+    await chrome.storage.local.remove(API_KEY_STORAGE_KEY);
+    return legacyData[API_KEY_STORAGE_KEY];
+  }
+
+  return "";
+}
+
+export async function setApiKey(value) {
+  const apiKey = (value || "").trim();
+  if (!apiKey) {
+    throw new Error("Please enter an API key.");
+  }
+
+  await chrome.storage.session.set({ [API_KEY_STORAGE_KEY]: apiKey });
+  await chrome.storage.local.remove(API_KEY_STORAGE_KEY);
+  return apiKey;
 }
 
 export function buildApiUrl(apiBase, path) {

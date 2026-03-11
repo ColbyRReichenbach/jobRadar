@@ -1,4 +1,11 @@
-import { DEFAULT_API_BASE, buildApiUrl, getApiBase, setApiBase } from "./config.js";
+import {
+  DEFAULT_API_BASE,
+  buildApiUrl,
+  getApiBase,
+  getApiKey,
+  setApiBase,
+  setApiKey,
+} from "./config.js";
 
 document.getElementById("saveBtn").addEventListener("click", async () => {
   const apiKey = document.getElementById("apiKey").value.trim();
@@ -32,9 +39,9 @@ document.getElementById("saveBtn").addEventListener("click", async () => {
 
     if (resp.ok) {
       const data = await resp.json();
-      await chrome.storage.local.set({ apiKey });
+      await setApiKey(apiKey);
       statusEl.className = "status success";
-      statusEl.textContent = `Connected successfully to ${apiBase} as ${data.user?.email || "your account"}. You can close this tab.`;
+      statusEl.textContent = `Connected successfully to ${apiBase} as ${data.user?.email || "your account"}. This key stays active for the current browser session.`;
     } else {
       statusEl.className = "status error";
       statusEl.textContent = `Validation failed (${resp.status}). Generate a fresh key from dashboard Settings and try again.`;
@@ -48,11 +55,11 @@ document.getElementById("saveBtn").addEventListener("click", async () => {
   btn.textContent = "Save & Validate";
 });
 
-// Pre-fill if key already stored
-Promise.all([chrome.storage.local.get("apiKey"), getApiBase()]).then(
-  ([data, apiBase]) => {
-    if (data.apiKey) {
-      document.getElementById("apiKey").value = data.apiKey;
+// Pre-fill current session state
+Promise.all([getApiKey(), getApiBase()]).then(
+  ([apiKey, apiBase]) => {
+    if (apiKey) {
+      document.getElementById("apiKey").value = apiKey;
     }
     document.getElementById("apiBase").value = apiBase || DEFAULT_API_BASE;
   }

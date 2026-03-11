@@ -4,8 +4,8 @@ import { buildApiUrl, getApiBase, getApiKey } from "./config.js";
 
 // On install, open setup page if no API key stored
 chrome.runtime.onInstalled.addListener(async () => {
-  const data = await chrome.storage.local.get("apiKey");
-  if (!data.apiKey) {
+  const apiKey = await getApiKey();
+  if (!apiKey) {
     chrome.tabs.create({ url: "setup.html" });
   }
 });
