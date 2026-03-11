@@ -440,7 +440,7 @@
 | 1 | Add React ErrorBoundary with fallback UI | GAP-016 | Done | Added a root dashboard `ErrorBoundary` with a branded fallback state and recovery actions around the full app tree |
 | 2 | Add global 401 interceptor with auto-logout | GAP-017 | Done | `api.ts` now performs centralized 401 handling after failed refresh, clears auth state, clears the refresh cookie, and notifies `AuthContext` to return the dashboard to the signed-out state |
 | 3 | Replace silent mock data fallback with error banner | GAP-020 | Done | Dashboard data load failures now surface a visible retryable banner instead of silently swapping to mock data; successful refresh clears the banner |
-| 4 | Add optimistic update rollback on API failure | GAP-021 | Not Started |  |
+| 4 | Add optimistic update rollback on API failure | GAP-021 | Done | Kanban status changes now snapshot prior state, restore the board and selected job on API failure, and surface a visible rollback error message |
 | 5 | Add aria-labels, focus trapping, keyboard navigation | GAP-022 | Not Started |  |
 
 ### Sprint H7: Performance & Data Security

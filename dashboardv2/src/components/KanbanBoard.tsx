@@ -70,6 +70,7 @@ export function KanbanBoard({ jobs, setJobs }: { jobs: Job[], setJobs: (jobs: Jo
   const [editingDescription, setEditingDescription] = useState(false);
   const [descriptionText, setDescriptionText] = useState('');
   const [savingField, setSavingField] = useState<string | null>(null);
+  const [boardError, setBoardError] = useState<string | null>(null);
 
   const filteredJobs = useMemo(() => {
     return jobs.filter(job => {
@@ -85,14 +86,24 @@ export function KanbanBoard({ jobs, setJobs }: { jobs: Job[], setJobs: (jobs: Jo
     });
   }, [jobs, dateFilter]);
 
-  const updateJobStatus = (jobId: string, newStatus: JobStatus) => {
+  const updateJobStatus = async (jobId: string, newStatus: JobStatus) => {
+    const previousJobs = jobs;
+    const previousSelectedJob = selectedJob;
+
+    setBoardError(null);
     setJobs(jobs.map(j => j.id === jobId ? { ...j, status: newStatus } : j));
     if (selectedJob && selectedJob.id === jobId) {
       setSelectedJob({ ...selectedJob, status: newStatus });
     }
-    updateJob(jobId, { status: newStatus }).catch(err =>
-      console.error('Failed to update job status:', err)
-    );
+
+    try {
+      await updateJob(jobId, { status: newStatus });
+    } catch (err) {
+      console.error('Failed to update job status:', err);
+      setJobs(previousJobs);
+      setSelectedJob(previousSelectedJob);
+      setBoardError('We could not save that pipeline change. Your board was restored to the previous state.');
+    }
   };
 
   const toggleSection = (sectionId: string) => {
@@ -189,6 +200,12 @@ export function KanbanBoard({ jobs, setJobs }: { jobs: Job[], setJobs: (jobs: Jo
           </button>
         </div>
       </div>
+
+      {boardError && (
+        <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
+          {boardError}
+        </div>
+      )}
 
       <div className="space-y-10 pb-12">
         {SECTIONS.map(section => {
