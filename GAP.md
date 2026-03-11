@@ -383,7 +383,7 @@
 | 5 | Replace all `innerHTML` with `textContent` in extension | GAP-013 | Done | `extension/sidepanel.js` now builds status cards, contact rows, links, and nudges with DOM APIs instead of HTML string injection |
 | 6 | Use Pydantic `EmailStr` for email fields | GAP-014 | Done | Email inputs now use `EmailStr` validation on send-email, interview, network detail, and draft-generation routes; `email-validator` added to requirements |
 | 7 | Add CSP to dashboard index.html | GAP-019 | Done | `dashboardv2/index.html` now sets a CSP that restricts scripts to self, blocks plugin/object injection, and explicitly whitelists current fonts, images, API calls, and local dev websocket traffic |
-| 8 | Add CSP to extension manifest.json | GAP-025 | Not Started |  |
+| 8 | Add CSP to extension manifest.json | GAP-025 | Done | `extension/manifest.json` now pins an explicit MV3 extension-page CSP: `script-src 'self'; object-src 'self'` |
 
 ### Sprint H3: Extension Security & Store Readiness
 **Goal:** Secure extension and prepare for Chrome Web Store submission.
