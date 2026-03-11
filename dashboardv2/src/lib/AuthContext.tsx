@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react';
-import { UserProfile, fetchMe, clearAuthToken, getGoogleAuthUrl, setUnauthorizedHandler } from './api';
+import { UserProfile, fetchMe, clearAuthToken, buildGoogleAuthStartUrl, setUnauthorizedHandler } from './api';
 
 interface AuthContextType {
   user: UserProfile | null;
@@ -56,8 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signIn = useCallback(async () => {
-    const url = await getGoogleAuthUrl();
-    window.location.href = url;
+    window.location.href = buildGoogleAuthStartUrl();
   }, []);
 
   const signOut = useCallback(() => {
@@ -65,7 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const connectGmail = useCallback(async () => {
-    const url = await getGoogleAuthUrl({
+    const url = buildGoogleAuthStartUrl({
       connectGmail: true,
       connectCalendar: !!user?.calendar_connected,
     });
@@ -73,7 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user]);
 
   const connectCalendar = useCallback(async () => {
-    const url = await getGoogleAuthUrl({
+    const url = buildGoogleAuthStartUrl({
       connectGmail: !!user?.gmail_connected,
       connectCalendar: true,
     });

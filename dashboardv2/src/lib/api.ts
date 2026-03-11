@@ -143,6 +143,15 @@ export interface GoogleAuthOptions {
   connectCalendar?: boolean;
 }
 
+export function buildGoogleAuthStartUrl(options: GoogleAuthOptions = {}): string {
+  const params = new URLSearchParams();
+  if (options.connectGmail) params.set('connect_gmail', 'true');
+  if (options.connectCalendar) params.set('connect_calendar', 'true');
+  params.set('redirect', 'true');
+  const query = params.toString();
+  return `${API_BASE}/api/auth/google${query ? `?${query}` : ''}`;
+}
+
 export async function getGoogleAuthUrl(options: GoogleAuthOptions = {}): Promise<string> {
   const params = new URLSearchParams();
   if (options.connectGmail) params.set('connect_gmail', 'true');

@@ -48,7 +48,7 @@ _cors_origins = [
 ]
 _dashboard_url = os.getenv("DASHBOARD_URL")
 if _dashboard_url:
-    _cors_origins.append(_dashboard_url)
+    _cors_origins.append(_dashboard_url.rstrip("/"))
 
 app.add_middleware(
     CORSMiddleware,
@@ -1026,6 +1026,7 @@ async def google_auth_redirect(
     request: Request,
     connect_gmail: bool = Query(False),
     connect_calendar: bool = Query(False),
+    redirect: bool = Query(False),
 ):
     """Redirect to Google OAuth for sign-in and optional Gmail/Calendar access."""
     from google_auth_oauthlib.flow import Flow
@@ -1067,6 +1068,10 @@ async def google_auth_redirect(
     new_query = urlencode({k: v[0] for k, v in params.items()})
     auth_url = urlunparse(parsed._replace(query=new_query))
 
+    if redirect:
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url=auth_url, status_code=302)
+
     return {"auth_url": auth_url}
 
 
@@ -1083,7 +1088,7 @@ async def google_auth_callback(
     from fastapi.responses import RedirectResponse
     import json, base64
 
-    frontend_url = os.getenv("DASHBOARD_URL", "http://localhost:5173")
+    frontend_url = os.getenv("DASHBOARD_URL", "http://localhost:5173").rstrip("/")
 
     # Decode state to get intent and PKCE code_verifier
     try:
