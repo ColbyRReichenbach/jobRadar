@@ -14,7 +14,7 @@ depends_on = None
 
 
 def upgrade():
-    op.add_column("email_events", sa.Column("resolved", sa.Boolean(), nullable=True, server_default=sa.text("0")))
+    op.add_column("email_events", sa.Column("resolved", sa.Boolean(), nullable=True, server_default=sa.false()))
 
 
 def downgrade():
