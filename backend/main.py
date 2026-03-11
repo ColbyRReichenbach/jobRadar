@@ -19,11 +19,13 @@ from backend.database import async_session_factory, get_db
 from backend.dependencies import verify_api_key, create_jwt, create_refresh_token, decode_jwt, decode_refresh_token, get_current_user, set_refresh_cookie, clear_refresh_cookie, blacklist_token, REFRESH_COOKIE_NAME, generate_api_key, hash_api_key
 from backend.logging_config import configure_logging
 from backend.models import Application, Contact, EmailEvent, EmailFeedback, User, GmailToken, Company, RoleUmbrella, CompanyTechProfile, UserProfile, UserRoleInterest, AtsBehavior, WarmConnection, Alert, Interview, CompanyVisit, InterviewNote, NotificationPreference, ResumeDraft
+from backend.monitoring import configure_sentry
 from backend.services.hunter import find_contacts, generate_linkedin_search_url
 from backend.services.scraper import extract_job, validate_job_parse_url
 import structlog
 
 configure_logging()
+configure_sentry()
 
 app = FastAPI(title="AppTrail API")
 request_logger = structlog.get_logger("backend.request")
