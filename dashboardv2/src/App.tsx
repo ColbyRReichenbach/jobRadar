@@ -28,6 +28,7 @@ function AppContent() {
   const [isInboxCollapsed, setIsInboxCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [loading, setLoading] = useState(USE_API);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     if (!USE_API) return;
@@ -38,10 +39,10 @@ function AppContent() {
       ]);
       setJobs(jobsData);
       setEmails(emailsData);
+      setLoadError(null);
     } catch (err) {
-      console.error('Failed to load data from API, falling back to mock data:', err);
-      setJobs(initialJobs);
-      setEmails(initialEmails);
+      console.error('Failed to load data from API:', err);
+      setLoadError('Live AppTrail data is temporarily unavailable. Retry in a moment.');
     } finally {
       setLoading(false);
     }
@@ -131,19 +132,39 @@ function AppContent() {
       </AnimatePresence>
 
       <main className="flex-1 flex overflow-hidden pt-16 md:pt-0">
-        {activeTab === 'dashboard' && <KanbanBoard jobs={jobs} setJobs={setJobs} />}
-        {activeTab === 'search' && <JobSearch jobs={jobs} setJobs={setJobs} />}
-        {activeTab === 'analytics' && <Analytics jobs={jobs} />}
-        {activeTab === 'export' && <ExportData />}
-        {activeTab === 'conversations' && <Conversations emails={emails} jobs={jobs} />}
-        {activeTab === 'network' && <NetworkPage />}
-        {activeTab === 'calendar' && <Calendar />}
-        {activeTab === 'settings' && <Settings />}
-        {activeTab === 'emails' && (
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {loadError && (
+            <div className="px-4 md:px-6 pt-4 md:pt-5">
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <span>{loadError}</span>
+                <button
+                  onClick={() => {
+                    setLoading(true);
+                    loadData();
+                  }}
+                  className="px-3 py-2 rounded-xl bg-white border border-amber-200 text-amber-900 font-medium hover:bg-amber-100 transition-colors"
+                >
+                  Retry
+                </button>
+              </div>
+            </div>
+          )}
           <div className="flex-1 flex overflow-hidden">
-            <EmailFeed emails={emails} jobs={jobs} isCollapsed={false} setIsCollapsed={() => {}} forceOpen={true} />
+            {activeTab === 'dashboard' && <KanbanBoard jobs={jobs} setJobs={setJobs} />}
+            {activeTab === 'search' && <JobSearch jobs={jobs} setJobs={setJobs} />}
+            {activeTab === 'analytics' && <Analytics jobs={jobs} />}
+            {activeTab === 'export' && <ExportData />}
+            {activeTab === 'conversations' && <Conversations emails={emails} jobs={jobs} />}
+            {activeTab === 'network' && <NetworkPage />}
+            {activeTab === 'calendar' && <Calendar />}
+            {activeTab === 'settings' && <Settings />}
+            {activeTab === 'emails' && (
+              <div className="flex-1 flex overflow-hidden">
+                <EmailFeed emails={emails} jobs={jobs} isCollapsed={false} setIsCollapsed={() => {}} forceOpen={true} />
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </main>
 
       {showInbox && (
