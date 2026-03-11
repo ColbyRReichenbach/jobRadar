@@ -774,6 +774,7 @@ Status: `[x]`
 - Redis: Railway managed Redis
 - Set all production env vars in Railway and Vercel dashboards
 - Update `DASHBOARD_URL` with the final Vercel URL and `VITE_API_URL` with the final backend API URL
+- Detailed execution checklist: `docs/deployment-checklist.md`
 - Smoke test: hit production `/api/health`, open production dashboard, track one real job
 
 Status: `[x]`
