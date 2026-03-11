@@ -1,4 +1,5 @@
 import os
+import re
 import time
 from datetime import datetime, timezone
 from typing import Optional
@@ -265,6 +266,76 @@ def _contains_like(value: str) -> str:
 
 def _paginate(stmt, limit: int, offset: int):
     return stmt.limit(limit).offset(offset)
+
+
+def _normalize_match_token(value: str | None) -> str:
+    if not value:
+        return ""
+    return re.sub(r"[^a-z0-9]+", "", value.lower())
+
+
+def _domain_match_tokens(domain: str | None) -> list[str]:
+    if not domain:
+        return []
+
+    normalized_domain = domain.lower().strip()
+    if not normalized_domain:
+        return []
+
+    parts = [part for part in normalized_domain.split(".") if part]
+    candidates: list[str] = [normalized_domain]
+    if len(parts) >= 2:
+        candidates.append(".".join(parts[-2:]))
+    candidates.extend(parts)
+
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for candidate in candidates:
+        token = candidate.strip()
+        if token and token not in seen:
+            seen.add(token)
+            ordered.append(token)
+    return ordered
+
+
+def _build_application_match_maps(app_rows: list[tuple[_uuid.UUID, str | None, str | None]]) -> tuple[dict[str, _uuid.UUID], dict[str, _uuid.UUID]]:
+    domain_map: dict[str, _uuid.UUID] = {}
+    token_map: dict[str, _uuid.UUID] = {}
+
+    for app_id, company_name, company_domain in app_rows:
+        for domain_token in _domain_match_tokens(company_domain):
+            domain_map.setdefault(domain_token, app_id)
+
+        for token in (
+            _normalize_match_token(company_name),
+            *[_normalize_match_token(domain_token) for domain_token in _domain_match_tokens(company_domain)],
+        ):
+            if token:
+                token_map.setdefault(token, app_id)
+
+    return domain_map, token_map
+
+
+def _match_application_id_for_sender(
+    sender_email_addr: str | None,
+    domain_map: dict[str, _uuid.UUID],
+    token_map: dict[str, _uuid.UUID],
+) -> _uuid.UUID | None:
+    if not sender_email_addr or "@" not in sender_email_addr:
+        return None
+
+    sender_domain = sender_email_addr.split("@", 1)[-1].lower()
+    for domain_token in _domain_match_tokens(sender_domain):
+        matched = domain_map.get(domain_token)
+        if matched:
+            return matched
+
+    for token in (_normalize_match_token(domain_token) for domain_token in _domain_match_tokens(sender_domain)):
+        matched = token_map.get(token)
+        if matched:
+            return matched
+
+    return None
 
 
 def _auth_rate_limit() -> str:
@@ -1327,6 +1398,14 @@ async def sync_gmail(
     new_count = 0
     emails_synced = []
 
+    app_match_stmt = (
+        select(Application.id, Application.company, Company.domain)
+        .join(Company, Application.company_id == Company.id, isouter=True)
+        .where(Application.user_id == user_id)
+    )
+    app_match_result = await db.execute(app_match_stmt)
+    app_domain_map, app_token_map = _build_application_match_maps(app_match_result.all())
+
     for msg_meta in messages:
         msg_id = msg_meta["id"]
 
@@ -1385,18 +1464,7 @@ async def sync_gmail(
         email_company_name = classification.get("company_name") or company_info.get("company_name")
 
         # Match to application
-        app_id = None
-        if sender_email_addr:
-            domain = sender_email_addr.split("@")[-1].lower()
-            app_stmt = select(Application).where(Application.user_id == user_id)
-            app_result = await db.execute(app_stmt)
-            apps = app_result.scalars().all()
-            for a in apps:
-                company_lower = a.company.lower().replace(" ", "")
-                domain_base = domain.split(".")[0]
-                if domain_base in company_lower or company_lower in domain_base:
-                    app_id = a.id
-                    break
+        app_id = _match_application_id_for_sender(sender_email_addr, app_domain_map, app_token_map)
 
         email_event = EmailEvent(
             user_id=user_id,

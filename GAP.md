@@ -452,7 +452,7 @@
 | 1 | Add slowapi rate limiting middleware | GAP-041 | Done | Added `slowapi` app middleware with explicit per-endpoint throttles for auth, job parsing, search, contact lookup, Gmail sync, and send-email flows, plus regression tests for 429 handling |
 | 2 | Add limit/offset pagination to all list endpoints | GAP-042 | Done | Added bounded `limit`/`offset` query params with a hard max page size of 100 across the main user-owned collection routes, plus regression coverage for pagination windows and page-size validation |
 | 3 | Add react-window virtualization for email list | GAP-043 | Done | Virtualized the expanded dashboard email list with `react-window`, keeping the existing detail pane behavior while capping rendered rows to the visible window plus overscan |
-| 4 | Fix N+1 email sync query (single SQL with domain match) | GAP-044 | Not Started |  |
+| 4 | Fix N+1 email sync query (single SQL with domain match) | GAP-044 | Done | Replaced the per-email application scan during Gmail sync with a single preloaded application/domain lookup map and added a regression proving synced emails still attach to the matching application |
 | 5 | Encrypt Gmail tokens at rest (Fernet) | GAP-038 | Not Started |  |
 | 6 | Move API keys from URL params to headers where possible | GAP-039 | Not Started |  |
 
