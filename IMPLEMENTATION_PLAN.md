@@ -765,11 +765,15 @@ Status: `[x]`
 ---
 
 **4.10 — Deploy**
-- `dashboard/`: deploy to Vercel (`vercel --prod`)
-- `backend/`: deploy FastAPI to Railway/Render (Starter plan, 512MB+ RAM)
-- `backend/` Playwright worker: separate Railway/Render service, 1GB RAM
-- Set all production env vars in Railway/Render dashboard
-- Update `DASHBOARD_URL` env var with final Vercel URL
+- **Chosen production stack:** Vercel for `dashboardv2/`; Railway for backend runtime services and data services.
+- `dashboardv2/`: deploy to Vercel (`vercel --prod`)
+- `backend/` web API: Railway service running `gunicorn -c gunicorn.conf.py backend.main:app`
+- `backend/` Celery worker: separate Railway service running `celery -A backend.celery_app:celery_app worker --loglevel=info`
+- `backend/` Celery beat: separate Railway service running `celery -A backend.celery_app:celery_app beat --loglevel=info`
+- PostgreSQL: Railway managed Postgres
+- Redis: Railway managed Redis
+- Set all production env vars in Railway and Vercel dashboards
+- Update `DASHBOARD_URL` with the final Vercel URL and `VITE_API_URL` with the final backend API URL
 - Smoke test: hit production `/api/health`, open production dashboard, track one real job
 
 Status: `[x]`
