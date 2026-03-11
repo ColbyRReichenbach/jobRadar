@@ -1,8 +1,10 @@
 {
   "manifest_version": 3,
   "name": "AppTrail",
+  "short_name": "AppTrail",
   "version": "1.0.0",
   "description": "Job application tracking — capture, contacts, and pipeline management",
+  "homepage_url": "https://apptrail.com",
   "permissions": [
     "sidePanel",
     "activeTab",
@@ -53,7 +55,12 @@
     }
   ],
   "action": {
-    "default_title": "AppTrail"
+    "default_title": "AppTrail",
+    "default_icon": {
+      "16": "images/icon-16.png",
+      "48": "images/icon-48.png",
+      "128": "images/icon-128.png"
+    }
   },
   "icons": {
     "16": "images/icon-16.png",
