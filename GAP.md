@@ -428,7 +428,7 @@
 | 1 | Enhance /api/health with DB + Redis checks | GAP-034 | Done | `/api/health` now runs a database query, conditionally pings Redis when configured, and returns per-component status in the response body |
 | 2 | Add structlog with JSON output + request ID tracking | GAP-035 | Done | Added shared structlog JSON logging config, request-ID middleware with response header propagation, and request-scoped context binding for both structlog and stdlib loggers |
 | 3 | Integrate Sentry SDK for error tracking | GAP-036 | Done | Added environment-gated Sentry initialization with the FastAPI integration and configurable environment, release, and trace sampling |
-| 4 | Add Prometheus/metrics middleware | GAP-037 | Not Started |  |
+| 4 | Add Prometheus/metrics middleware | GAP-037 | Done | Added Prometheus request metrics, in-flight gauge, and a `/metrics` endpoint with multiprocess-aware exposition support |
 | 5 | Sanitize error logs (remove token/credential data) | GAP-040 | Not Started |  |
 
 ### Sprint H6: Frontend Resilience & UX Hardening

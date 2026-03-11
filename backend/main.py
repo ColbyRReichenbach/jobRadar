@@ -7,7 +7,7 @@ from uuid import uuid4
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
@@ -18,6 +18,12 @@ load_dotenv(override=True)
 from backend.database import async_session_factory, get_db
 from backend.dependencies import verify_api_key, create_jwt, create_refresh_token, decode_jwt, decode_refresh_token, get_current_user, set_refresh_cookie, clear_refresh_cookie, blacklist_token, REFRESH_COOKIE_NAME, generate_api_key, hash_api_key
 from backend.logging_config import configure_logging
+from backend.metrics import (
+    REQUESTS_IN_PROGRESS,
+    metrics_headers,
+    metrics_payload,
+    observe_request,
+)
 from backend.models import Application, Contact, EmailEvent, EmailFeedback, User, GmailToken, Company, RoleUmbrella, CompanyTechProfile, UserProfile, UserRoleInterest, AtsBehavior, WarmConnection, Alert, Interview, CompanyVisit, InterviewNote, NotificationPreference, ResumeDraft
 from backend.monitoring import configure_sentry
 from backend.services.hunter import find_contacts, generate_linkedin_search_url
@@ -48,6 +54,13 @@ app.add_middleware(
 )
 
 MAX_REQUEST_BODY_BYTES = 1024 * 1024
+
+
+def _metrics_path(request: Request) -> str:
+    route = request.scope.get("route")
+    if route and getattr(route, "path", None):
+        return route.path
+    return request.url.path
 
 
 @app.middleware("http")
@@ -105,6 +118,26 @@ async def bind_request_logging_context(request: Request, call_next):
     )
     structlog.contextvars.clear_contextvars()
     return response
+
+
+@app.middleware("http")
+async def collect_request_metrics(request: Request, call_next):
+    REQUESTS_IN_PROGRESS.inc()
+    started_at = time.perf_counter()
+    status_code = 500
+
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+        return response
+    finally:
+        observe_request(
+            method=request.method,
+            path=_metrics_path(request),
+            status_code=status_code,
+            started_at=started_at,
+        )
+        REQUESTS_IN_PROGRESS.dec()
 
 
 # --- Schemas ---
@@ -362,6 +395,11 @@ async def health():
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "checks": component_status,
     }
+
+
+@app.get("/metrics")
+async def prometheus_metrics():
+    return Response(content=metrics_payload(), headers=metrics_headers())
 
 
 @app.post("/api/jobs/parse", dependencies=[Depends(verify_api_key)])
