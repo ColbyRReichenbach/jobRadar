@@ -399,7 +399,7 @@
 | 6 | Change API key input to type="password" | GAP-028 | Done | Extension setup now masks the personal API key input and disables autocomplete for that field |
 | 7 | Design and add extension icons (16, 48, 128px) | GAP-046 | Done | Added generated 16/48/128 PNG icons in `extension/images/` and wired them into the extension manifest |
 | 8 | Write privacy policy | GAP-047 | Partial | Drafted policy at `docs/privacy-policy.md`; still needs to be hosted at `https://apptrail.com/privacy` before Chrome Web Store submission |
-| 9 | Create store listing (description, screenshots) | GAP-048 | Not Started |  |
+| 9 | Create store listing (description, screenshots) | GAP-048 | Partial | Added store copy and screenshot plan in `docs/chrome-web-store-listing.md`; actual Chrome Web Store screenshots still need to be captured manually |
 | 10 | Add missing manifest fields (homepage_url, short_name, action.default_icon) | GAP-049 | Not Started |  |
 | 11 | Create extension packaging script | GAP-050 | Not Started |  |
 
