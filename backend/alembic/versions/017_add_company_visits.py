@@ -16,11 +16,11 @@ depends_on = None
 def upgrade():
     op.create_table(
         "company_visits",
-        sa.Column("id", sa.Text, primary_key=True),
-        sa.Column("user_id", sa.Text, sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=True),
+        sa.Column("id", sa.Uuid(), primary_key=True, server_default=sa.text("gen_random_uuid()")),
+        sa.Column("user_id", sa.Uuid(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=True),
         sa.Column("domain", sa.Text, nullable=False),
         sa.Column("url", sa.Text, nullable=True),
-        sa.Column("visit_count", sa.Integer, server_default="1"),
+        sa.Column("visit_count", sa.Integer, server_default=sa.text("1")),
         sa.Column("first_visited_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
         sa.Column("last_visited_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
     )

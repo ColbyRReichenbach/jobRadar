@@ -18,9 +18,9 @@ def upgrade():
 
     op.create_table(
         "user_role_interests",
-        sa.Column("id", sa.Text, primary_key=True),
-        sa.Column("user_id", sa.Text, sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("umbrella_id", sa.Text, sa.ForeignKey("role_umbrellas.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("id", sa.Uuid(), primary_key=True, server_default=sa.text("gen_random_uuid()")),
+        sa.Column("user_id", sa.Uuid(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("umbrella_id", sa.Uuid(), sa.ForeignKey("role_umbrellas.id", ondelete="CASCADE"), nullable=False),
         sa.UniqueConstraint("user_id", "umbrella_id", name="uq_user_role_interest"),
     )
 

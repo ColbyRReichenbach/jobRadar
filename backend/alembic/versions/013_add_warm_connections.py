@@ -12,8 +12,8 @@ import sqlalchemy as sa
 def upgrade():
     op.create_table(
         "warm_connections",
-        sa.Column("id", sa.Text, primary_key=True),
-        sa.Column("user_id", sa.Text, sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=True),
+        sa.Column("id", sa.Uuid(), primary_key=True, server_default=sa.text("gen_random_uuid()")),
+        sa.Column("user_id", sa.Uuid(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=True),
         sa.Column("company_domain", sa.Text, nullable=False),
         sa.Column("contact_email", sa.Text, nullable=False),
         sa.Column("contact_name", sa.Text, nullable=True),

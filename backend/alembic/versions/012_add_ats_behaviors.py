@@ -12,7 +12,7 @@ import sqlalchemy as sa
 def upgrade():
     op.create_table(
         "ats_behaviors",
-        sa.Column("id", sa.Text, primary_key=True),
+        sa.Column("id", sa.Uuid(), primary_key=True, server_default=sa.text("gen_random_uuid()")),
         sa.Column("platform", sa.Text, nullable=False),
         sa.Column("metric_name", sa.Text, nullable=False),
         sa.Column("metric_value", sa.Float, server_default=sa.text("0.0")),

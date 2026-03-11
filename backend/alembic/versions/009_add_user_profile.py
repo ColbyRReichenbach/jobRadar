@@ -12,8 +12,8 @@ import sqlalchemy as sa
 def upgrade():
     op.create_table(
         "user_profiles",
-        sa.Column("id", sa.Text, primary_key=True),
-        sa.Column("user_id", sa.Text, sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=True),
+        sa.Column("id", sa.Uuid(), primary_key=True, server_default=sa.text("gen_random_uuid()")),
+        sa.Column("user_id", sa.Uuid(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=True),
         sa.Column("raw_text", sa.Text, nullable=True),
         sa.Column("skills", sa.JSON, nullable=True),
         sa.Column("education", sa.JSON, nullable=True),
