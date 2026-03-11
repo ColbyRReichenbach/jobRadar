@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { CSSProperties, useEffect, useRef, useState } from 'react';
 import { Email, Job } from '../types';
 import { format } from 'date-fns';
 import { cn } from '../lib/utils';
 import { Mail, AlertCircle, CheckCircle2, XCircle, Clock, ArrowRight, ChevronRight, ChevronLeft, ThumbsDown, AlertTriangle, Plus } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { submitEmailFeedback, checkEmailPipeline, createJob } from '../lib/api';
+import { FixedSizeList, ListChildComponentProps } from 'react-window';
 
 interface EmailFeedProps {
   emails: Email[];
@@ -12,6 +13,105 @@ interface EmailFeedProps {
   isCollapsed: boolean;
   setIsCollapsed: (c: boolean) => void;
   forceOpen?: boolean;
+}
+
+const EMAIL_ROW_HEIGHT = 184;
+
+interface EmailListItemData {
+  emails: Email[];
+  jobs: Job[];
+  selectedEmailId: string | null;
+  onSelectEmail: (email: Email) => void;
+  onNotJobRelated: (event: React.MouseEvent, email: Email) => void;
+  getClassificationColor: (classification: Email['classification']) => string;
+  getClassificationIcon: (classification: Email['classification']) => JSX.Element | undefined;
+  getEmailLogo: (email: Email) => string | undefined;
+  getEmailCompany: (email: Email) => string | undefined;
+}
+
+function EmailListRow({ index, style, data }: ListChildComponentProps<EmailListItemData>) {
+  const email = data.emails[index];
+  const logoUrl = data.getEmailLogo(email);
+  const companyName = data.getEmailCompany(email);
+  const isSelected = data.selectedEmailId === email.id;
+  const rowStyle: CSSProperties = {
+    ...style,
+    padding: '0 16px 8px 16px',
+  };
+
+  return (
+    <div style={rowStyle}>
+      <div
+        onClick={() => data.onSelectEmail(email)}
+        className={cn(
+          "p-4 transition-all cursor-pointer rounded-2xl border group relative",
+          isSelected
+            ? "bg-indigo-50 border-indigo-200 shadow-sm"
+            : email.read
+              ? "bg-white border-slate-100 hover:border-slate-300 hover:shadow-sm"
+              : "bg-indigo-50/30 border-indigo-100 hover:border-indigo-200 hover:shadow-sm"
+        )}
+      >
+        {!email.jobId && email.companyName && (
+          <div className="absolute top-2 right-2">
+            <div className="w-2 h-2 bg-amber-400 rounded-full" title="Not in pipeline" />
+          </div>
+        )}
+
+        <div className="flex items-start justify-between mb-2">
+          <div className="flex items-center gap-2 min-w-0">
+            {logoUrl ? (
+              <img
+                src={logoUrl}
+                alt={companyName || ''}
+                className="w-6 h-6 rounded-full border border-slate-100 shrink-0"
+                referrerPolicy="no-referrer"
+                onError={(event) => { (event.target as HTMLImageElement).style.display = 'none'; }}
+              />
+            ) : (
+              <div className="w-6 h-6 flex items-center justify-center text-[10px] font-medium rounded-full bg-slate-100 text-slate-500 shrink-0">
+                {(companyName || email.sender || '?').charAt(0)}
+              </div>
+            )}
+            <span className="text-sm font-serif font-bold text-slate-900 truncate">{email.sender}</span>
+          </div>
+          <span className="text-[10px] font-medium text-slate-400 shrink-0">
+            {format(new Date(email.date), 'MMM d')}
+          </span>
+        </div>
+
+        {companyName && (
+          <p className="text-[10px] text-slate-400 font-medium mb-1 truncate">{companyName}</p>
+        )}
+
+        <h3 className="mb-1 text-base font-serif font-bold text-slate-900 truncate">
+          {email.subject}
+        </h3>
+
+        <p className="text-xs line-clamp-2 mb-3 leading-relaxed text-slate-500">
+          {email.snippet}
+        </p>
+
+        <div className="flex items-center justify-between mt-2 pt-3 border-t border-slate-100/50">
+          <div className={cn(
+            "flex items-center gap-1.5 px-2 py-1 text-[10px] uppercase tracking-wider rounded-md font-semibold",
+            data.getClassificationColor(email.classification)
+          )}>
+            {data.getClassificationIcon(email.classification)}
+            {email.classification.replace('_', ' ')}
+          </div>
+
+          <button
+            onClick={(event) => data.onNotJobRelated(event, email)}
+            className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-slate-600 rounded transition-opacity"
+            title="Not job related"
+          >
+            <ThumbsDown className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export function EmailFeed({ emails, jobs, isCollapsed, setIsCollapsed, forceOpen }: EmailFeedProps) {
@@ -22,6 +122,8 @@ export function EmailFeed({ emails, jobs, isCollapsed, setIsCollapsed, forceOpen
     company_name?: string;
   } | null>(null);
   const [dismissedEmails, setDismissedEmails] = useState<Set<string>>(new Set());
+  const listContainerRef = useRef<HTMLDivElement>(null);
+  const [listHeight, setListHeight] = useState(0);
 
   const getClassificationIcon = (classification: Email['classification']) => {
     switch (classification) {
@@ -44,6 +146,26 @@ export function EmailFeed({ emails, jobs, isCollapsed, setIsCollapsed, forceOpen
   const collapsed = forceOpen ? false : isCollapsed;
 
   const feedEmails = emails.filter(e => e.type !== 'conversation' && !dismissedEmails.has(e.id));
+
+  useEffect(() => {
+    const element = listContainerRef.current;
+    if (!element) return;
+
+    const updateHeight = () => {
+      setListHeight(element.getBoundingClientRect().height);
+    };
+
+    updateHeight();
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateHeight);
+      return () => window.removeEventListener('resize', updateHeight);
+    }
+
+    const observer = new ResizeObserver(updateHeight);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [collapsed, forceOpen, selectedEmail]);
 
   const handleNotJobRelated = async (e: React.MouseEvent, email: Email) => {
     e.stopPropagation();
@@ -98,6 +220,18 @@ export function EmailFeed({ emails, jobs, isCollapsed, setIsCollapsed, forceOpen
     if (email.companyName) return email.companyName;
     const job = jobs.find(j => j.id === email.jobId);
     return job?.company;
+  };
+
+  const listItemData: EmailListItemData = {
+    emails: feedEmails,
+    jobs,
+    selectedEmailId: selectedEmail?.id || null,
+    onSelectEmail: handleSelectEmail,
+    onNotJobRelated: handleNotJobRelated,
+    getClassificationColor,
+    getClassificationIcon,
+    getEmailLogo,
+    getEmailCompany,
   };
 
   return (
@@ -255,99 +389,33 @@ export function EmailFeed({ emails, jobs, isCollapsed, setIsCollapsed, forceOpen
             <motion.div
               key="list"
               initial={false}
-              className="flex-1 overflow-y-auto p-4 space-y-2"
+              className="flex-1 overflow-hidden"
             >
-              {feedEmails.map((email, i) => {
-                const logoUrl = getEmailLogo(email);
-                const companyName = getEmailCompany(email);
-                const isSelected = selectedEmail?.id === email.id;
-
-                if (collapsed) {
-                  return (
+              {collapsed ? (
+                <div className="h-full overflow-y-auto p-4 space-y-2">
+                  {feedEmails.map((email) => (
                     <div key={email.id} className="w-10 h-10 mx-auto bg-indigo-50 rounded-full flex items-center justify-center relative cursor-pointer" onClick={() => setIsCollapsed(false)}>
                       {getClassificationIcon(email.classification)}
                       {!email.read && <div className="absolute top-0 right-0 w-2.5 h-2.5 bg-indigo-500 rounded-full border-2 border-white" />}
                     </div>
-                  );
-                }
-                return (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.05 }}
-                    key={email.id}
-                    onClick={() => handleSelectEmail(email)}
-                    className={cn(
-                      "p-4 transition-all cursor-pointer rounded-2xl border group relative",
-                      isSelected
-                        ? "bg-indigo-50 border-indigo-200 shadow-sm"
-                        : email.read
-                          ? "bg-white border-slate-100 hover:border-slate-300 hover:shadow-sm"
-                          : "bg-indigo-50/30 border-indigo-100 hover:border-indigo-200 hover:shadow-sm"
-                    )}
-                  >
-                    {/* Not in pipeline badge */}
-                    {!email.jobId && email.companyName && (
-                      <div className="absolute top-2 right-2">
-                        <div className="w-2 h-2 bg-amber-400 rounded-full" title="Not in pipeline" />
-                      </div>
-                    )}
-
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        {logoUrl ? (
-                          <img
-                            src={logoUrl}
-                            alt={companyName || ''}
-                            className="w-6 h-6 rounded-full border border-slate-100"
-                            referrerPolicy="no-referrer"
-                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                          />
-                        ) : (
-                          <div className="w-6 h-6 flex items-center justify-center text-[10px] font-medium rounded-full bg-slate-100 text-slate-500">
-                            {(companyName || email.sender || '?').charAt(0)}
-                          </div>
-                        )}
-                        <span className="text-sm font-serif font-bold text-slate-900">{email.sender}</span>
-                      </div>
-                      <span className="text-[10px] font-medium text-slate-400">
-                        {format(new Date(email.date), 'MMM d')}
-                      </span>
-                    </div>
-
-                    {companyName && (
-                      <p className="text-[10px] text-slate-400 font-medium mb-1">{companyName}</p>
-                    )}
-
-                    <h3 className="mb-1 text-base font-serif font-bold text-slate-900 truncate">
-                      {email.subject}
-                    </h3>
-
-                    <p className="text-xs line-clamp-2 mb-3 leading-relaxed text-slate-500">
-                      {email.snippet}
-                    </p>
-
-                    <div className="flex items-center justify-between mt-2 pt-3 border-t border-slate-100/50">
-                      <div className={cn(
-                        "flex items-center gap-1.5 px-2 py-1 text-[10px] uppercase tracking-wider rounded-md font-semibold",
-                        getClassificationColor(email.classification)
-                      )}>
-                        {getClassificationIcon(email.classification)}
-                        {email.classification.replace('_', ' ')}
-                      </div>
-
-                      {/* Not job related button — visible on hover */}
-                      <button
-                        onClick={(e) => handleNotJobRelated(e, email)}
-                        className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-slate-600 rounded transition-opacity"
-                        title="Not job related"
-                      >
-                        <ThumbsDown className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </motion.div>
-                );
-              })}
+                  ))}
+                </div>
+              ) : (
+                <div ref={listContainerRef} className="h-full overflow-hidden">
+                  {listHeight > 0 && (
+                    <FixedSizeList
+                      height={listHeight}
+                      width="100%"
+                      itemCount={feedEmails.length}
+                      itemSize={EMAIL_ROW_HEIGHT}
+                      itemData={listItemData}
+                      overscanCount={6}
+                    >
+                      {EmailListRow}
+                    </FixedSizeList>
+                  )}
+                </div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
