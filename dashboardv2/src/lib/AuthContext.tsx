@@ -25,6 +25,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const consumeBootstrapAccessToken = useCallback(() => {
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const searchParams = new URLSearchParams(window.location.search);
+    const accessToken = hashParams.get('access_token') || searchParams.get('access_token');
+    const callbackPath = window.location.pathname.replace(/\/+$/, '');
+
+    if (accessToken) {
+      setAuthToken(accessToken);
+    }
+
+    if (accessToken || callbackPath === '/auth/callback') {
+      const nextUrl = `${window.location.origin}/`;
+      window.history.replaceState({}, '', nextUrl);
+    }
+  }, []);
+
   const refreshUser = useCallback(async () => {
     try {
       const profile = await fetchMe();
@@ -37,18 +53,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const path = window.location.pathname;
-    if (path === '/auth/callback') {
-      const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
-      const accessToken = params.get('access_token');
-      if (accessToken) {
-        setAuthToken(accessToken);
-      }
-      window.history.replaceState({}, '', '/');
-    }
+    consumeBootstrapAccessToken();
     // fetchMe will try refresh cookie if no in-memory token
     refreshUser();
-  }, [refreshUser]);
+  }, [consumeBootstrapAccessToken, refreshUser]);
 
   useEffect(() => {
     setUnauthorizedHandler(() => {
