@@ -2,9 +2,29 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { Email, Job } from '../types';
 import { format, formatDistanceToNow } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, Clock, AlertCircle, CheckCircle2, MessageSquare, ArrowRight, Send, ChevronDown, ChevronUp, Undo2, Trash2 } from 'lucide-react';
+import { Search, Clock, AlertCircle, CheckCircle2, MessageSquare, ArrowRight, Send, ChevronDown, ChevronUp, Undo2, Trash2, Users } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { sendEmail, generateDraft, updateEmail } from '../lib/api';
+import { fetchReplyContext, sendEmail, generateDraft, updateEmail } from '../lib/api';
+
+interface ReplyComposerState {
+  to: string;
+  cc: string;
+  subject: string;
+  body: string;
+  threadId?: string;
+  replyToEmailId?: string;
+  mode: 'reply' | 'reply_all';
+}
+
+const EMPTY_REPLY_COMPOSER: ReplyComposerState = {
+  to: '',
+  cc: '',
+  subject: '',
+  body: '',
+  threadId: undefined,
+  replyToEmailId: undefined,
+  mode: 'reply',
+};
 
 interface ConversationsProps {
   emails: Email[];
@@ -25,15 +45,19 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
   const [expandedThreadId, setExpandedThreadId] = useState<string | null>(null);
   const [showDoneThreads, setShowDoneThreads] = useState(false);
   const [isReplying, setIsReplying] = useState(false);
-  const [replyText, setReplyText] = useState('');
+  const [replyComposer, setReplyComposer] = useState<ReplyComposerState>(EMPTY_REPLY_COMPOSER);
+  const [sendingReply, setSendingReply] = useState(false);
+  const [replyError, setReplyError] = useState<string | null>(null);
   const [resolvedThreadOverrides, setResolvedThreadOverrides] = useState<Record<string, boolean>>({});
   const [hiddenEmailIds, setHiddenEmailIds] = useState<Set<string>>(new Set());
+  const [localSentEmails, setLocalSentEmails] = useState<Email[]>([]);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   // Reset reply state when changing threads
   useEffect(() => {
     setIsReplying(false);
-    setReplyText('');
+    setReplyComposer(EMPTY_REPLY_COMPOSER);
+    setReplyError(null);
   }, [selectedThreadId]);
 
   useEffect(() => {
@@ -68,7 +92,7 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
 
   const effectiveEmails = useMemo(
     () =>
-      emails.map((email) => {
+      [...emails, ...localSentEmails].map((email) => {
         const threadId = email.threadId || email.id;
         const overrideResolved = resolvedThreadOverrides[threadId];
         return {
@@ -77,7 +101,7 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
           resolved: overrideResolved ?? email.resolved,
         };
       }),
-    [emails, hiddenEmailIds, resolvedThreadOverrides],
+    [emails, hiddenEmailIds, localSentEmails, resolvedThreadOverrides],
   );
 
   const conversations = effectiveEmails.filter((email) => {
@@ -131,6 +155,8 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
   const selectedThread = threads.find(t => t.id === selectedThreadId);
   const activeThreads = threads.filter((thread) => !thread.resolved);
   const doneThreads = threads.filter((thread) => thread.resolved);
+  const selectedMessage =
+    selectedThread?.emails.find((email) => email.id === selectedMessageId) || selectedThread?.latest || null;
 
   const handleThreadResolvedChange = async (
     threadId: string,
@@ -170,6 +196,62 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
         return next;
       });
       console.error('Failed to hide email:', err);
+    }
+  };
+
+  const handleStartReply = async (mode: 'reply' | 'reply_all') => {
+    if (!selectedMessage) return;
+    setReplyError(null);
+    try {
+      const context = await fetchReplyContext(selectedMessage.id, mode === 'reply_all');
+      setReplyComposer({
+        to: context.to,
+        cc: context.cc.join(', '),
+        subject: context.subject,
+        body: '',
+        threadId: context.thread_id,
+        replyToEmailId: context.reply_to_email_id,
+        mode,
+      });
+      setIsReplying(true);
+    } catch (err) {
+      setReplyError(err instanceof Error ? err.message : 'Failed to prepare reply.');
+    }
+  };
+
+  const handleSendReply = async () => {
+    if (!selectedThread || !replyComposer.to.trim() || !replyComposer.subject.trim() || !replyComposer.body.trim()) {
+      return;
+    }
+
+    setSendingReply(true);
+    setReplyError(null);
+    try {
+      const sentEmail = await sendEmail({
+        to: replyComposer.to.trim(),
+        cc: replyComposer.cc
+          .split(',')
+          .map((value) => value.trim())
+          .filter(Boolean),
+        subject: replyComposer.subject.trim(),
+        body: replyComposer.body,
+        application_id: selectedThread.latest.jobId || undefined,
+        thread_id: replyComposer.threadId,
+        reply_to_email_id: replyComposer.replyToEmailId,
+      });
+
+      setLocalSentEmails((prev) => {
+        if (prev.some((email) => email.id === sentEmail.id)) return prev;
+        return [...prev, sentEmail];
+      });
+      setSelectedThreadId(sentEmail.threadId || selectedThread.id);
+      setSelectedMessageId(sentEmail.id);
+      setReplyComposer(EMPTY_REPLY_COMPOSER);
+      setIsReplying(false);
+    } catch (err) {
+      setReplyError(err instanceof Error ? err.message : 'Failed to send reply.');
+    } finally {
+      setSendingReply(false);
     }
   };
 
@@ -583,72 +665,117 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
 
             <div className="p-4 border-t border-slate-100 bg-slate-50 shrink-0">
               {isReplying ? (
-                <div className="max-w-3xl mx-auto flex flex-col gap-3">
-                  <textarea
-                    autoFocus
-                    value={replyText}
-                    onChange={(e) => setReplyText(e.target.value)}
-                    placeholder="Type your reply..."
-                    className="w-full p-3 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 min-h-[120px] resize-y bg-white"
-                  />
+                <div className="max-w-[72rem] mx-auto flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-semibold text-slate-900">
+                        {replyComposer.mode === 'reply_all' ? 'Reply All' : 'Reply'}
+                      </h4>
+                      <p className="text-xs text-slate-500">
+                        This reply will be sent inside the Gmail thread.
+                      </p>
+                    </div>
+                  </div>
+                  {replyError && (
+                    <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                      {replyError}
+                    </div>
+                  )}
+                  <div className="grid gap-3 md:grid-cols-[80px_1fr] md:items-center">
+                    <label className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">To</label>
+                    <input
+                      autoFocus
+                      type="email"
+                      value={replyComposer.to}
+                      onChange={(e) => setReplyComposer((prev) => ({ ...prev, to: e.target.value }))}
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                    />
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-[80px_1fr] md:items-center">
+                    <label className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">Cc</label>
+                    <input
+                      type="text"
+                      value={replyComposer.cc}
+                      onChange={(e) => setReplyComposer((prev) => ({ ...prev, cc: e.target.value }))}
+                      placeholder="comma-separated recipients"
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                    />
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-[80px_1fr] md:items-center">
+                    <label className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">Subject</label>
+                    <input
+                      type="text"
+                      value={replyComposer.subject}
+                      onChange={(e) => setReplyComposer((prev) => ({ ...prev, subject: e.target.value }))}
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                    />
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-[80px_1fr]">
+                    <label className="pt-3 text-xs font-medium uppercase tracking-[0.18em] text-slate-400">Message</label>
+                    <textarea
+                      value={replyComposer.body}
+                      onChange={(e) => setReplyComposer((prev) => ({ ...prev, body: e.target.value }))}
+                      placeholder="Write your reply..."
+                      className="min-h-[180px] w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 resize-y"
+                    />
+                  </div>
                   <div className="flex justify-end gap-2">
                     <button
-                      onClick={() => { setIsReplying(false); setReplyText(''); }}
+                      onClick={() => {
+                        setIsReplying(false);
+                        setReplyComposer(EMPTY_REPLY_COMPOSER);
+                        setReplyError(null);
+                      }}
                       className="px-4 py-2 bg-white border border-slate-200 text-slate-700 text-sm font-medium rounded-xl shadow-sm hover:bg-slate-50 transition-colors"
                     >
                       Cancel
                     </button>
                     <button
-                      onClick={async () => {
-                        if (!replyText.trim() || !selectedThread) return;
-                        const otherEmail = selectedThread.emails.find(e => !e.isFromUser);
-                        const toEmail = otherEmail?.senderEmail || '';
-                        if (!toEmail) return;
-                        try {
-                          await sendEmail({
-                            to: toEmail,
-                            subject: `Re: ${selectedThread.latest.subject}`,
-                            body: replyText,
-                            application_id: selectedThread.latest.jobId || undefined,
-                            thread_id: selectedThread.latest.threadId || undefined,
-                            reply_to_message_id: selectedThread.latest.id || undefined,
-                          });
-                          setReplyText('');
-                          setIsReplying(false);
-                        } catch (err) {
-                          console.error('Failed to send reply:', err);
-                        }
-                      }}
-                      disabled={!replyText.trim()}
+                      onClick={() => void handleSendReply()}
+                      disabled={sendingReply || !replyComposer.to.trim() || !replyComposer.subject.trim() || !replyComposer.body.trim()}
                       className="px-4 py-2 bg-slate-800 hover:bg-slate-900 disabled:bg-slate-400 text-white text-sm font-medium rounded-xl shadow-sm flex items-center gap-2 transition-colors disabled:cursor-not-allowed"
                     >
                       <Send className="w-4 h-4" />
-                      Send Reply
+                      {sendingReply ? 'Sending...' : 'Send Reply'}
                     </button>
                   </div>
                 </div>
               ) : (
-                <div className="max-w-[72rem] mx-auto flex gap-3 flex-wrap">
-                  <button
-                    onClick={() => setIsReplying(true)}
-                    className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-sm font-medium rounded-xl shadow-sm transition-colors"
-                  >
-                    Reply
-                  </button>
-                  <button
-                    onClick={() => handleMarkResolved(!selectedThread.resolved)}
-                    className="px-4 py-2 bg-white border border-slate-200 text-slate-700 text-sm font-medium rounded-xl shadow-sm hover:bg-slate-50 transition-colors inline-flex items-center gap-2"
-                  >
-                    {selectedThread.resolved ? <Undo2 className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
-                    {selectedThread.resolved ? 'Undo Done' : 'Mark as Done'}
-                  </button>
-                  <button
-                    onClick={handleHideThread}
-                    className="px-4 py-2 bg-white border border-slate-200 text-slate-700 text-sm font-medium rounded-xl shadow-sm hover:bg-slate-50 transition-colors inline-flex items-center gap-2"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    Hide
-                  </button>
+                <div className="max-w-[72rem] mx-auto flex flex-col gap-3">
+                  {replyError && (
+                    <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                      {replyError}
+                    </div>
+                  )}
+                  <div className="flex gap-3 flex-wrap">
+                    <button
+                      onClick={() => void handleStartReply('reply')}
+                      className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-sm font-medium rounded-xl shadow-sm transition-colors"
+                    >
+                      Reply
+                    </button>
+                    <button
+                      onClick={() => void handleStartReply('reply_all')}
+                      className="px-4 py-2 bg-white border border-slate-200 text-slate-700 text-sm font-medium rounded-xl shadow-sm hover:bg-slate-50 transition-colors inline-flex items-center gap-2"
+                    >
+                      <Users className="w-4 h-4" />
+                      Reply All
+                    </button>
+                    <button
+                      onClick={() => handleMarkResolved(!selectedThread.resolved)}
+                      className="px-4 py-2 bg-white border border-slate-200 text-slate-700 text-sm font-medium rounded-xl shadow-sm hover:bg-slate-50 transition-colors inline-flex items-center gap-2"
+                    >
+                      {selectedThread.resolved ? <Undo2 className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
+                      {selectedThread.resolved ? 'Undo Done' : 'Mark as Done'}
+                    </button>
+                    <button
+                      onClick={handleHideThread}
+                      className="px-4 py-2 bg-white border border-slate-200 text-slate-700 text-sm font-medium rounded-xl shadow-sm hover:bg-slate-50 transition-colors inline-flex items-center gap-2"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Delete
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

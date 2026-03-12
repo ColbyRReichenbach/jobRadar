@@ -1227,7 +1227,12 @@ def _google_oauth_scopes(connect_gmail: bool, connect_calendar: bool) -> list[st
         "https://www.googleapis.com/auth/userinfo.profile",
     ]
     if connect_gmail:
-        scopes.append("https://www.googleapis.com/auth/gmail.readonly")
+        scopes.extend(
+            [
+                "https://www.googleapis.com/auth/gmail.readonly",
+                "https://www.googleapis.com/auth/gmail.compose",
+            ]
+        )
     if connect_calendar:
         scopes.append("https://www.googleapis.com/auth/calendar.readonly")
     return scopes
@@ -1408,6 +1413,7 @@ async def google_auth_callback(
         if connect_gmail and (
             not granted_scopes
             or "https://www.googleapis.com/auth/gmail.readonly" in granted_scopes
+            or "https://www.googleapis.com/auth/gmail.compose" in granted_scopes
         ):
             user.gmail_connected = True
         if connect_calendar and (
@@ -2651,38 +2657,26 @@ async def alert_count(db: AsyncSession = Depends(get_db), auth: dict = Depends(v
 
 class SendEmailPayload(BaseModel):
     to: EmailStr
+    cc: list[EmailStr] = Field(default_factory=list)
     subject: str = Field(..., max_length=MAX_NAME_LEN)
     body: str = Field(..., max_length=MAX_LONG_TEXT_LEN)
     application_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
+    reply_to_email_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
     reply_to_message_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
     thread_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
 
 
-@app.post("/api/emails/send", status_code=201)
-@limiter.limit(_send_email_rate_limit, error_message="Too many send email requests. Try again in a minute.")
-async def send_email_endpoint(
-    request: Request,
-    payload: SendEmailPayload,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+def _is_gmail_scope_error(exc: Exception) -> bool:
+    lowered = str(exc).lower()
+    return "insufficient authentication scopes" in lowered or "access token scope insufficient" in lowered
+
+
+async def _build_gmail_service_for_user(
+    db: AsyncSession,
+    user_id: _uuid.UUID,
 ):
-    """Send an email via Gmail API."""
-    from backend.services.email_sender import send_email
     from google.oauth2.credentials import Credentials
     from googleapiclient.discovery import build
-
-    GOOGLE_CLIENT_ID = os.getenv("GMAIL_CLIENT_ID", "")
-    GOOGLE_CLIENT_SECRET = os.getenv("GMAIL_CLIENT_SECRET", "")
-
-    user_id = current_user.id
-    if payload.application_id:
-        app_stmt = select(Application).where(
-            Application.id == _uuid.UUID(payload.application_id),
-            Application.user_id == user_id,
-        )
-        app_result = await db.execute(app_stmt)
-        if not app_result.scalar_one_or_none():
-            raise HTTPException(status_code=404, detail="Application not found")
 
     stmt = select(GmailToken).where(GmailToken.user_id == user_id)
     result = await db.execute(stmt)
@@ -2702,22 +2696,95 @@ async def send_email_endpoint(
         token=access_token,
         refresh_token=refresh_token,
         token_uri="https://oauth2.googleapis.com/token",
-        client_id=GOOGLE_CLIENT_ID,
-        client_secret=GOOGLE_CLIENT_SECRET,
+        client_id=os.getenv("GMAIL_CLIENT_ID", ""),
+        client_secret=os.getenv("GMAIL_CLIENT_SECRET", ""),
     )
-    gmail_service = build("gmail", "v1", credentials=creds)
+    return build("gmail", "v1", credentials=creds)
 
-    result = await send_email(
-        db=db,
-        gmail_service=gmail_service,
-        to=payload.to,
-        subject=payload.subject,
-        body=payload.body,
-        application_id=payload.application_id,
-        reply_to_message_id=payload.reply_to_message_id,
-        thread_id=payload.thread_id,
-        user_id=user_id,
+
+@app.get("/api/emails/{email_id}/reply-context")
+async def get_email_reply_context(
+    email_id: str,
+    reply_all: bool = Query(False),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from backend.services.email_sender import build_reply_context
+
+    user_id = current_user.id
+    stmt = select(EmailEvent).where(
+        EmailEvent.id == _uuid.UUID(email_id),
+        EmailEvent.user_id == user_id,
     )
+    result = await db.execute(stmt)
+    event = result.scalar_one_or_none()
+    if not event:
+        raise HTTPException(status_code=404, detail="Email not found")
+
+    gmail_service = await _build_gmail_service_for_user(db, user_id)
+    try:
+        reply_context = await build_reply_context(
+            gmail_service=gmail_service,
+            event=event,
+            user_email=current_user.email,
+            reply_all=reply_all,
+        )
+    except Exception as exc:
+        if _is_gmail_scope_error(exc):
+            raise HTTPException(
+                status_code=400,
+                detail="Gmail send access is missing. Reconnect your Gmail account to grant compose access.",
+            ) from exc
+        raise HTTPException(status_code=502, detail="Failed to prepare Gmail reply context.") from exc
+
+    return reply_context
+
+
+@app.post("/api/emails/send", status_code=201)
+@limiter.limit(_send_email_rate_limit, error_message="Too many send email requests. Try again in a minute.")
+async def send_email_endpoint(
+    request: Request,
+    payload: SendEmailPayload,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Send an email via Gmail API."""
+    from backend.services.email_sender import send_email
+
+    user_id = current_user.id
+    if payload.application_id:
+        app_stmt = select(Application).where(
+            Application.id == _uuid.UUID(payload.application_id),
+            Application.user_id == user_id,
+        )
+        app_result = await db.execute(app_stmt)
+        if not app_result.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Application not found")
+
+    gmail_service = await _build_gmail_service_for_user(db, user_id)
+
+    try:
+        result = await send_email(
+            db=db,
+            gmail_service=gmail_service,
+            to=payload.to,
+            cc=[str(addr) for addr in payload.cc],
+            subject=payload.subject,
+            body=payload.body,
+            application_id=payload.application_id,
+            reply_to_email_id=payload.reply_to_email_id,
+            reply_to_message_id=payload.reply_to_message_id,
+            thread_id=payload.thread_id,
+            user_email=current_user.email,
+            user_id=user_id,
+        )
+    except Exception as exc:
+        if _is_gmail_scope_error(exc):
+            raise HTTPException(
+                status_code=400,
+                detail="Gmail send access is missing. Reconnect your Gmail account to grant compose access.",
+            ) from exc
+        raise HTTPException(status_code=502, detail="Gmail send failed.") from exc
     return result
 
 

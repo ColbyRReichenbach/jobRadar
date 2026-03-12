@@ -301,7 +301,7 @@ export function NetworkPage({ onOpenEmail, onRefreshData }: NetworkPageProps) {
       if (result?.id) {
         onOpenEmail?.({
           id: result.id,
-          thread_id: result.thread_id,
+          thread_id: result.threadId,
           type: 'conversation',
         });
       }
