@@ -43,6 +43,11 @@ export function Settings() {
     loadPrefs();
   }, []);
 
+  useEffect(() => {
+    if (loading) return;
+    saveLocalNotificationPrefs(localPrefs);
+  }, [localPrefs, loading]);
+
   const loadPrefs = async () => {
     setErrorMessage(null);
     try {
@@ -95,7 +100,6 @@ export function Settings() {
         ...localPrefs,
         browser_notifications_enabled: browserNotificationsEnabled,
       };
-      saveLocalNotificationPrefs(nextLocalPrefs);
       setLocalPrefs(nextLocalPrefs);
       setPrefs((current) => ({
         ...data,
@@ -208,6 +212,8 @@ export function Settings() {
             <div className="space-y-4">
               <label className="flex items-start gap-3 cursor-pointer">
                 <input
+                  id="browser-notifications-toggle"
+                  aria-label="Browser banner notifications"
                   type="checkbox"
                   checked={localPrefs.browser_notifications_enabled}
                   onChange={() => toggleLocalPref('browser_notifications_enabled')}
@@ -246,6 +252,8 @@ export function Settings() {
               <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
                 <label className="flex items-start gap-3 cursor-pointer">
                   <input
+                    id="quiet-hours-toggle"
+                    aria-label="Quiet hours"
                     type="checkbox"
                     checked={localPrefs.quiet_hours_enabled}
                     onChange={() => toggleLocalPref('quiet_hours_enabled')}
@@ -261,6 +269,7 @@ export function Settings() {
                     <label className="space-y-1">
                       <span className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">Start</span>
                       <select
+                        id="quiet-hours-start"
                         value={localPrefs.quiet_hours_start ?? 22}
                         onChange={(event) => setLocalPrefs((current) => ({ ...current, quiet_hours_start: Number(event.target.value) }))}
                         className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
@@ -273,6 +282,7 @@ export function Settings() {
                     <label className="space-y-1">
                       <span className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">End</span>
                       <select
+                        id="quiet-hours-end"
                         value={localPrefs.quiet_hours_end ?? 7}
                         onChange={(event) => setLocalPrefs((current) => ({ ...current, quiet_hours_end: Number(event.target.value) }))}
                         className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"

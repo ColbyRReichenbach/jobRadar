@@ -74,6 +74,7 @@ type MockState = {
   alerts?: MockAlert[];
   networkContacts?: MockContact[];
   networkDetails?: Record<string, MockNetworkDetail>;
+  contactDistinctPairs?: string[][];
 };
 
 async function mockLoggedOutApi(page: Page) {
@@ -102,6 +103,7 @@ async function mockLoggedInApi(page: Page, initialState: MockState = {}) {
     alerts: [] as MockAlert[],
     networkContacts: [] as MockContact[],
     networkDetails: {} as Record<string, MockNetworkDetail>,
+    contactDistinctPairs: [] as string[][],
     ...initialState,
   };
 
@@ -287,6 +289,165 @@ async function mockLoggedInApi(page: Page, initialState: MockState = {}) {
       return;
     }
 
+    if (path === '/api/contacts/duplicates/check' && method === 'POST') {
+      const body = await json();
+      const email = body?.email ? String(body.email).trim().toLowerCase() : null;
+      const name = body?.name ? String(body.name).trim().toLowerCase() : null;
+      const excludeId = body?.contact_id ? String(body.contact_id) : null;
+      const contacts = state.networkContacts.filter((contact) => contact.id !== excludeId);
+
+      const hardMatches = email
+        ? contacts.filter((contact) => (contact.email || '').toLowerCase() === email)
+        : [];
+      if (hardMatches.length > 0) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            duplicate_type: 'hard',
+            message: 'This email already exists in your contacts.',
+            matches: hardMatches,
+          }),
+        });
+        return;
+      }
+
+      const softMatches = name
+        ? contacts.filter((contact) => {
+            if ((contact.name || '').trim().toLowerCase() !== name) return false;
+            if (!email || !contact.email) return true;
+            const pair = [email, String(contact.email).trim().toLowerCase()].sort();
+            return !state.contactDistinctPairs.some((existing) => existing[0] === pair[0] && existing[1] === pair[1]);
+          })
+        : [];
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          duplicate_type: softMatches.length > 0 ? 'soft' : 'none',
+          message: softMatches.length > 0 ? 'We found a similarly named contact.' : null,
+          matches: softMatches,
+        }),
+      });
+      return;
+    }
+
+    if (path === '/api/contacts/duplicates/keep-separate' && method === 'POST') {
+      const body = await json();
+      const pair = [
+        String(body?.email || '').trim().toLowerCase(),
+        String(body?.match_email || '').trim().toLowerCase(),
+      ].sort();
+      if (pair[0] && pair[1] && pair[0] !== pair[1]) {
+        state.contactDistinctPairs.push(pair);
+      }
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'ok' }),
+      });
+      return;
+    }
+
+    if (path === '/api/contacts' && method === 'POST') {
+      const body = await json();
+      const id = `contact-${state.networkContacts.length + 1}`;
+      const created = {
+        id,
+        name: body?.name ?? null,
+        email: body?.email ? String(body.email).trim().toLowerCase() : null,
+        title: body?.title ?? null,
+        company: body?.company_name ?? null,
+        source: 'manual',
+        reached_out: false,
+        response_received: false,
+        linkedin_url: body?.linkedin_url ?? null,
+        phone_number: body?.phone_number ?? null,
+      };
+      state.networkContacts = [created, ...state.networkContacts];
+      if (created.email) {
+        state.networkDetails[created.email] = {
+          contact: {
+            id,
+            name: created.name,
+            email: created.email,
+            title: created.title,
+            company: created.company,
+            phone_number: created.phone_number,
+            linkedin_url: created.linkedin_url,
+            source: 'manual',
+          },
+          emails: [],
+          applications: [],
+        };
+      }
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify(created),
+      });
+      return;
+    }
+
+    if (path === '/api/contacts/merge' && method === 'POST') {
+      const body = await json();
+      const targetId = String(body?.target_contact_id);
+      const sourceId = body?.source_contact_id ? String(body.source_contact_id) : null;
+      const target = state.networkContacts.find((contact) => contact.id === targetId);
+      if (!target) {
+        await route.fulfill({
+          status: 404,
+          contentType: 'application/json',
+          body: JSON.stringify({ detail: 'Target contact not found' }),
+        });
+        return;
+      }
+
+      Object.assign(target, {
+        name: body?.name ?? target.name,
+        title: body?.title ?? target.title,
+        email: body?.email ? String(body.email).trim().toLowerCase() : target.email,
+        company: body?.company_name ?? target.company,
+        phone_number: body?.phone_number ?? target.phone_number,
+        linkedin_url: body?.linkedin_url ?? target.linkedin_url,
+        source: target.source || 'manual',
+      });
+
+      if (sourceId) {
+        const source = state.networkContacts.find((contact) => contact.id === sourceId);
+        if (source) {
+          state.networkContacts = state.networkContacts.filter((contact) => contact.id !== sourceId);
+          if (source.email) {
+            delete state.networkDetails[source.email];
+          }
+        }
+      }
+
+      if (target.email) {
+        state.networkDetails[target.email] = {
+          contact: {
+            id: target.id,
+            name: target.name,
+            email: target.email,
+            title: target.title,
+            company: target.company,
+            phone_number: target.phone_number,
+            linkedin_url: target.linkedin_url,
+            source: target.source,
+          },
+          emails: [],
+          applications: [],
+        };
+      }
+
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(target),
+      });
+      return;
+    }
+
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -432,6 +593,90 @@ test.describe('desktop app flows', () => {
     await expect(contactDialog.locator('h2', { hasText: 'Alex Recruiter' })).toBeVisible();
     await expect(contactDialog.getByText('Senior Recruiter')).toBeVisible();
     await expect(contactDialog.locator('div').filter({ hasText: /^TestCo$/ }).first()).toBeVisible();
+  });
+
+  test('device-local notification settings hydrate from local storage', async ({ page }) => {
+    await page.addInitScript(() => {
+      window.localStorage.setItem('apptrail:local-notification-prefs', JSON.stringify({
+        browser_notifications_enabled: true,
+        quiet_hours_enabled: true,
+        quiet_hours_start: 21,
+        quiet_hours_end: 6,
+      }));
+    });
+    await mockLoggedInApi(page);
+
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Settings' }).click();
+    await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible();
+
+    await page.reload();
+    const storedPrefs = await page.evaluate(() => window.localStorage.getItem('apptrail:local-notification-prefs'));
+    expect(storedPrefs).not.toBeNull();
+    expect(JSON.parse(storedPrefs || '{}')).toMatchObject({
+      quiet_hours_enabled: true,
+      quiet_hours_start: 21,
+      quiet_hours_end: 6,
+    });
+  });
+
+  test('network duplicate review supports keep separate and merge', async ({ page }) => {
+    await mockLoggedInApi(page, {
+      networkContacts: [
+        {
+          id: 'contact-existing',
+          name: 'Audrey Lane',
+          email: 'audrey.one@example.com',
+          title: 'Recruiter',
+          company: 'Acme',
+          source: 'manual',
+          reached_out: false,
+          response_received: false,
+          linkedin_url: null,
+          phone_number: null,
+        },
+      ],
+      networkDetails: {
+        'audrey.one@example.com': {
+          contact: {
+            id: 'contact-existing',
+            name: 'Audrey Lane',
+            title: 'Recruiter',
+            email: 'audrey.one@example.com',
+            company: 'Acme',
+            source: 'manual',
+          },
+          emails: [],
+          applications: [],
+        },
+      },
+    });
+
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Network' }).click();
+    await page.getByRole('button', { name: 'Add Contact' }).click();
+    await page.getByLabel('Name').fill('Audrey Lane');
+    await page.getByLabel('Email').fill('audrey.two@example.com');
+
+    await expect(page.getByText('We found a similarly named contact.')).toBeVisible();
+    await page.getByRole('button', { name: 'Keep separate' }).click();
+    await expect(page.getByText('2 results')).toBeVisible();
+    await page.getByLabel('Close contact details').click();
+
+    await page.getByRole('button', { name: 'Add Contact' }).click();
+    await page.getByLabel('Name').fill('Audrey Lane');
+    await page.getByLabel('Email').fill('audrey.three@example.com');
+    await page.getByLabel('Title').fill('Senior Recruiter');
+    await page.getByLabel('Company').fill('Acme');
+
+    await expect(page.getByText('We found a similarly named contact.')).toBeVisible();
+    await page.getByRole('button', { name: 'Merge with this' }).first().click();
+    await expect(page.getByRole('heading', { name: 'Merge Contacts' })).toBeVisible();
+    await page.getByRole('radio', { name: /Current form/ }).nth(1).check();
+    await page.getByRole('button', { name: 'Confirm Merge' }).click();
+
+    const detail = page.getByRole('dialog');
+    await expect(detail.getByText('Senior Recruiter')).toBeVisible();
   });
 });
 

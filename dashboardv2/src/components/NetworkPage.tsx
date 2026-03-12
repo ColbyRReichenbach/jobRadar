@@ -158,6 +158,7 @@ export function NetworkPage({ onOpenEmail, onRefreshData, focusRequest }: Networ
   const [savingContact, setSavingContact] = useState(false);
   const [contactDuplicateWarning, setContactDuplicateWarning] = useState<{ type: 'soft' | 'hard'; message: string; matches: DuplicateMatch[] } | null>(null);
   const [mergeReview, setMergeReview] = useState<MergeReviewState | null>(null);
+  const [keepSeparatePending, setKeepSeparatePending] = useState(false);
   const [showAllEmails, setShowAllEmails] = useState(false);
 
   useEffect(() => {
@@ -261,6 +262,7 @@ export function NetworkPage({ onOpenEmail, onRefreshData, focusRequest }: Networ
 
   const openContactForm = (mode: 'create' | 'edit', contact?: Partial<NetworkContact>) => {
     setContactFormMode(mode);
+    setKeepSeparatePending(false);
     setContactFormState({
       name: contact?.name || '',
       title: contact?.title || '',
@@ -355,13 +357,14 @@ export function NetworkPage({ onOpenEmail, onRefreshData, focusRequest }: Networ
       let savedContact: any;
       if (contactFormMode === 'edit' && selectedContact && !selectedContact.id.startsWith('email-')) {
         savedContact = await updateContact(selectedContact.id, payload);
-        setStatusMessage('Contact updated.');
+        setStatusMessage(keepSeparatePending ? 'Contact updated and kept separate from the existing match.' : 'Contact updated.');
       } else {
         savedContact = await createContact(payload);
-        setStatusMessage('Contact added.');
+        setStatusMessage(keepSeparatePending ? 'Contact added and marked as a separate person.' : 'Contact added.');
       }
 
       setShowContactForm(false);
+      setKeepSeparatePending(false);
       await loadContacts(searchQuery);
       if (savedContact?.email) {
         await openDetail({
@@ -397,8 +400,8 @@ export function NetworkPage({ onOpenEmail, onRefreshData, focusRequest }: Networ
         email: contactFormState.email.trim(),
         match_email: match.email,
       });
+      setKeepSeparatePending(true);
       setContactDuplicateWarning(null);
-      setStatusMessage('We will keep those similarly named contacts separate.');
       window.setTimeout(() => {
         void handleSaveContact();
       }, 0);
@@ -990,10 +993,11 @@ export function NetworkPage({ onOpenEmail, onRefreshData, focusRequest }: Networ
                 </div>
               )}
               <div className="sm:col-span-2">
-                <label className="block text-xs font-medium uppercase tracking-[0.18em] text-slate-400 mb-2">
+                <label htmlFor="contact-form-name" className="block text-xs font-medium uppercase tracking-[0.18em] text-slate-400 mb-2">
                   Name
                 </label>
                 <input
+                  id="contact-form-name"
                   ref={contactNameInputRef}
                   value={contactFormState.name}
                   onChange={(event) => setContactFormState((prev) => ({ ...prev, name: event.target.value }))}
@@ -1001,10 +1005,11 @@ export function NetworkPage({ onOpenEmail, onRefreshData, focusRequest }: Networ
                 />
               </div>
               <div className="sm:col-span-2">
-                <label className="block text-xs font-medium uppercase tracking-[0.18em] text-slate-400 mb-2">
+                <label htmlFor="contact-form-email" className="block text-xs font-medium uppercase tracking-[0.18em] text-slate-400 mb-2">
                   Email
                 </label>
                 <input
+                  id="contact-form-email"
                   type="email"
                   value={contactFormState.email}
                   onChange={(event) => setContactFormState((prev) => ({ ...prev, email: event.target.value }))}
@@ -1012,30 +1017,33 @@ export function NetworkPage({ onOpenEmail, onRefreshData, focusRequest }: Networ
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium uppercase tracking-[0.18em] text-slate-400 mb-2">
+                <label htmlFor="contact-form-title" className="block text-xs font-medium uppercase tracking-[0.18em] text-slate-400 mb-2">
                   Title
                 </label>
                 <input
+                  id="contact-form-title"
                   value={contactFormState.title}
                   onChange={(event) => setContactFormState((prev) => ({ ...prev, title: event.target.value }))}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm"
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium uppercase tracking-[0.18em] text-slate-400 mb-2">
+                <label htmlFor="contact-form-company" className="block text-xs font-medium uppercase tracking-[0.18em] text-slate-400 mb-2">
                   Company
                 </label>
                 <input
+                  id="contact-form-company"
                   value={contactFormState.company_name}
                   onChange={(event) => setContactFormState((prev) => ({ ...prev, company_name: event.target.value }))}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm"
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium uppercase tracking-[0.18em] text-slate-400 mb-2">
+                <label htmlFor="contact-form-phone" className="block text-xs font-medium uppercase tracking-[0.18em] text-slate-400 mb-2">
                   Phone
                 </label>
                 <input
+                  id="contact-form-phone"
                   value={contactFormState.phone_number}
                   onChange={(event) =>
                     setContactFormState((prev) => ({ ...prev, phone_number: event.target.value }))
@@ -1044,10 +1052,11 @@ export function NetworkPage({ onOpenEmail, onRefreshData, focusRequest }: Networ
                 />
               </div>
               <div className="sm:col-span-2">
-                <label className="block text-xs font-medium uppercase tracking-[0.18em] text-slate-400 mb-2">
+                <label htmlFor="contact-form-linkedin" className="block text-xs font-medium uppercase tracking-[0.18em] text-slate-400 mb-2">
                   LinkedIn
                 </label>
                 <input
+                  id="contact-form-linkedin"
                   value={contactFormState.linkedin_url}
                   onChange={(event) =>
                     setContactFormState((prev) => ({ ...prev, linkedin_url: event.target.value }))
