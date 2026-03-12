@@ -104,3 +104,17 @@ def test_google_authorization_response_can_replace_wrapped_state():
     assert _build_google_authorization_response(request, "google-state") == (
         f"{GOOGLE_REDIRECT_URI}?code=abc&state=google-state&scope=email"
     )
+
+
+def test_google_authorization_kwargs_only_include_incremental_scopes_for_connect_flows():
+    from backend.main import _google_authorization_kwargs
+
+    assert _google_authorization_kwargs(False, False) == {
+        "prompt": "consent",
+        "access_type": "offline",
+    }
+    assert _google_authorization_kwargs(True, False) == {
+        "prompt": "consent",
+        "access_type": "offline",
+        "include_granted_scopes": "true",
+    }

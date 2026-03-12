@@ -21,6 +21,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import NO_VALUE
 
 load_dotenv(override=True)
+os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
 
 from backend.database import async_session_factory, get_db
 from backend.dependencies import verify_api_key, create_jwt, create_refresh_token, decode_jwt, decode_refresh_token, get_current_user, set_refresh_cookie, clear_refresh_cookie, blacklist_token, REFRESH_COOKIE_NAME, generate_api_key, hash_api_key
@@ -109,6 +110,16 @@ def _resolve_frontend_origin(frontend_origin: str | None, request: Request) -> s
 
 def _build_frontend_callback_url(frontend_url: str, access_token: str) -> str:
     return f"{frontend_url}/auth/callback#access_token={quote(access_token, safe='')}"
+
+
+def _google_authorization_kwargs(connect_gmail: bool, connect_calendar: bool) -> dict:
+    kwargs = {
+        "prompt": "consent",
+        "access_type": "offline",
+    }
+    if connect_gmail or connect_calendar:
+        kwargs["include_granted_scopes"] = "true"
+    return kwargs
 
 
 def _encode_oauth_context(payload: dict) -> str:
@@ -1303,9 +1314,7 @@ async def google_auth_redirect(
     # Generate auth URL first (this sets flow.code_verifier and returns the
     # OAuth state the callback must preserve for the exchange).
     auth_url, oauth_state = flow.authorization_url(
-        prompt="consent",
-        access_type="offline",
-        include_granted_scopes="true",
+        **_google_authorization_kwargs(connect_gmail, connect_calendar)
     )
 
     resolved_frontend_origin = _resolve_frontend_origin(frontend_origin, request)
