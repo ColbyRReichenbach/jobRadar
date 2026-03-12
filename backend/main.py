@@ -265,6 +265,7 @@ class ContactCreate(BaseModel):
     name: Optional[str] = Field(None, max_length=MAX_NAME_LEN)
     title: Optional[str] = Field(None, max_length=MAX_NAME_LEN)
     email: Optional[EmailStr] = None
+    company_name: Optional[str] = Field(None, max_length=MAX_NAME_LEN)
     phone_number: Optional[str] = Field(None, max_length=MAX_PHONE_LEN)
     linkedin_url: Optional[str] = Field(None, max_length=MAX_URL_LEN)
     application_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
@@ -274,6 +275,7 @@ class ContactUpdate(BaseModel):
     name: Optional[str] = Field(None, max_length=MAX_NAME_LEN)
     title: Optional[str] = Field(None, max_length=MAX_NAME_LEN)
     email: Optional[EmailStr] = None
+    company_name: Optional[str] = Field(None, max_length=MAX_NAME_LEN)
     phone_number: Optional[str] = Field(None, max_length=MAX_PHONE_LEN)
     linkedin_url: Optional[str] = Field(None, max_length=MAX_URL_LEN)
     reached_out: Optional[bool] = None
@@ -514,6 +516,12 @@ def _serialize_contact(contact_row: Contact) -> dict:
     if company_value is not NO_VALUE:
         company_ref = company_value
 
+    company_name = contact_row.company_name
+    if not company_name and company_ref:
+        company_name = company_ref.name
+    if not company_name and application:
+        company_name = application.company
+
     return {
         "id": str(contact_row.id),
         "application_id": str(contact_row.application_id) if contact_row.application_id else None,
@@ -527,7 +535,7 @@ def _serialize_contact(contact_row: Contact) -> dict:
         "reached_out": contact_row.reached_out,
         "reached_out_at": contact_row.reached_out_at.isoformat() if contact_row.reached_out_at else None,
         "response_received": contact_row.response_received,
-        "company": company_ref.name if company_ref else application.company if application else None,
+        "company": company_name,
         "company_id": str(contact_row.company_id) if contact_row.company_id else None,
     }
 
@@ -858,6 +866,8 @@ async def update_contact(
         contact.title = payload.title
     if payload.email is not None:
         contact.email = str(payload.email).lower()
+    if payload.company_name is not None:
+        contact.company_name = payload.company_name
     if payload.phone_number is not None:
         contact.phone_number = payload.phone_number
     if payload.linkedin_url is not None:
@@ -930,6 +940,7 @@ async def create_contact(
         name=payload.name,
         title=payload.title,
         email=str(payload.email).lower() if payload.email else None,
+        company_name=payload.company_name,
         phone_number=payload.phone_number,
         linkedin_url=payload.linkedin_url,
         source="manual",
@@ -954,6 +965,39 @@ async def create_contact(
     )
     contact_result = await db.execute(contact_stmt)
     return _serialize_contact(contact_result.scalar_one())
+
+
+@app.delete("/api/contacts/{contact_id}")
+async def delete_contact(
+    contact_id: str,
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    user_id = _require_user_id(auth)
+    cid = _uuid.UUID(contact_id)
+    stmt = select(Contact).where(
+        Contact.id == cid,
+        Contact.user_id == user_id,
+    )
+    result = await db.execute(stmt)
+    contact = result.scalar_one_or_none()
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contact not found")
+
+    email_value = (contact.email or "").lower()
+    await db.delete(contact)
+
+    if email_value:
+        ignored_stmt = select(IgnoredNetworkContact).where(
+            IgnoredNetworkContact.user_id == user_id,
+            IgnoredNetworkContact.email == email_value,
+        )
+        ignored_result = await db.execute(ignored_stmt)
+        if not ignored_result.scalar_one_or_none():
+            db.add(IgnoredNetworkContact(user_id=user_id, email=email_value))
+
+    await db.commit()
+    return {"status": "ok"}
 
 
 @app.get("/api/emails")
@@ -2360,7 +2404,7 @@ async def list_network(
             "email": c.email,
             "title": c.title,
             "phone_number": c.phone_number,
-            "company": c.application.company if c.application else None,
+            "company": c.company_name or (c.application.company if c.application else None),
             "company_id": str(c.company_id) if c.company_id else None,
             "source": c.source or "hunter",
             "reached_out": c.reached_out,
@@ -2479,7 +2523,8 @@ async def get_network_contact(email: EmailStr, db: AsyncSession = Depends(get_db
     inferred_contact = build_inferred_contact(
         sender_name=emails[0]["sender"] if emails else None,
         sender_email=email_value,
-        explicit_company=(contact.application.company if contact and getattr(contact, "application", None) else None)
+        explicit_company=(contact.company_name if contact else None)
+        or (contact.application.company if contact and getattr(contact, "application", None) else None)
         or (emails[0].get("company_name") if emails else None),
         texts=[
             *(email.get("summary") for email in emails),

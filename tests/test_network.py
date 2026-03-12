@@ -225,6 +225,50 @@ async def test_delete_network_contact_hides_future_email_derived_contact(client,
 
 
 @pytest.mark.asyncio
+async def test_delete_saved_contact_by_id(client, db_session):
+    from backend.models import Contact
+    from tests.conftest import TEST_USER_ID
+
+    contact = Contact(
+        user_id=TEST_USER_ID,
+        name="Saved Person",
+        email="saved@example.com",
+        source="manual",
+    )
+    db_session.add(contact)
+    await db_session.commit()
+    await db_session.refresh(contact)
+
+    resp = await client.delete(f"/api/contacts/{contact.id}", headers=AUTH_HEADER)
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_manual_contact_company_name_persists(client):
+    create_resp = await client.post(
+        "/api/contacts",
+        json={
+            "name": "Company Person",
+            "email": "company.person@example.com",
+            "company_name": "ManualCo",
+        },
+        headers=AUTH_HEADER,
+    )
+    assert create_resp.status_code == 201
+    assert create_resp.json()["company"] == "ManualCo"
+
+    contact_id = create_resp.json()["id"]
+    update_resp = await client.patch(
+        f"/api/contacts/{contact_id}",
+        json={"company_name": "RenamedCo"},
+        headers=AUTH_HEADER,
+    )
+    assert update_resp.status_code == 200
+    assert update_resp.json()["company"] == "RenamedCo"
+
+
+@pytest.mark.asyncio
 async def test_network_auto_fills_email_derived_contact_fields(client, db_session):
     from backend.models import EmailEvent
     from datetime import datetime, timezone

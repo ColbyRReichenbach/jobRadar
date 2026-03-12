@@ -622,10 +622,19 @@ export async function deleteNetworkContact(email: string): Promise<void> {
   if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to delete contact'));
 }
 
+export async function deleteContact(contactId: string): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/api/contacts/${contactId}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to delete contact'));
+}
+
 export async function createContact(payload: {
   name?: string;
   title?: string;
   email?: string;
+  company_name?: string;
   phone_number?: string;
   linkedin_url?: string;
   application_id?: string;
@@ -643,6 +652,7 @@ export async function updateContact(contactId: string, payload: {
   name?: string;
   title?: string;
   email?: string;
+  company_name?: string;
   phone_number?: string;
   linkedin_url?: string;
   application_id?: string | null;
