@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from 'react';
-import { UserProfile, fetchMe, clearAuthToken, buildGoogleAuthStartUrl, setUnauthorizedHandler } from './api';
+import { UserProfile, fetchMe, clearAuthToken, buildGoogleAuthStartUrl, setAuthToken, setUnauthorizedHandler } from './api';
 
 interface AuthContextType {
   user: UserProfile | null;
@@ -39,7 +39,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const path = window.location.pathname;
     if (path === '/auth/callback') {
-      // Google OAuth now relies on the refresh cookie, not a token in the URL.
+      const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+      const accessToken = params.get('access_token');
+      if (accessToken) {
+        setAuthToken(accessToken);
+      }
       window.history.replaceState({}, '', '/');
     }
     // fetchMe will try refresh cookie if no in-memory token

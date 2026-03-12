@@ -318,6 +318,7 @@ function mapEmail(raw: any): Email {
 
   return {
     id: raw.id,
+    gmailMessageId: raw.gmail_message_id || undefined,
     threadId: raw.thread_id || undefined,
     jobId: raw.application_id || '',
     sender: raw.sender || '',
@@ -534,18 +535,39 @@ export async function getUnreadAlertCount(): Promise<number> {
 
 export async function sendEmail(payload: {
   to: string;
+  cc?: string[];
   subject: string;
   body: string;
   application_id?: string;
+  reply_to_email_id?: string;
   reply_to_message_id?: string;
   thread_id?: string;
-}): Promise<any> {
+}): Promise<Email> {
   const res = await apiFetch(`${API_BASE}/api/emails/send`, {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify(payload),
   });
-  if (!res.ok) throw new Error(`Failed to send email: ${res.status}`);
+  if (!res.ok) throw new Error(await readErrorDetail(res, `Failed to send email: ${res.status}`));
+  return mapEmail(await res.json());
+}
+
+export async function fetchReplyContext(
+  emailId: string,
+  replyAll = false,
+): Promise<{
+  to: string;
+  cc: string[];
+  subject: string;
+  thread_id?: string;
+  reply_to_email_id: string;
+}> {
+  const params = new URLSearchParams();
+  if (replyAll) params.set('reply_all', 'true');
+  const res = await apiFetch(`${API_BASE}/api/emails/${emailId}/reply-context?${params.toString()}`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to prepare reply.'));
   return await res.json();
 }
 
@@ -622,10 +644,19 @@ export async function deleteNetworkContact(email: string): Promise<void> {
   if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to delete contact'));
 }
 
+export async function deleteContact(contactId: string): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/api/contacts/${contactId}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to delete contact'));
+}
+
 export async function createContact(payload: {
   name?: string;
   title?: string;
   email?: string;
+  company_name?: string;
   phone_number?: string;
   linkedin_url?: string;
   application_id?: string;
@@ -643,6 +674,7 @@ export async function updateContact(contactId: string, payload: {
   name?: string;
   title?: string;
   email?: string;
+  company_name?: string;
   phone_number?: string;
   linkedin_url?: string;
   application_id?: string | null;

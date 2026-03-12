@@ -73,6 +73,7 @@ export function Calendar() {
   const [viewMode, setViewMode] = useState<'month' | 'week'>('month');
   const [selectedInterview, setSelectedInterview] = useState<InterviewData | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingInterview, setEditingInterview] = useState<InterviewData | null>(null);
   const [pastDueInterviews, setPastDueInterviews] = useState<InterviewData[]>([]);
   const [showNoteForm, setShowNoteForm] = useState(false);
   const [interviewNotes, setInterviewNotes] = useState<InterviewNoteData[]>([]);
@@ -323,7 +324,10 @@ export function Calendar() {
               </button>
             )}
             <button
-              onClick={() => setShowAddModal(true)}
+              onClick={() => {
+                setEditingInterview(null);
+                setShowAddModal(true);
+              }}
               className="px-4 py-2.5 text-sm bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-medium shadow-sm flex items-center gap-2"
             >
               <Plus className="w-4 h-4" /> Add Interview
@@ -596,12 +600,23 @@ export function Calendar() {
                     onCancel={() => setShowNoteForm(false)}
                   />
                 ) : (
-                  <button
-                    onClick={() => setShowNoteForm(true)}
-                    className="w-full px-3 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 rounded-xl hover:bg-indigo-100 flex items-center justify-center gap-2"
-                  >
-                    <MessageSquare className="w-4 h-4" /> Add Interview Notes
-                  </button>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <button
+                      onClick={() => {
+                        setEditingInterview(selectedInterview);
+                        setShowAddModal(true);
+                      }}
+                      className="w-full px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 flex items-center justify-center gap-2"
+                    >
+                      <BookOpen className="w-4 h-4" /> Edit Interview
+                    </button>
+                    <button
+                      onClick={() => setShowNoteForm(true)}
+                      className="w-full px-3 py-2 text-sm font-medium text-indigo-600 bg-indigo-50 rounded-xl hover:bg-indigo-100 flex items-center justify-center gap-2"
+                    >
+                      <MessageSquare className="w-4 h-4" /> Add Interview Notes
+                    </button>
+                  </div>
                 )}
               </div>
           </DialogShell>
@@ -611,7 +626,15 @@ export function Calendar() {
       {/* Add Interview Modal */}
       <AnimatePresence>
         {showAddModal && (
-          <AddInterviewModal onClose={() => setShowAddModal(false)} onAdd={handleAdd} />
+          <AddInterviewModal
+            onClose={() => {
+              setShowAddModal(false);
+              setEditingInterview(null);
+            }}
+            onAdd={handleAdd}
+            onUpdate={handleUpdate}
+            initialInterview={editingInterview}
+          />
         )}
       </AnimatePresence>
     </div>
@@ -619,20 +642,32 @@ export function Calendar() {
 }
 
 
-function AddInterviewModal({ onClose, onAdd }: { onClose: () => void; onAdd: (data: any) => void }) {
+function AddInterviewModal({
+  onClose,
+  onAdd,
+  onUpdate,
+  initialInterview,
+}: {
+  onClose: () => void;
+  onAdd: (data: any) => void;
+  onUpdate: (id: string, data: any) => void;
+  initialInterview?: InterviewData | null;
+}) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const titleId = useId();
-  const [type, setType] = useState('phone');
-  const [scheduledAt, setScheduledAt] = useState('');
-  const [duration, setDuration] = useState('60');
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [location, setLocation] = useState('');
-  const [notes, setNotes] = useState('');
+  const [type, setType] = useState(initialInterview?.interview_type || 'phone');
+  const [scheduledAt, setScheduledAt] = useState(
+    initialInterview?.scheduled_at ? initialInterview.scheduled_at.slice(0, 16) : '',
+  );
+  const [duration, setDuration] = useState(String(initialInterview?.duration_minutes || 60));
+  const [name, setName] = useState(initialInterview?.interviewer_name || '');
+  const [email, setEmail] = useState(initialInterview?.interviewer_email || '');
+  const [location, setLocation] = useState(initialInterview?.location_or_link || '');
+  const [notes, setNotes] = useState(initialInterview?.notes || '');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onAdd({
+    const payload = {
       interview_type: type,
       scheduled_at: scheduledAt || null,
       duration_minutes: duration ? parseInt(duration) : null,
@@ -640,7 +675,12 @@ function AddInterviewModal({ onClose, onAdd }: { onClose: () => void; onAdd: (da
       interviewer_email: email || null,
       location_or_link: location || null,
       notes: notes || null,
-    });
+    };
+    if (initialInterview) {
+      onUpdate(initialInterview.id, payload);
+    } else {
+      onAdd(payload);
+    }
   };
 
   return (
@@ -653,7 +693,9 @@ function AddInterviewModal({ onClose, onAdd }: { onClose: () => void; onAdd: (da
       panelClassName="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden"
     >
         <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
-          <h2 id={titleId} className="text-xl font-serif font-bold text-slate-900">Add Interview</h2>
+          <h2 id={titleId} className="text-xl font-serif font-bold text-slate-900">
+            {initialInterview ? 'Edit Interview' : 'Add Interview'}
+          </h2>
           <button
             ref={closeButtonRef}
             onClick={onClose}
@@ -701,7 +743,7 @@ function AddInterviewModal({ onClose, onAdd }: { onClose: () => void; onAdd: (da
             <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm resize-none" />
           </div>
           <button type="submit" className="w-full px-4 py-2.5 text-sm bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-medium shadow-sm">
-            Add Interview
+            {initialInterview ? 'Save Interview' : 'Add Interview'}
           </button>
         </form>
     </DialogShell>

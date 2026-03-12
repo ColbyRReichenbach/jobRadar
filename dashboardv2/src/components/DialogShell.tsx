@@ -36,11 +36,6 @@ export function DialogShell({
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const previousActive = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const previousOverflow = document.body.style.overflow;
-
-    document.body.style.overflow = 'hidden';
-
     const frame = window.requestAnimationFrame(() => {
       const focusTarget =
         initialFocusRef?.current ||
@@ -49,6 +44,17 @@ export function DialogShell({
 
       focusTarget?.focus();
     });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, []);
+
+  useEffect(() => {
+    const previousActive = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+
+    document.body.style.overflow = 'hidden';
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -85,12 +91,11 @@ export function DialogShell({
     document.addEventListener('keydown', handleKeyDown);
 
     return () => {
-      window.cancelAnimationFrame(frame);
       document.removeEventListener('keydown', handleKeyDown);
       document.body.style.overflow = previousOverflow;
       previousActive?.focus();
     };
-  }, [initialFocusRef, onClose]);
+  }, [onClose]);
 
   return (
     <div className={wrapperClassName}>

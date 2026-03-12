@@ -15,6 +15,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import {
   createContact,
+  deleteContact,
   deleteNetworkContact,
   fetchNetworkContact,
   fetchNetworkContacts,
@@ -81,6 +82,7 @@ interface ContactFormState {
   name: string;
   title: string;
   email: string;
+  company_name: string;
   phone_number: string;
   linkedin_url: string;
 }
@@ -95,6 +97,7 @@ const EMPTY_CONTACT_FORM: ContactFormState = {
   name: '',
   title: '',
   email: '',
+  company_name: '',
   phone_number: '',
   linkedin_url: '',
 };
@@ -203,6 +206,7 @@ export function NetworkPage({ onOpenEmail, onRefreshData }: NetworkPageProps) {
       name: contact?.name || '',
       title: contact?.title || '',
       email: contact?.email || '',
+      company_name: contact?.company || '',
       phone_number: contact?.phone_number || '',
       linkedin_url: contact?.linkedin_url || '',
     });
@@ -217,6 +221,7 @@ export function NetworkPage({ onOpenEmail, onRefreshData }: NetworkPageProps) {
         name: contactFormState.name || undefined,
         title: contactFormState.title || undefined,
         email: contactFormState.email || undefined,
+        company_name: contactFormState.company_name || undefined,
         phone_number: contactFormState.phone_number || undefined,
         linkedin_url: contactFormState.linkedin_url || undefined,
       };
@@ -238,9 +243,9 @@ export function NetworkPage({ onOpenEmail, onRefreshData }: NetworkPageProps) {
           name: savedContact.name,
           email: savedContact.email,
           title: savedContact.title,
+          company: savedContact.company,
           phone_number: savedContact.phone_number,
           linkedin_url: savedContact.linkedin_url,
-          company: selectedContact?.company || null,
           source: savedContact.source || 'manual',
           reached_out: savedContact.reached_out || false,
           response_received: savedContact.response_received || false,
@@ -257,7 +262,11 @@ export function NetworkPage({ onOpenEmail, onRefreshData }: NetworkPageProps) {
     if (!selectedContact?.email) return;
     setErrorMessage(null);
     try {
-      await deleteNetworkContact(selectedContact.email);
+      if (selectedContact.id.startsWith('email-')) {
+        await deleteNetworkContact(selectedContact.email);
+      } else {
+        await deleteContact(selectedContact.id);
+      }
       setStatusMessage('Contact removed from your network.');
       setSelectedContact(null);
       setContactDetail(null);
@@ -292,7 +301,7 @@ export function NetworkPage({ onOpenEmail, onRefreshData }: NetworkPageProps) {
       if (result?.id) {
         onOpenEmail?.({
           id: result.id,
-          thread_id: result.thread_id,
+          thread_id: result.threadId,
           type: 'conversation',
         });
       }
@@ -777,6 +786,16 @@ export function NetworkPage({ onOpenEmail, onRefreshData }: NetworkPageProps) {
                 <input
                   value={contactFormState.title}
                   onChange={(event) => setContactFormState((prev) => ({ ...prev, title: event.target.value }))}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium uppercase tracking-[0.18em] text-slate-400 mb-2">
+                  Company
+                </label>
+                <input
+                  value={contactFormState.company_name}
+                  onChange={(event) => setContactFormState((prev) => ({ ...prev, company_name: event.target.value }))}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm"
                 />
               </div>

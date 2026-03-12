@@ -3,7 +3,7 @@ import re
 import time
 from datetime import datetime, timezone
 from typing import Optional
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 from uuid import uuid4
 
 from dotenv import load_dotenv
@@ -105,6 +105,10 @@ def _resolve_frontend_origin(frontend_origin: str | None, request: Request) -> s
             return normalized
 
     return os.getenv("DASHBOARD_URL", "http://localhost:5173").rstrip("/")
+
+
+def _build_frontend_callback_url(frontend_url: str, access_token: str) -> str:
+    return f"{frontend_url}/auth/callback#access_token={quote(access_token, safe='')}"
 
 
 _rate_limit_storage_uri = os.getenv("RATE_LIMIT_STORAGE_URI") or os.getenv("REDIS_URL")
@@ -265,6 +269,7 @@ class ContactCreate(BaseModel):
     name: Optional[str] = Field(None, max_length=MAX_NAME_LEN)
     title: Optional[str] = Field(None, max_length=MAX_NAME_LEN)
     email: Optional[EmailStr] = None
+    company_name: Optional[str] = Field(None, max_length=MAX_NAME_LEN)
     phone_number: Optional[str] = Field(None, max_length=MAX_PHONE_LEN)
     linkedin_url: Optional[str] = Field(None, max_length=MAX_URL_LEN)
     application_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
@@ -274,6 +279,7 @@ class ContactUpdate(BaseModel):
     name: Optional[str] = Field(None, max_length=MAX_NAME_LEN)
     title: Optional[str] = Field(None, max_length=MAX_NAME_LEN)
     email: Optional[EmailStr] = None
+    company_name: Optional[str] = Field(None, max_length=MAX_NAME_LEN)
     phone_number: Optional[str] = Field(None, max_length=MAX_PHONE_LEN)
     linkedin_url: Optional[str] = Field(None, max_length=MAX_URL_LEN)
     reached_out: Optional[bool] = None
@@ -514,6 +520,12 @@ def _serialize_contact(contact_row: Contact) -> dict:
     if company_value is not NO_VALUE:
         company_ref = company_value
 
+    company_name = contact_row.company_name
+    if not company_name and company_ref:
+        company_name = company_ref.name
+    if not company_name and application:
+        company_name = application.company
+
     return {
         "id": str(contact_row.id),
         "application_id": str(contact_row.application_id) if contact_row.application_id else None,
@@ -527,7 +539,7 @@ def _serialize_contact(contact_row: Contact) -> dict:
         "reached_out": contact_row.reached_out,
         "reached_out_at": contact_row.reached_out_at.isoformat() if contact_row.reached_out_at else None,
         "response_received": contact_row.response_received,
-        "company": company_ref.name if company_ref else application.company if application else None,
+        "company": company_name,
         "company_id": str(contact_row.company_id) if contact_row.company_id else None,
     }
 
@@ -858,6 +870,8 @@ async def update_contact(
         contact.title = payload.title
     if payload.email is not None:
         contact.email = str(payload.email).lower()
+    if payload.company_name is not None:
+        contact.company_name = payload.company_name
     if payload.phone_number is not None:
         contact.phone_number = payload.phone_number
     if payload.linkedin_url is not None:
@@ -930,6 +944,7 @@ async def create_contact(
         name=payload.name,
         title=payload.title,
         email=str(payload.email).lower() if payload.email else None,
+        company_name=payload.company_name,
         phone_number=payload.phone_number,
         linkedin_url=payload.linkedin_url,
         source="manual",
@@ -954,6 +969,39 @@ async def create_contact(
     )
     contact_result = await db.execute(contact_stmt)
     return _serialize_contact(contact_result.scalar_one())
+
+
+@app.delete("/api/contacts/{contact_id}")
+async def delete_contact(
+    contact_id: str,
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    user_id = _require_user_id(auth)
+    cid = _uuid.UUID(contact_id)
+    stmt = select(Contact).where(
+        Contact.id == cid,
+        Contact.user_id == user_id,
+    )
+    result = await db.execute(stmt)
+    contact = result.scalar_one_or_none()
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contact not found")
+
+    email_value = (contact.email or "").lower()
+    await db.delete(contact)
+
+    if email_value:
+        ignored_stmt = select(IgnoredNetworkContact).where(
+            IgnoredNetworkContact.user_id == user_id,
+            IgnoredNetworkContact.email == email_value,
+        )
+        ignored_result = await db.execute(ignored_stmt)
+        if not ignored_result.scalar_one_or_none():
+            db.add(IgnoredNetworkContact(user_id=user_id, email=email_value))
+
+    await db.commit()
+    return {"status": "ok"}
 
 
 @app.get("/api/emails")
@@ -1183,7 +1231,12 @@ def _google_oauth_scopes(connect_gmail: bool, connect_calendar: bool) -> list[st
         "https://www.googleapis.com/auth/userinfo.profile",
     ]
     if connect_gmail:
-        scopes.append("https://www.googleapis.com/auth/gmail.readonly")
+        scopes.extend(
+            [
+                "https://www.googleapis.com/auth/gmail.readonly",
+                "https://www.googleapis.com/auth/gmail.compose",
+            ]
+        )
     if connect_calendar:
         scopes.append("https://www.googleapis.com/auth/calendar.readonly")
     return scopes
@@ -1364,6 +1417,7 @@ async def google_auth_callback(
         if connect_gmail and (
             not granted_scopes
             or "https://www.googleapis.com/auth/gmail.readonly" in granted_scopes
+            or "https://www.googleapis.com/auth/gmail.compose" in granted_scopes
         ):
             user.gmail_connected = True
         if connect_calendar and (
@@ -1377,10 +1431,13 @@ async def google_auth_callback(
 
     # Create refresh token for cookie-based session bootstrap.
     refresh_token = create_refresh_token(str(user.id))
+    access_token = create_jwt(str(user.id), user.email, user.name, user.picture)
 
-    # Redirect to frontend callback and rely on refresh cookie for session bootstrap.
+    # Redirect to frontend callback and include a one-time access-token bootstrap
+    # in the URL fragment for mobile/PWA contexts where the cross-site refresh
+    # cookie may not survive the redirect handoff.
     from starlette.responses import RedirectResponse as _RedirectResponse
-    redirect_url = f"{frontend_url}/auth/callback"
+    redirect_url = _build_frontend_callback_url(frontend_url, access_token)
     response = _RedirectResponse(url=redirect_url, status_code=302)
     set_refresh_cookie(response, refresh_token)
     return response
@@ -2360,7 +2417,7 @@ async def list_network(
             "email": c.email,
             "title": c.title,
             "phone_number": c.phone_number,
-            "company": c.application.company if c.application else None,
+            "company": c.company_name or (c.application.company if c.application else None),
             "company_id": str(c.company_id) if c.company_id else None,
             "source": c.source or "hunter",
             "reached_out": c.reached_out,
@@ -2479,7 +2536,8 @@ async def get_network_contact(email: EmailStr, db: AsyncSession = Depends(get_db
     inferred_contact = build_inferred_contact(
         sender_name=emails[0]["sender"] if emails else None,
         sender_email=email_value,
-        explicit_company=(contact.application.company if contact and getattr(contact, "application", None) else None)
+        explicit_company=(contact.company_name if contact else None)
+        or (contact.application.company if contact and getattr(contact, "application", None) else None)
         or (emails[0].get("company_name") if emails else None),
         texts=[
             *(email.get("summary") for email in emails),
@@ -2606,38 +2664,26 @@ async def alert_count(db: AsyncSession = Depends(get_db), auth: dict = Depends(v
 
 class SendEmailPayload(BaseModel):
     to: EmailStr
+    cc: list[EmailStr] = Field(default_factory=list)
     subject: str = Field(..., max_length=MAX_NAME_LEN)
     body: str = Field(..., max_length=MAX_LONG_TEXT_LEN)
     application_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
+    reply_to_email_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
     reply_to_message_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
     thread_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
 
 
-@app.post("/api/emails/send", status_code=201)
-@limiter.limit(_send_email_rate_limit, error_message="Too many send email requests. Try again in a minute.")
-async def send_email_endpoint(
-    request: Request,
-    payload: SendEmailPayload,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+def _is_gmail_scope_error(exc: Exception) -> bool:
+    lowered = str(exc).lower()
+    return "insufficient authentication scopes" in lowered or "access token scope insufficient" in lowered
+
+
+async def _build_gmail_service_for_user(
+    db: AsyncSession,
+    user_id: _uuid.UUID,
 ):
-    """Send an email via Gmail API."""
-    from backend.services.email_sender import send_email
     from google.oauth2.credentials import Credentials
     from googleapiclient.discovery import build
-
-    GOOGLE_CLIENT_ID = os.getenv("GMAIL_CLIENT_ID", "")
-    GOOGLE_CLIENT_SECRET = os.getenv("GMAIL_CLIENT_SECRET", "")
-
-    user_id = current_user.id
-    if payload.application_id:
-        app_stmt = select(Application).where(
-            Application.id == _uuid.UUID(payload.application_id),
-            Application.user_id == user_id,
-        )
-        app_result = await db.execute(app_stmt)
-        if not app_result.scalar_one_or_none():
-            raise HTTPException(status_code=404, detail="Application not found")
 
     stmt = select(GmailToken).where(GmailToken.user_id == user_id)
     result = await db.execute(stmt)
@@ -2657,22 +2703,95 @@ async def send_email_endpoint(
         token=access_token,
         refresh_token=refresh_token,
         token_uri="https://oauth2.googleapis.com/token",
-        client_id=GOOGLE_CLIENT_ID,
-        client_secret=GOOGLE_CLIENT_SECRET,
+        client_id=os.getenv("GMAIL_CLIENT_ID", ""),
+        client_secret=os.getenv("GMAIL_CLIENT_SECRET", ""),
     )
-    gmail_service = build("gmail", "v1", credentials=creds)
+    return build("gmail", "v1", credentials=creds)
 
-    result = await send_email(
-        db=db,
-        gmail_service=gmail_service,
-        to=payload.to,
-        subject=payload.subject,
-        body=payload.body,
-        application_id=payload.application_id,
-        reply_to_message_id=payload.reply_to_message_id,
-        thread_id=payload.thread_id,
-        user_id=user_id,
+
+@app.get("/api/emails/{email_id}/reply-context")
+async def get_email_reply_context(
+    email_id: str,
+    reply_all: bool = Query(False),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from backend.services.email_sender import build_reply_context
+
+    user_id = current_user.id
+    stmt = select(EmailEvent).where(
+        EmailEvent.id == _uuid.UUID(email_id),
+        EmailEvent.user_id == user_id,
     )
+    result = await db.execute(stmt)
+    event = result.scalar_one_or_none()
+    if not event:
+        raise HTTPException(status_code=404, detail="Email not found")
+
+    gmail_service = await _build_gmail_service_for_user(db, user_id)
+    try:
+        reply_context = await build_reply_context(
+            gmail_service=gmail_service,
+            event=event,
+            user_email=current_user.email,
+            reply_all=reply_all,
+        )
+    except Exception as exc:
+        if _is_gmail_scope_error(exc):
+            raise HTTPException(
+                status_code=400,
+                detail="Gmail send access is missing. Reconnect your Gmail account to grant compose access.",
+            ) from exc
+        raise HTTPException(status_code=502, detail="Failed to prepare Gmail reply context.") from exc
+
+    return reply_context
+
+
+@app.post("/api/emails/send", status_code=201)
+@limiter.limit(_send_email_rate_limit, error_message="Too many send email requests. Try again in a minute.")
+async def send_email_endpoint(
+    request: Request,
+    payload: SendEmailPayload,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Send an email via Gmail API."""
+    from backend.services.email_sender import send_email
+
+    user_id = current_user.id
+    if payload.application_id:
+        app_stmt = select(Application).where(
+            Application.id == _uuid.UUID(payload.application_id),
+            Application.user_id == user_id,
+        )
+        app_result = await db.execute(app_stmt)
+        if not app_result.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Application not found")
+
+    gmail_service = await _build_gmail_service_for_user(db, user_id)
+
+    try:
+        result = await send_email(
+            db=db,
+            gmail_service=gmail_service,
+            to=payload.to,
+            cc=[str(addr) for addr in payload.cc],
+            subject=payload.subject,
+            body=payload.body,
+            application_id=payload.application_id,
+            reply_to_email_id=payload.reply_to_email_id,
+            reply_to_message_id=payload.reply_to_message_id,
+            thread_id=payload.thread_id,
+            user_email=current_user.email,
+            user_id=user_id,
+        )
+    except Exception as exc:
+        if _is_gmail_scope_error(exc):
+            raise HTTPException(
+                status_code=400,
+                detail="Gmail send access is missing. Reconnect your Gmail account to grant compose access.",
+            ) from exc
+        raise HTTPException(status_code=502, detail="Gmail send failed.") from exc
     return result
 
 

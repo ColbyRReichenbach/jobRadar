@@ -36,6 +36,7 @@ export type EmailClassification = 'interview' | 'rejection' | 'action_item' | 'u
 
 export interface Email {
   id: string;
+  gmailMessageId?: string;
   threadId?: string;
   jobId: string;
   sender: string;

@@ -3,9 +3,13 @@ name: Test
 on:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   backend-tests:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -22,8 +26,47 @@ jobs:
       - name: Run backend test suite
         run: pytest
 
+  backend-migrations-postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: apptrail_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d apptrail_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/apptrail_ci
+      JWT_SECRET: ci-jwt-secret
+      APPTRAIL_GMAIL_TOKEN_ENCRYPTION_KEY: 9gesi-IgHlO6wRffB63j5cbQhIXnGGCKuxr0IFnAcaM=
+      ANTHROPIC_API_KEY: test-key
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+
+      - name: Install backend dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Alembic migrations on Postgres
+        run: alembic upgrade head
+
   dashboard-build:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: dashboardv2
@@ -48,3 +91,57 @@ jobs:
 
       - name: Build dashboard
         run: npm run build
+
+  dashboard-typecheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: dashboardv2
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+          cache-dependency-path: dashboardv2/package-lock.json
+
+      - name: Install dashboard dependencies
+        run: npm ci --include=optional
+
+      - name: Run frontend typecheck
+        run: npm run lint
+
+  dashboard-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: dashboardv2
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+          cache-dependency-path: dashboardv2/package-lock.json
+
+      - name: Install dashboard dependencies
+        run: npm ci --include=optional
+
+      - name: Restore Tailwind native binding
+        run: |
+          TAILWIND_OXIDE_VERSION=$(node -p "require('./package-lock.json').packages['node_modules/@tailwindcss/oxide'].version")
+          npm install --no-save "@tailwindcss/oxide-linux-x64-gnu@${TAILWIND_OXIDE_VERSION}"
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run dashboard smoke tests
+        run: npm run test:smoke

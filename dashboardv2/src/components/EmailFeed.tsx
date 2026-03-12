@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { submitEmailFeedback, checkEmailPipeline, updateEmail } from '../lib/api';
+import { DialogShell } from './DialogShell';
 
 interface EmailFeedProps {
   emails: Email[];
@@ -60,6 +61,13 @@ type InboxFilter =
   | 'action_item'
   | 'job_update'
   | 'done';
+
+type EmailThread = {
+  id: string;
+  emails: Email[];
+  latest: Email;
+  resolved: boolean;
+};
 
 function openExternal(url: string) {
   window.open(url, '_blank', 'noopener,noreferrer');
@@ -139,6 +147,7 @@ export function EmailFeed({
   const [dismissedEmails, setDismissedEmails] = useState<Set<string>>(new Set());
   const [hiddenEmailIds, setHiddenEmailIds] = useState<Set<string>>(new Set());
   const [threadResolutionOverrides, setThreadResolutionOverrides] = useState<Record<string, boolean>>({});
+  const [threadPendingDeletion, setThreadPendingDeletion] = useState<EmailThread | null>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const collapsed = forceOpen ? false : isCollapsed;
@@ -340,21 +349,21 @@ export function EmailFeed({
     }
   };
 
-  const handleHideThread = async () => {
-    if (!selectedThread) return;
-    const hiddenIds = selectedThread.emails.map((email) => email.id);
+  const handleDeleteThread = async (thread: EmailThread) => {
+    const hiddenIds = thread.emails.map((email) => email.id);
     setHiddenEmailIds((prev) => new Set([...prev, ...hiddenIds]));
     setSelectedThreadId(null);
     setSelectedMessageId(null);
+    setThreadPendingDeletion(null);
     try {
-      await Promise.all(selectedThread.emails.map((email) => updateEmail(email.id, { hidden: true })));
+      await Promise.all(thread.emails.map((email) => updateEmail(email.id, { hidden: true })));
     } catch (err) {
       setHiddenEmailIds((prev) => {
         const next = new Set(prev);
         hiddenIds.forEach((id) => next.delete(id));
         return next;
       });
-      console.error('Failed to hide email:', err);
+      console.error('Failed to delete email from app view:', err);
     }
   };
 
@@ -920,11 +929,11 @@ export function EmailFeed({
                     {selectedThread.resolved ? 'Undo Done' : 'Mark as Done'}
                   </button>
                   <button
-                    onClick={handleHideThread}
+                    onClick={() => setThreadPendingDeletion(selectedThread)}
                     className="px-4 py-2 bg-white border border-slate-200 text-slate-700 text-sm font-medium rounded-xl shadow-sm hover:bg-slate-50 transition-colors inline-flex items-center gap-2"
                   >
                     <Trash2 className="w-4 h-4" />
-                    Hide
+                    Delete
                   </button>
                   <button
                     onClick={(event) => handleNotJobRelated(event, selectedMessage)}
@@ -947,6 +956,41 @@ export function EmailFeed({
           )}
         </div>
       )}
+
+      <AnimatePresence>
+        {threadPendingDeletion && (
+          <DialogShell
+            onClose={() => setThreadPendingDeletion(null)}
+            titleId="delete-email-thread-title"
+            panelClassName="fixed inset-4 md:inset-auto md:top-1/2 md:left-1/2 md:-translate-x-1/2 md:-translate-y-1/2 md:w-full md:max-w-md bg-white rounded-3xl shadow-2xl z-50 flex flex-col overflow-hidden"
+          >
+            <div className="p-6 border-b border-slate-100">
+              <h2 id="delete-email-thread-title" className="text-xl font-serif font-bold text-slate-900">
+                Delete From AppTrail
+              </h2>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-slate-600">
+                This will remove this email thread from AppTrail and it will not come back on future Gmail syncs. It will remain in your Gmail account.
+              </p>
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setThreadPendingDeletion(null)}
+                  className="px-4 py-2 bg-white border border-slate-200 text-slate-700 text-sm font-medium rounded-xl"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => void handleDeleteThread(threadPendingDeletion)}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-xl"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </DialogShell>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
