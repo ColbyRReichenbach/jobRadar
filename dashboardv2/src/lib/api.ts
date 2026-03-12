@@ -152,6 +152,7 @@ export function buildGoogleAuthStartUrl(options: GoogleAuthOptions = {}): string
   if (options.connectGmail) params.set('connect_gmail', 'true');
   if (options.connectCalendar) params.set('connect_calendar', 'true');
   params.set('redirect', 'true');
+  params.set('frontend_origin', window.location.origin);
   const query = params.toString();
   return `${API_BASE}/api/auth/google${query ? `?${query}` : ''}`;
 }

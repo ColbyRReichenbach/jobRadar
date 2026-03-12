@@ -3,6 +3,7 @@ import re
 import time
 from datetime import datetime, timezone
 from typing import Optional
+from urllib.parse import urlparse
 from uuid import uuid4
 
 from dotenv import load_dotenv
@@ -52,10 +53,12 @@ _dashboard_url = os.getenv("DASHBOARD_URL")
 if _dashboard_url:
     _cors_origins.append(_dashboard_url.rstrip("/"))
 
+_VERCEL_PREVIEW_ORIGIN_RE = re.compile(r"^https://apptrail[a-z0-9-]*\.vercel\.app$")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
-    allow_origin_regex=r"^chrome-extension://.*$",
+    allow_origin_regex=r"^(chrome-extension://.*|https://apptrail[a-z0-9-]*\.vercel\.app)$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -69,6 +72,39 @@ def _get_request_ip(request: Request) -> str:
     if request.client and request.client.host:
         return request.client.host
     return "unknown"
+
+
+def _is_allowed_frontend_origin(origin: str | None) -> bool:
+    if not origin:
+        return False
+
+    parsed = urlparse(origin)
+    normalized = f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return False
+
+    if normalized in _cors_origins:
+        return True
+
+    return bool(_VERCEL_PREVIEW_ORIGIN_RE.fullmatch(normalized))
+
+
+def _resolve_frontend_origin(frontend_origin: str | None, request: Request) -> str:
+    candidates = [
+        frontend_origin,
+        request.headers.get("origin"),
+        request.headers.get("referer"),
+    ]
+
+    for candidate in candidates:
+        if not candidate:
+            continue
+        parsed = urlparse(candidate)
+        normalized = f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
+        if _is_allowed_frontend_origin(normalized):
+            return normalized
+
+    return os.getenv("DASHBOARD_URL", "http://localhost:5173").rstrip("/")
 
 
 _rate_limit_storage_uri = os.getenv("RATE_LIMIT_STORAGE_URI") or os.getenv("REDIS_URL")
@@ -1160,6 +1196,7 @@ async def google_auth_redirect(
     connect_gmail: bool = Query(False),
     connect_calendar: bool = Query(False),
     redirect: bool = Query(False),
+    frontend_origin: str | None = Query(None),
 ):
     """Redirect to Google OAuth for sign-in and optional Gmail/Calendar access."""
     from google_auth_oauthlib.flow import Flow
@@ -1186,11 +1223,14 @@ async def google_auth_redirect(
         include_granted_scopes="true",
     )
 
+    resolved_frontend_origin = _resolve_frontend_origin(frontend_origin, request)
+
     # Encode intent + code_verifier into state so the callback can use it
     state_data = {
         "connect_gmail": connect_gmail,
         "connect_calendar": connect_calendar,
         "code_verifier": flow.code_verifier,
+        "frontend_origin": resolved_frontend_origin,
     }
     state_str = base64.urlsafe_b64encode(json.dumps(state_data).encode()).decode()
 
@@ -1222,18 +1262,18 @@ async def google_auth_callback(
     from fastapi.responses import RedirectResponse
     import json, base64
 
-    frontend_url = os.getenv("DASHBOARD_URL", "http://localhost:5173").rstrip("/")
-
     # Decode state to get intent and PKCE code_verifier
     try:
         state_data = json.loads(base64.urlsafe_b64decode(state).decode())
         connect_gmail = bool(state_data.get("connect_gmail", False))
         connect_calendar = bool(state_data.get("connect_calendar", False))
         code_verifier = state_data.get("code_verifier")
+        frontend_url = _resolve_frontend_origin(state_data.get("frontend_origin"), request)
     except Exception:
         connect_gmail = False
         connect_calendar = False
         code_verifier = None
+        frontend_url = _resolve_frontend_origin(None, request)
 
     try:
         flow = Flow.from_client_config(
