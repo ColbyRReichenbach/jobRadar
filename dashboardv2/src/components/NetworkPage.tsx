@@ -467,7 +467,7 @@ export function NetworkPage({ onOpenEmail, onRefreshData, focusRequest }: Networ
                         event.stopPropagation();
                         openCompose(contact);
                       }}
-                      className="text-[11px] font-medium text-indigo-600 hover:text-indigo-700 opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="text-[11px] font-medium text-indigo-600 hover:text-indigo-700 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100"
                     >
                       Email
                     </button>
@@ -488,25 +488,25 @@ export function NetworkPage({ onOpenEmail, onRefreshData, focusRequest }: Networ
             }}
             titleId={contactDialogTitleId}
             initialFocusRef={closeButtonRef}
-            wrapperClassName="fixed inset-0 z-50 flex items-center justify-center p-4"
+            wrapperClassName="fixed inset-0 z-50 flex items-end justify-center p-0 md:items-center md:p-4"
             overlayClassName="absolute inset-0 bg-slate-900/20 backdrop-blur-sm"
-            panelClassName="bg-white w-full max-w-2xl max-h-[82vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden"
+            panelClassName="bg-white w-full max-w-2xl h-[92dvh] md:h-auto max-h-[92dvh] md:max-h-[82vh] flex flex-col rounded-t-[2rem] md:rounded-3xl shadow-2xl overflow-hidden"
           >
-            <div className="p-6 border-b border-slate-100 bg-slate-50/50">
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex items-center gap-4">
+            <div className="p-4 md:p-6 border-b border-slate-100 bg-slate-50/50">
+              <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                <div className="flex min-w-0 items-center gap-4">
                   <div className="w-14 h-14 flex items-center justify-center rounded-full bg-slate-200 text-slate-700 font-bold text-xl">
                     {(selectedContact.name || selectedContact.email || '?')[0].toUpperCase()}
                   </div>
-                  <div>
-                    <h2 id={contactDialogTitleId} className="text-xl font-serif font-bold text-slate-900">
+                  <div className="min-w-0">
+                    <h2 id={contactDialogTitleId} className="truncate text-xl font-serif font-bold text-slate-900">
                       {selectedContact.name || selectedContact.email || 'Unknown'}
                     </h2>
-                    {selectedContact.title && <p className="text-sm text-slate-500">{selectedContact.title}</p>}
-                    {selectedContact.company && <p className="text-sm text-slate-400">{selectedContact.company}</p>}
+                    {selectedContact.title && <p className="truncate text-sm text-slate-500">{selectedContact.title}</p>}
+                    {selectedContact.company && <p className="truncate text-sm text-slate-400">{selectedContact.company}</p>}
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex w-full flex-wrap items-center gap-2 md:w-auto md:justify-end">
                   <button
                     onClick={() =>
                       openContactForm(
@@ -514,7 +514,7 @@ export function NetworkPage({ onOpenEmail, onRefreshData, focusRequest }: Networ
                         selectedContact,
                       )
                     }
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-slate-200 rounded-lg text-slate-700 hover:bg-slate-50"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
                     >
                       <Pencil className="w-3.5 h-3.5" />
                       Edit Contact
@@ -522,7 +522,7 @@ export function NetworkPage({ onOpenEmail, onRefreshData, focusRequest }: Networ
                   {selectedContact.email && (
                     <button
                       onClick={handleDeleteContact}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-red-200 rounded-lg text-red-600 hover:bg-red-50"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50"
                     >
                       <X className="w-3.5 h-3.5" />
                       Delete Contact
@@ -542,11 +542,11 @@ export function NetworkPage({ onOpenEmail, onRefreshData, focusRequest }: Networ
                 </div>
               </div>
 
-              <div className="flex flex-wrap gap-2 mt-4">
+              <div className="mt-4 flex flex-wrap gap-2">
                 {selectedContact.email && (
                   <button
                     onClick={() => openCompose(selectedContact)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-slate-200 rounded-lg text-slate-700 hover:bg-slate-50"
+                    className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
                   >
                     <Mail className="w-3.5 h-3.5" /> Email
                   </button>
@@ -556,7 +556,7 @@ export function NetworkPage({ onOpenEmail, onRefreshData, focusRequest }: Networ
                     href={selectedContact.linkedin_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-slate-200 rounded-lg text-slate-700 hover:bg-slate-50"
+                    className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
                   >
                     <Linkedin className="w-3.5 h-3.5" /> LinkedIn
                   </a>
@@ -564,7 +564,7 @@ export function NetworkPage({ onOpenEmail, onRefreshData, focusRequest }: Networ
                 {selectedContact.phone_number && (
                   <a
                     href={`tel:${selectedContact.phone_number}`}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-slate-200 rounded-lg text-slate-700 hover:bg-slate-50"
+                    className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
                   >
                     <Phone className="w-3.5 h-3.5" /> {selectedContact.phone_number}
                   </a>
@@ -572,15 +572,15 @@ export function NetworkPage({ onOpenEmail, onRefreshData, focusRequest }: Networ
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
               {(selectedContact.email || selectedContact.phone_number || selectedContact.linkedin_url || selectedCompany) && (
                 <div>
                   <h3 className="text-sm font-bold text-slate-900 mb-3">Contact Info</h3>
-                  <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="grid gap-3 md:grid-cols-2">
                     {selectedCompany && (
                       <div className="p-4 bg-slate-50 rounded-2xl">
                         <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400 mb-1">Company</div>
-                        <div className="text-sm font-medium text-slate-900">{selectedCompany}</div>
+                        <div className="break-words text-sm font-medium text-slate-900">{selectedCompany}</div>
                       </div>
                     )}
                     {selectedContact.email && (
@@ -592,7 +592,7 @@ export function NetworkPage({ onOpenEmail, onRefreshData, focusRequest }: Networ
                     {selectedContact.phone_number && (
                       <div className="p-4 bg-slate-50 rounded-2xl">
                         <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400 mb-1">Phone</div>
-                        <div className="text-sm font-medium text-slate-900">{selectedContact.phone_number}</div>
+                        <div className="break-words text-sm font-medium text-slate-900">{selectedContact.phone_number}</div>
                       </div>
                     )}
                     {selectedContact.linkedin_url && (
@@ -699,11 +699,11 @@ export function NetworkPage({ onOpenEmail, onRefreshData, focusRequest }: Networ
             onClose={() => setShowComposeModal(false)}
             titleId={composeDialogTitleId}
             initialFocusRef={composeToInputRef}
-            wrapperClassName="fixed inset-0 z-50 flex items-center justify-center p-4"
+            wrapperClassName="fixed inset-0 z-50 flex items-end justify-center p-0 md:items-center md:p-4"
             overlayClassName="absolute inset-0 bg-slate-900/20 backdrop-blur-sm"
-            panelClassName="bg-white w-full max-w-xl rounded-3xl shadow-2xl overflow-hidden"
+            panelClassName="bg-white w-full max-w-xl rounded-t-[2rem] md:rounded-3xl shadow-2xl overflow-hidden"
           >
-            <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+            <div className="p-4 md:p-6 border-b border-slate-100 flex items-center justify-between">
               <h2 id={composeDialogTitleId} className="text-xl font-serif font-bold text-slate-900">
                 Compose Email
               </h2>
@@ -715,7 +715,7 @@ export function NetworkPage({ onOpenEmail, onRefreshData, focusRequest }: Networ
                 <X className="w-5 h-5 text-slate-500" />
               </button>
             </div>
-            <div className="p-6 space-y-4">
+            <div className="p-4 md:p-6 space-y-4">
               <div>
                 <label className="block text-xs font-medium uppercase tracking-[0.18em] text-slate-400 mb-2">
                   To
@@ -751,7 +751,7 @@ export function NetworkPage({ onOpenEmail, onRefreshData, focusRequest }: Networ
                 />
               </div>
             </div>
-            <div className="px-6 pb-6 flex justify-end gap-2">
+            <div className="px-4 pb-4 md:px-6 md:pb-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <button
                 onClick={() => setShowComposeModal(false)}
                 className="px-4 py-2 bg-white border border-slate-200 text-slate-700 text-sm font-medium rounded-xl"
@@ -776,11 +776,11 @@ export function NetworkPage({ onOpenEmail, onRefreshData, focusRequest }: Networ
             onClose={() => setShowContactForm(false)}
             titleId={contactFormTitleId}
             initialFocusRef={contactNameInputRef}
-            wrapperClassName="fixed inset-0 z-50 flex items-center justify-center p-4"
+            wrapperClassName="fixed inset-0 z-50 flex items-end justify-center p-0 md:items-center md:p-4"
             overlayClassName="absolute inset-0 bg-slate-900/20 backdrop-blur-sm"
-            panelClassName="bg-white w-full max-w-xl rounded-3xl shadow-2xl overflow-hidden"
+            panelClassName="bg-white w-full max-w-xl rounded-t-[2rem] md:rounded-3xl shadow-2xl overflow-hidden"
           >
-            <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+            <div className="p-4 md:p-6 border-b border-slate-100 flex items-center justify-between">
               <h2 id={contactFormTitleId} className="text-xl font-serif font-bold text-slate-900">
                 {contactFormMode === 'edit' ? 'Edit Contact' : 'Add Contact'}
               </h2>
@@ -792,7 +792,7 @@ export function NetworkPage({ onOpenEmail, onRefreshData, focusRequest }: Networ
                 <X className="w-5 h-5 text-slate-500" />
               </button>
             </div>
-            <div className="p-6 grid gap-4 sm:grid-cols-2">
+            <div className="p-4 md:p-6 grid gap-4 sm:grid-cols-2">
               <div className="sm:col-span-2">
                 <label className="block text-xs font-medium uppercase tracking-[0.18em] text-slate-400 mb-2">
                   Name
@@ -860,7 +860,7 @@ export function NetworkPage({ onOpenEmail, onRefreshData, focusRequest }: Networ
                 />
               </div>
             </div>
-            <div className="px-6 pb-6 flex justify-end gap-2">
+            <div className="px-4 pb-4 md:px-6 md:pb-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <button
                 onClick={() => setShowContactForm(false)}
                 className="px-4 py-2 bg-white border border-slate-200 text-slate-700 text-sm font-medium rounded-xl"

@@ -382,7 +382,7 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
                           : "bg-white border-slate-100 hover:border-slate-300 hover:shadow-sm"
                     )}
                   >
-                    <div className="flex items-start justify-between gap-3 mb-2">
+                    <div className="mb-2 flex items-start justify-between gap-3">
                       <div className="flex items-center gap-3 min-w-0">
                         {(email.companyLogoUrl || job?.logoUrl) ? (
                           <img src={email.companyLogoUrl || job?.logoUrl || ''} alt={email.companyName || job?.company || ''} className="w-8 h-8 rounded-full border border-slate-100" referrerPolicy="no-referrer" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
@@ -392,7 +392,7 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
                           </div>
                         )}
                         <div className="min-w-0">
-                          <h3 className="text-lg font-serif font-bold text-slate-900 flex items-center gap-2 min-w-0">
+                          <h3 className="flex min-w-0 items-center gap-2 text-base md:text-lg font-serif font-bold text-slate-900">
                             <span className="truncate">{displaySender}</span>
                             {hasMultiple && (
                               <span className="text-xs bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded-md font-sans font-medium">
@@ -405,7 +405,7 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
                               </span>
                             )}
                           </h3>
-                          <p className="text-sm font-sans text-slate-500 truncate">{job?.company || email.companyName || 'Conversation'}{job?.role ? ` • ${job.role}` : ''}</p>
+                          <p className="truncate text-sm font-sans text-slate-500">{job?.company || email.companyName || 'Conversation'}{job?.role ? ` • ${job.role}` : ''}</p>
                         </div>
                       </div>
                       <span className="text-[10px] font-medium text-slate-400 whitespace-nowrap">
@@ -453,12 +453,12 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
                                 setSelectedMessageId(oldEmail.id);
                               }}
                               className={cn(
-                                "w-full text-left p-3 rounded-xl border text-sm transition-colors",
-                                selectedMessageId === oldEmail.id
-                                  ? "bg-indigo-50 border-indigo-200"
-                                  : oldEmail.isFromUser
-                                    ? "bg-white border-slate-200 ml-2"
-                                    : "bg-slate-50 border-slate-100 mr-2"
+                                  "w-full text-left rounded-xl border p-3 text-sm transition-colors",
+                                  selectedMessageId === oldEmail.id
+                                    ? "bg-indigo-50 border-indigo-200"
+                                    : oldEmail.isFromUser
+                                    ? "bg-white border-slate-200 md:ml-2"
+                                    : "bg-slate-50 border-slate-100 md:mr-2"
                               )}
                             >
                               <div className="flex justify-between items-center mb-1">
@@ -546,11 +546,11 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
       </div>
 
       {/* Detail View */}
-      <div className={cn("flex-1 flex flex-col bg-white h-full overflow-hidden", !selectedThreadId && "hidden md:flex")}>
+      <div className={cn("flex-1 flex min-w-0 flex-col bg-white h-full overflow-hidden", !selectedThreadId && "hidden md:flex")}>
         {selectedThread ? (
           <>
-            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50 shrink-0">
-              <div className="flex items-center gap-4">
+            <div className="shrink-0 border-b border-slate-100 bg-slate-50/50 p-4 md:p-5">
+              <div className="flex items-start gap-4">
                 <button
                   onClick={() => {
                     setSelectedThreadId(null);
@@ -560,22 +560,24 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
                 >
                   <ArrowRight className="w-5 h-5 rotate-180" />
                 </button>
-                <div className="min-w-0">
-                  <h2 className="text-2xl tracking-tight font-serif font-bold text-slate-900 truncate">{selectedThread.latest.subject}</h2>
-                  <div className="flex items-center gap-2 mt-1 text-sm text-slate-500 min-w-0">
-                    <span className="font-medium text-slate-700 truncate">
+                <div className="min-w-0 flex-1">
+                  <h2 className="truncate text-xl md:text-2xl tracking-tight font-serif font-bold text-slate-900">{selectedThread.latest.subject}</h2>
+                  <div className="mt-1 flex min-w-0 flex-col gap-0.5 text-sm text-slate-500 sm:flex-row sm:items-center sm:gap-2">
+                    <span className="truncate font-medium text-slate-700">
                       {selectedThread.emails.find(e => !e.isFromUser)?.sender || selectedThread.latest.sender}
                     </span>
-                    <span className="truncate">&lt;{selectedThread.emails.find(e => !e.isFromUser)?.senderEmail || selectedThread.latest.senderEmail || 'unknown@example.com'}&gt;</span>
+                    <span className="truncate [overflow-wrap:anywhere]">
+                      &lt;{selectedThread.emails.find(e => !e.isFromUser)?.senderEmail || selectedThread.latest.senderEmail || 'unknown@example.com'}&gt;
+                    </span>
                   </div>
                 </div>
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 lg:p-5">
-              <div className="max-w-[72rem] mx-auto space-y-3">
+            <div className="flex-1 overflow-y-auto p-3 md:p-4 lg:p-5">
+              <div className="mx-auto max-w-[72rem] space-y-3">
                 {selectedThread.latest.requiresFollowUp && !selectedThread.resolved && (
-                  <div className="p-4 bg-orange-50 border border-orange-200 rounded-xl flex items-start gap-3">
+                  <div className="flex flex-col gap-3 rounded-xl border border-orange-200 bg-orange-50 p-4 sm:flex-row sm:items-start">
                     <AlertCircle className="w-5 h-5 text-orange-500 shrink-0 mt-0.5" />
                     <div>
                       <h4 className="text-sm font-bold text-orange-800">Follow-up Recommended</h4>
@@ -605,8 +607,8 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
                 )}
 
                 {selectedThread.resolved && (
-                  <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex flex-col gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex min-w-0 items-start gap-3">
                       <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
                       <span className="text-sm font-medium text-emerald-800">This conversation is done and collapsed into your Done section.</span>
                     </div>
@@ -629,16 +631,16 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
                       messageRefs.current[email.id] = node;
                     }}
                     className={cn(
-                      "flex flex-col gap-3 p-4 rounded-2xl border transition-colors overflow-hidden",
+                      "flex flex-col gap-3 overflow-hidden rounded-2xl border p-3 md:p-4 transition-colors",
                       selectedMessageId === email.id
                         ? "ring-2 ring-indigo-200 border-indigo-200"
                         : email.isFromUser
-                          ? "bg-slate-50 border-slate-200 ml-2"
-                          : "bg-white border-slate-100 shadow-sm mr-2"
+                          ? "bg-slate-50 border-slate-200 md:ml-2"
+                          : "bg-white border-slate-100 shadow-sm md:mr-2"
                     )}
                   >
-                    <div className="flex items-center justify-between border-b border-slate-100/60 pb-3 gap-4">
-                      <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex flex-col gap-3 border-b border-slate-100/60 pb-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex min-w-0 items-center gap-3">
                         {email.isFromUser ? (
                           <div className="w-8 h-8 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center font-bold text-xs">YOU</div>
                         ) : (
@@ -651,11 +653,11 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
                           <div className="text-xs text-slate-500 truncate">{email.isFromUser ? 'you@example.com' : (email.senderEmail || 'unknown@example.com')}</div>
                         </div>
                       </div>
-                      <span className="text-xs text-slate-400 font-medium shrink-0">
+                      <span className="text-xs text-slate-400 font-medium shrink-0 sm:text-right">
                         {format(new Date(email.date), 'MMM d, yyyy • h:mm a')}
                       </span>
                     </div>
-                    <div className="text-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere] font-sans text-slate-700 leading-5 max-w-none">
+                    <div className="max-w-none text-sm leading-6 whitespace-pre-wrap break-words [overflow-wrap:anywhere] font-sans text-slate-700">
                       {email.body || email.snippet}
                     </div>
                   </div>
@@ -663,9 +665,9 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
               </div>
             </div>
 
-            <div className="p-4 border-t border-slate-100 bg-slate-50 shrink-0">
+            <div className="shrink-0 border-t border-slate-100 bg-slate-50 p-3 md:p-4">
               {isReplying ? (
-                <div className="max-w-[72rem] mx-auto flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="mx-auto flex max-w-[72rem] flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <h4 className="text-sm font-semibold text-slate-900">
@@ -681,7 +683,7 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
                       {replyError}
                     </div>
                   )}
-                  <div className="grid gap-3 md:grid-cols-[80px_1fr] md:items-center">
+                  <div className="grid gap-2 md:grid-cols-[80px_1fr] md:items-center md:gap-3">
                     <label className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">To</label>
                     <input
                       autoFocus
@@ -691,7 +693,7 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
                       className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                     />
                   </div>
-                  <div className="grid gap-3 md:grid-cols-[80px_1fr] md:items-center">
+                  <div className="grid gap-2 md:grid-cols-[80px_1fr] md:items-center md:gap-3">
                     <label className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">Cc</label>
                     <input
                       type="text"
@@ -701,7 +703,7 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
                       className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                     />
                   </div>
-                  <div className="grid gap-3 md:grid-cols-[80px_1fr] md:items-center">
+                  <div className="grid gap-2 md:grid-cols-[80px_1fr] md:items-center md:gap-3">
                     <label className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">Subject</label>
                     <input
                       type="text"
@@ -710,7 +712,7 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
                       className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                     />
                   </div>
-                  <div className="grid gap-3 md:grid-cols-[80px_1fr]">
+                  <div className="grid gap-2 md:grid-cols-[80px_1fr] md:gap-3">
                     <label className="pt-3 text-xs font-medium uppercase tracking-[0.18em] text-slate-400">Message</label>
                     <textarea
                       value={replyComposer.body}
@@ -719,7 +721,7 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
                       className="min-h-[180px] w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 resize-y"
                     />
                   </div>
-                  <div className="flex justify-end gap-2">
+                  <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                     <button
                       onClick={() => {
                         setIsReplying(false);
@@ -741,13 +743,13 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
                   </div>
                 </div>
               ) : (
-                <div className="max-w-[72rem] mx-auto flex flex-col gap-3">
+                <div className="mx-auto flex max-w-[72rem] flex-col gap-3">
                   {replyError && (
                     <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                       {replyError}
                     </div>
                   )}
-                  <div className="flex gap-3 flex-wrap">
+                  <div className="flex flex-wrap gap-2 sm:gap-3">
                     <button
                       onClick={() => void handleStartReply('reply')}
                       className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-sm font-medium rounded-xl shadow-sm transition-colors"
