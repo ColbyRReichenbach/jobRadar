@@ -2255,6 +2255,7 @@ async def list_network(
     from sqlalchemy import or_, func
     from sqlalchemy.orm import selectinload
     from backend.services.email_classifier import should_create_network_contact
+    from backend.services.contact_enrichment import build_inferred_contact_from_email_event
 
     user_id = _require_user_id(auth)
     contacts_list = []
@@ -2302,48 +2303,69 @@ async def list_network(
         })
 
     # Add unique email senders not already in contacts
-    email_stmt = select(
-        EmailEvent.sender_email,
-        EmailEvent.sender,
-        EmailEvent.company_name,
-        func.count(EmailEvent.id).label("email_count"),
-        func.max(EmailEvent.received_at).label("last_interaction"),
-    ).where(
+    email_stmt = select(EmailEvent).where(
         EmailEvent.user_id == user_id,
         EmailEvent.sender_email.isnot(None),
         EmailEvent.is_from_user.is_(False),
         EmailEvent.hidden.is_(False),
         EmailEvent.is_human.is_(True),
         EmailEvent.email_type == "conversation",
-    ).group_by(
-        EmailEvent.sender_email, EmailEvent.sender, EmailEvent.company_name,
-    ).order_by(func.max(EmailEvent.received_at).desc()).offset(offset).limit(limit)
+    ).order_by(EmailEvent.received_at.desc())
     email_result = await db.execute(email_stmt)
-    for row in email_result.all():
-        email_addr = (row[0] or "").lower()
+    sender_aggregate: dict[str, dict] = {}
+    for email_event in email_result.scalars():
+        email_addr = (email_event.sender_email or "").lower()
+        if not email_addr:
+            continue
+        aggregate = sender_aggregate.setdefault(
+            email_addr,
+            {
+                "event": email_event,
+                "email_count": 0,
+                "last_interaction": email_event.received_at,
+            },
+        )
+        aggregate["email_count"] += 1
+        if aggregate["last_interaction"] is None or (
+            email_event.received_at and email_event.received_at > aggregate["last_interaction"]
+        ):
+            aggregate["last_interaction"] = email_event.received_at
+            aggregate["event"] = email_event
+
+    derived_contacts = sorted(
+        sender_aggregate.items(),
+        key=lambda item: item[1]["last_interaction"] or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
+
+    for email_addr, aggregate in derived_contacts[offset : offset + limit]:
         if email_addr in ignored_emails:
             continue
         if email_addr in seen_emails:
             continue
-        if not should_create_network_contact(row[1] or "", email_addr):
+        event = aggregate["event"]
+        if not should_create_network_contact(event.sender or "", email_addr):
             continue
         seen_emails.add(email_addr)
-        if q and q.lower() not in email_addr and q.lower() not in (row[1] or "").lower():
+        inferred = build_inferred_contact_from_email_event(event)
+        display_name = inferred["name"] or event.sender
+        haystack = " ".join(filter(None, [email_addr, display_name, inferred["title"], inferred["company"]])).lower()
+        if q and q.lower() not in haystack:
             continue
         contacts_list.append({
             "id": f"email-{email_addr}",
-            "name": row[1],
-            "email": row[0],
-            "title": None,
+            "name": display_name,
+            "email": email_addr,
+            "title": inferred["title"],
             "phone_number": None,
-            "company": row[2],
+            "company": inferred["company"],
             "company_id": None,
             "source": "email",
             "reached_out": False,
             "response_received": False,
-            "linkedin_url": None,
-            "email_count": row[3],
-            "last_interaction_at": row[4].isoformat() if row[4] else None,
+            "linkedin_url": inferred["linkedin_url"],
+            "email_count": aggregate["email_count"],
+            "last_interaction_at": aggregate["last_interaction"].isoformat() if aggregate["last_interaction"] else None,
         })
 
     return contacts_list[:limit]
@@ -2353,6 +2375,7 @@ async def list_network(
 async def get_network_contact(email: EmailStr, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
     """Full contact profile: emails, linked applications, company info."""
     from sqlalchemy.orm import selectinload
+    from backend.services.contact_enrichment import build_inferred_contact
 
     user_id = _require_user_id(auth)
     email_value = str(email)
@@ -2372,7 +2395,8 @@ async def get_network_contact(email: EmailStr, db: AsyncSession = Depends(get_db
         EmailEvent.sender_email == email_value,
     ).order_by(EmailEvent.received_at.desc()).limit(50)
     email_result = await db.execute(email_stmt)
-    emails = [_serialize_email_event(e) for e in email_result.scalars().all()]
+    email_events = email_result.scalars().all()
+    emails = [_serialize_email_event(e) for e in email_events]
 
     # Get linked applications
     linked_apps = []
@@ -2386,8 +2410,32 @@ async def get_network_contact(email: EmailStr, db: AsyncSession = Depends(get_db
         if app:
             linked_apps.append(_serialize_app(app))
 
+    inferred_contact = build_inferred_contact(
+        sender_name=emails[0]["sender"] if emails else None,
+        sender_email=email_value,
+        explicit_company=(contact.application.company if contact and getattr(contact, "application", None) else None)
+        or (emails[0].get("company_name") if emails else None),
+        texts=[
+            *(email.get("summary") for email in emails),
+            *(email.get("key_sentence") for email in emails),
+            *(email.get("body") for email in emails),
+            *(email.get("snippet") for email in emails),
+            *(email.get("subject") for email in emails),
+        ],
+    )
+
+    contact_payload = _serialize_contact(contact) if contact else {"email": email_value}
+    if inferred_contact["name"] and not contact_payload.get("name"):
+        contact_payload["name"] = inferred_contact["name"]
+    if inferred_contact["title"] and not contact_payload.get("title"):
+        contact_payload["title"] = inferred_contact["title"]
+    if inferred_contact["linkedin_url"] and not contact_payload.get("linkedin_url"):
+        contact_payload["linkedin_url"] = inferred_contact["linkedin_url"]
+    if inferred_contact["company"] and not contact_payload.get("company"):
+        contact_payload["company"] = inferred_contact["company"]
+
     return {
-        "contact": _serialize_contact(contact) if contact else {"email": email_value},
+        "contact": contact_payload,
         "emails": emails,
         "applications": linked_apps,
     }

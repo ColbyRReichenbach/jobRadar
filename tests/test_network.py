@@ -222,3 +222,76 @@ async def test_delete_network_contact_hides_future_email_derived_contact(client,
     after = await client.get("/api/network", headers=AUTH_HEADER)
     assert after.status_code == 200
     assert "jane@deleteco.com" not in {contact["email"] for contact in after.json()}
+
+
+@pytest.mark.asyncio
+async def test_network_auto_fills_email_derived_contact_fields(client, db_session):
+    from backend.models import EmailEvent
+    from datetime import datetime, timezone
+
+    db_session.add(
+        EmailEvent(
+            gmail_message_id="network-enrich-1",
+            sender="Jane Doe",
+            sender_email="jane.doe@stripe.com",
+            subject="Following up on the Staff Engineer role",
+            body=(
+                "Hi Colby,\n\n"
+                "Great speaking today.\n"
+                "Jane Doe\n"
+                "Senior Technical Recruiter at Stripe\n"
+                "https://www.linkedin.com/in/jane-doe/\n"
+            ),
+            snippet="Great speaking today.",
+            classification="conversation",
+            is_human=True,
+            email_type="conversation",
+            company_name="Stripe",
+            received_at=datetime.now(timezone.utc),
+        )
+    )
+    await db_session.commit()
+
+    resp = await client.get("/api/network", headers=AUTH_HEADER)
+    assert resp.status_code == 200
+    contacts = resp.json()
+    contact = next(c for c in contacts if c["email"] == "jane.doe@stripe.com")
+    assert contact["name"] == "Jane Doe"
+    assert contact["company"] == "Stripe"
+    assert contact["title"] == "Senior Technical Recruiter at Stripe"
+    assert contact["linkedin_url"] == "https://www.linkedin.com/in/jane-doe/"
+
+
+@pytest.mark.asyncio
+async def test_network_contact_detail_infers_missing_fields_from_email_history(client, db_session):
+    from backend.models import EmailEvent
+    from datetime import datetime, timezone
+
+    db_session.add(
+        EmailEvent(
+            gmail_message_id="network-detail-enrich-1",
+            sender="John Smith",
+            sender_email="john.smith@company.com",
+            subject="Quick follow-up",
+            body=(
+                "Thanks again.\n"
+                "John Smith\n"
+                "Engineering Manager at Company\n"
+                "https://www.linkedin.com/in/john-smith/\n"
+            ),
+            snippet="Engineering Manager at Company",
+            classification="conversation",
+            is_human=True,
+            email_type="conversation",
+            received_at=datetime.now(timezone.utc),
+        )
+    )
+    await db_session.commit()
+
+    resp = await client.get("/api/network/john.smith@company.com", headers=AUTH_HEADER)
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["contact"]["name"] == "John Smith"
+    assert payload["contact"]["title"] == "Engineering Manager at Company"
+    assert payload["contact"]["company"] == "Company"
+    assert payload["contact"]["linkedin_url"] == "https://www.linkedin.com/in/john-smith/"
