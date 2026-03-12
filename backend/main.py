@@ -29,7 +29,7 @@ from backend.metrics import (
     metrics_payload,
     observe_request,
 )
-from backend.models import Application, Contact, EmailEvent, EmailFeedback, User, GmailToken, Company, RoleUmbrella, CompanyTechProfile, UserProfile, UserRoleInterest, AtsBehavior, WarmConnection, Alert, Interview, CompanyVisit, InterviewNote, NotificationPreference, ResumeDraft
+from backend.models import Application, Contact, EmailEvent, EmailFeedback, User, GmailToken, Company, RoleUmbrella, CompanyTechProfile, UserProfile, UserRoleInterest, AtsBehavior, WarmConnection, Alert, Interview, CompanyVisit, InterviewNote, NotificationPreference, ResumeDraft, IgnoredNetworkContact
 from backend.monitoring import configure_sentry
 from backend.services.hunter import find_contacts, generate_linkedin_search_url
 from backend.services.scraper import extract_job, validate_job_parse_url
@@ -477,6 +477,8 @@ def _serialize_contact(contact_row: Contact) -> dict:
         "reached_out": contact_row.reached_out,
         "reached_out_at": contact_row.reached_out_at.isoformat() if contact_row.reached_out_at else None,
         "response_received": contact_row.response_received,
+        "company": contact_row.application.company if getattr(contact_row, "application", None) else None,
+        "company_id": str(contact_row.company_id) if contact_row.company_id else None,
     }
 
 
@@ -805,7 +807,7 @@ async def update_contact(
     if payload.title is not None:
         contact.title = payload.title
     if payload.email is not None:
-        contact.email = str(payload.email)
+        contact.email = str(payload.email).lower()
     if payload.phone_number is not None:
         contact.phone_number = payload.phone_number
     if payload.linkedin_url is not None:
@@ -832,6 +834,16 @@ async def update_contact(
             if not app:
                 raise HTTPException(status_code=404, detail="Application not found")
             contact.application_id = app.id
+
+    if contact.email:
+        ignored_stmt = select(IgnoredNetworkContact).where(
+            IgnoredNetworkContact.user_id == user_id,
+            IgnoredNetworkContact.email == contact.email.lower(),
+        )
+        ignored_result = await db.execute(ignored_stmt)
+        ignored_contact = ignored_result.scalar_one_or_none()
+        if ignored_contact:
+            await db.delete(ignored_contact)
 
     await db.commit()
     await db.refresh(contact)
@@ -862,12 +874,23 @@ async def create_contact(
         application_id=app_id,
         name=payload.name,
         title=payload.title,
-        email=str(payload.email) if payload.email else None,
+        email=str(payload.email).lower() if payload.email else None,
         phone_number=payload.phone_number,
         linkedin_url=payload.linkedin_url,
         source="manual",
     )
     db.add(contact)
+
+    if contact.email:
+        ignored_stmt = select(IgnoredNetworkContact).where(
+            IgnoredNetworkContact.user_id == user_id,
+            IgnoredNetworkContact.email == contact.email.lower(),
+        )
+        ignored_result = await db.execute(ignored_stmt)
+        ignored_contact = ignored_result.scalar_one_or_none()
+        if ignored_contact:
+            await db.delete(ignored_contact)
+
     await db.commit()
     await db.refresh(contact)
     return _serialize_contact(contact)
@@ -2235,6 +2258,10 @@ async def list_network(
 
     user_id = _require_user_id(auth)
     contacts_list = []
+    ignored_result = await db.execute(
+        select(IgnoredNetworkContact.email).where(IgnoredNetworkContact.user_id == user_id)
+    )
+    ignored_emails = {row[0].lower() for row in ignored_result.all()}
 
     # Get contacts from Contact table
     contact_stmt = select(Contact).options(selectinload(Contact.application)).where(Contact.user_id == user_id)
@@ -2255,6 +2282,8 @@ async def list_network(
     seen_emails: set[str] = set()
     for c in contacts:
         email = (c.email or "").lower()
+        if email and email in ignored_emails:
+            continue
         if email in seen_emails:
             continue
         seen_emails.add(email)
@@ -2285,12 +2314,15 @@ async def list_network(
         EmailEvent.is_from_user.is_(False),
         EmailEvent.hidden.is_(False),
         EmailEvent.is_human.is_(True),
+        EmailEvent.email_type == "conversation",
     ).group_by(
         EmailEvent.sender_email, EmailEvent.sender, EmailEvent.company_name,
     ).order_by(func.max(EmailEvent.received_at).desc()).offset(offset).limit(limit)
     email_result = await db.execute(email_stmt)
     for row in email_result.all():
         email_addr = (row[0] or "").lower()
+        if email_addr in ignored_emails:
+            continue
         if email_addr in seen_emails:
             continue
         if not should_create_network_contact(row[1] or "", email_addr):
@@ -2321,12 +2353,11 @@ async def list_network(
 async def get_network_contact(email: EmailStr, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
     """Full contact profile: emails, linked applications, company info."""
     from sqlalchemy.orm import selectinload
-    from sqlalchemy import func
 
     user_id = _require_user_id(auth)
     email_value = str(email)
     # Get contact record
-    contact_stmt = select(Contact).where(
+    contact_stmt = select(Contact).options(selectinload(Contact.application)).where(
         Contact.email == email_value,
         Contact.user_id == user_id,
     ).limit(1)
@@ -2360,6 +2391,37 @@ async def get_network_contact(email: EmailStr, db: AsyncSession = Depends(get_db
         "emails": emails,
         "applications": linked_apps,
     }
+
+
+@app.delete("/api/network/{email}")
+async def delete_network_contact(email: EmailStr, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    user_id = _require_user_id(auth)
+    email_value = str(email).lower()
+
+    contacts_result = await db.execute(
+        select(Contact).where(
+            Contact.user_id == user_id,
+            Contact.email == email_value,
+        )
+    )
+    contacts = contacts_result.scalars().all()
+    deleted_contacts = 0
+    for contact in contacts:
+        await db.delete(contact)
+        deleted_contacts += 1
+
+    ignored_result = await db.execute(
+        select(IgnoredNetworkContact).where(
+            IgnoredNetworkContact.user_id == user_id,
+            IgnoredNetworkContact.email == email_value,
+        )
+    )
+    ignored_contact = ignored_result.scalar_one_or_none()
+    if not ignored_contact:
+        db.add(IgnoredNetworkContact(user_id=user_id, email=email_value))
+
+    await db.commit()
+    return {"status": "ok", "deleted_contacts": deleted_contacts, "email": email_value}
 
 
 # --- Sprint 11: Alerts ---

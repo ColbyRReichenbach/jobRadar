@@ -125,6 +125,7 @@ async def test_network_excludes_non_human_email_senders(client, db_session):
                 subject="Following up on your interview",
                 classification="conversation",
                 is_human=True,
+                email_type="conversation",
             ),
             EmailEvent(
                 gmail_message_id="network-noise-1",
@@ -141,6 +142,7 @@ async def test_network_excludes_non_human_email_senders(client, db_session):
                 subject="Application received",
                 classification="job_update",
                 is_human=True,
+                email_type="conversation",
             ),
         ]
     )
@@ -154,3 +156,69 @@ async def test_network_excludes_non_human_email_senders(client, db_session):
     assert "jane.doe@company.com" in emails
     assert "noreply@github.com" not in emails
     assert "talent@company.com" not in emails
+
+
+@pytest.mark.asyncio
+async def test_network_excludes_inbox_updates_even_if_human(client, db_session):
+    from backend.models import EmailEvent
+
+    db_session.add(
+        EmailEvent(
+            gmail_message_id="network-update-1",
+            sender="Hiring Team",
+            sender_email="hiring@company.com",
+            subject="Application received",
+            classification="job_update",
+            is_human=True,
+            email_type="decision",
+        )
+    )
+    await db_session.commit()
+
+    resp = await client.get("/api/network", headers=AUTH_HEADER)
+    assert resp.status_code == 200
+    emails = {contact["email"] for contact in resp.json()}
+    assert "hiring@company.com" not in emails
+
+
+@pytest.mark.asyncio
+async def test_delete_network_contact_hides_future_email_derived_contact(client, db_session):
+    from backend.models import Application, Contact, EmailEvent
+
+    app = Application(company="DeleteCo", role_title="Engineer")
+    db_session.add(app)
+    await db_session.commit()
+    await db_session.refresh(app)
+
+    db_session.add_all(
+        [
+            Contact(
+                application_id=app.id,
+                email="jane@deleteco.com",
+                name="Jane Delete",
+                source="manual",
+            ),
+            EmailEvent(
+                gmail_message_id="delete-network-email-1",
+                sender="Jane Delete",
+                sender_email="jane@deleteco.com",
+                subject="Following up",
+                classification="conversation",
+                is_human=True,
+                email_type="conversation",
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    before = await client.get("/api/network", headers=AUTH_HEADER)
+    assert before.status_code == 200
+    assert "jane@deleteco.com" in {contact["email"] for contact in before.json()}
+
+    resp = await client.delete("/api/network/jane@deleteco.com", headers=AUTH_HEADER)
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "ok"
+
+    after = await client.get("/api/network", headers=AUTH_HEADER)
+    assert after.status_code == 200
+    assert "jane@deleteco.com" not in {contact["email"] for contact in after.json()}

@@ -123,6 +123,18 @@ class Contact(Base):
     company_ref: Mapped["Company | None"] = relationship("Company", back_populates="contacts")
 
 
+class IgnoredNetworkContact(Base):
+    __tablename__ = "ignored_network_contacts"
+    __table_args__ = (
+        UniqueConstraint("user_id", "email", name="uq_ignored_network_contact_user_email"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    email: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class EmailEvent(Base):
     __tablename__ = "email_events"
 

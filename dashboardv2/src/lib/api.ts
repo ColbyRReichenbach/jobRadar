@@ -613,6 +613,14 @@ export async function fetchNetworkContact(email: string): Promise<any> {
   return await res.json();
 }
 
+export async function deleteNetworkContact(email: string): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/api/network/${encodeURIComponent(email)}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to delete contact'));
+}
+
 export async function createContact(payload: {
   name?: string;
   title?: string;
