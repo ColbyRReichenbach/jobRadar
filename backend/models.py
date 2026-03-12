@@ -136,6 +136,20 @@ class IgnoredNetworkContact(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+class ContactDistinctDecision(Base):
+    __tablename__ = "contact_distinct_decisions"
+    __table_args__ = (
+        UniqueConstraint("user_id", "email_a", "email_b", name="uq_contact_distinct_user_pair"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    name_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    email_a: Mapped[str] = mapped_column(Text, nullable=False)
+    email_b: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class EmailEvent(Base):
     __tablename__ = "email_events"
 

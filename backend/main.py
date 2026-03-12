@@ -14,7 +14,7 @@ from pydantic import BaseModel, EmailStr, Field
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
-from sqlalchemy import inspect as sa_inspect, select, text
+from sqlalchemy import inspect as sa_inspect, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -33,7 +33,7 @@ from backend.metrics import (
     metrics_payload,
     observe_request,
 )
-from backend.models import Application, Contact, EmailEvent, EmailFeedback, User, GmailToken, Company, RoleUmbrella, CompanyTechProfile, UserProfile, UserRoleInterest, AtsBehavior, WarmConnection, Alert, Interview, CompanyVisit, InterviewNote, NotificationPreference, ResumeDraft, IgnoredNetworkContact
+from backend.models import Application, Contact, ContactDistinctDecision, EmailEvent, EmailFeedback, User, GmailToken, Company, RoleUmbrella, CompanyTechProfile, UserProfile, UserRoleInterest, AtsBehavior, WarmConnection, Alert, Interview, CompanyVisit, InterviewNote, NotificationPreference, ResumeDraft, IgnoredNetworkContact
 from backend.services.alerts import create_user_alert
 from backend.monitoring import configure_sentry
 from backend.services.hunter import find_contacts, generate_linkedin_search_url
@@ -368,6 +368,24 @@ class ContactDuplicateCheckPayload(BaseModel):
     email: Optional[EmailStr] = None
 
 
+class ContactKeepSeparatePayload(BaseModel):
+    name: Optional[str] = Field(None, max_length=MAX_NAME_LEN)
+    email: EmailStr
+    match_email: EmailStr
+
+
+class ContactMergePayload(BaseModel):
+    target_contact_id: str = Field(..., max_length=MAX_ID_LEN)
+    source_contact_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
+    name: Optional[str] = Field(None, max_length=MAX_NAME_LEN)
+    title: Optional[str] = Field(None, max_length=MAX_NAME_LEN)
+    email: Optional[EmailStr] = None
+    company_name: Optional[str] = Field(None, max_length=MAX_NAME_LEN)
+    phone_number: Optional[str] = Field(None, max_length=MAX_PHONE_LEN)
+    linkedin_url: Optional[str] = Field(None, max_length=MAX_URL_LEN)
+    application_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
+
+
 # --- Helpers ---
 
 import uuid as _uuid
@@ -391,6 +409,21 @@ def _require_user_id(auth: dict) -> _uuid.UUID:
 
 def _normalize_match_text(value: str | None) -> str:
     return re.sub(r"\s+", " ", (value or "").strip().lower())
+
+
+def _normalize_contact_email(value: str | None) -> str | None:
+    if not value:
+        return None
+    normalized = value.strip().lower()
+    return normalized or None
+
+
+def _sorted_contact_email_pair(email_a: str | None, email_b: str | None) -> tuple[str, str] | None:
+    normalized_a = _normalize_contact_email(email_a)
+    normalized_b = _normalize_contact_email(email_b)
+    if not normalized_a or not normalized_b or normalized_a == normalized_b:
+        return None
+    return tuple(sorted((normalized_a, normalized_b)))
 
 
 _TRACKING_QUERY_PREFIXES = ("utm_",)
@@ -1135,7 +1168,7 @@ async def update_contact(
     if payload.title is not None:
         contact.title = payload.title
     if payload.email is not None:
-        contact.email = str(payload.email).lower()
+        contact.email = _normalize_contact_email(str(payload.email))
     if payload.company_name is not None:
         contact.company_name = payload.company_name
     if payload.phone_number is not None:
@@ -1209,7 +1242,7 @@ async def create_contact(
         application_id=app_id,
         name=payload.name,
         title=payload.title,
-        email=str(payload.email).lower() if payload.email else None,
+        email=_normalize_contact_email(str(payload.email) if payload.email else None),
         company_name=payload.company_name,
         phone_number=payload.phone_number,
         linkedin_url=payload.linkedin_url,
@@ -1245,11 +1278,21 @@ async def check_contact_duplicates(
 ):
     user_id = _require_user_id(auth)
     exclude_contact_id = _uuid.UUID(payload.contact_id) if payload.contact_id else None
-    email_value = str(payload.email).lower() if payload.email else None
+    email_value = _normalize_contact_email(str(payload.email) if payload.email else None)
     normalized_name = _normalize_match_text(payload.name)
 
     stmt = select(Contact).where(Contact.user_id == user_id)
     result = await db.execute(stmt)
+    separate_pairs_result = await db.execute(
+        select(ContactDistinctDecision.email_a, ContactDistinctDecision.email_b).where(
+            ContactDistinctDecision.user_id == user_id
+        )
+    )
+    separate_pairs = {
+        tuple(sorted((email_a, email_b)))
+        for email_a, email_b in separate_pairs_result.all()
+        if email_a and email_b
+    }
 
     hard_matches = []
     soft_matches = []
@@ -1257,10 +1300,14 @@ async def check_contact_duplicates(
         if exclude_contact_id and contact.id == exclude_contact_id:
             continue
         serialized = _serialize_contact(contact)
-        if email_value and (contact.email or "").lower() == email_value:
+        contact_email = _normalize_contact_email(contact.email)
+        if email_value and contact_email == email_value:
             hard_matches.append(serialized)
             continue
         if normalized_name and _normalize_match_text(contact.name) == normalized_name:
+            decision_pair = _sorted_contact_email_pair(email_value, contact_email)
+            if decision_pair and decision_pair in separate_pairs:
+                continue
             soft_matches.append(serialized)
 
     if hard_matches:
@@ -1282,6 +1329,139 @@ async def check_contact_duplicates(
         "message": None,
         "matches": [],
     }
+
+
+@app.post("/api/contacts/duplicates/keep-separate", status_code=201)
+async def keep_contacts_separate(
+    payload: ContactKeepSeparatePayload,
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    user_id = _require_user_id(auth)
+    email_pair = _sorted_contact_email_pair(str(payload.email), str(payload.match_email))
+    if not email_pair:
+        raise HTTPException(status_code=400, detail="Two distinct contact emails are required")
+
+    stmt = select(ContactDistinctDecision).where(
+        ContactDistinctDecision.user_id == user_id,
+        ContactDistinctDecision.email_a == email_pair[0],
+        ContactDistinctDecision.email_b == email_pair[1],
+    )
+    result = await db.execute(stmt)
+    existing = result.scalar_one_or_none()
+    if existing is None:
+        db.add(
+            ContactDistinctDecision(
+                user_id=user_id,
+                name_key=_normalize_match_text(payload.name),
+                email_a=email_pair[0],
+                email_b=email_pair[1],
+            )
+        )
+        await db.commit()
+
+    return {"status": "ok"}
+
+
+@app.post("/api/contacts/merge")
+async def merge_contacts(
+    payload: ContactMergePayload,
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    user_id = _require_user_id(auth)
+    target_id = _uuid.UUID(payload.target_contact_id)
+    source_id = _uuid.UUID(payload.source_contact_id) if payload.source_contact_id else None
+
+    target_stmt = select(Contact).where(Contact.id == target_id, Contact.user_id == user_id)
+    target_result = await db.execute(target_stmt)
+    target_contact = target_result.scalar_one_or_none()
+    if not target_contact:
+        raise HTTPException(status_code=404, detail="Target contact not found")
+
+    source_contact = None
+    if source_id:
+        source_stmt = select(Contact).where(Contact.id == source_id, Contact.user_id == user_id)
+        source_result = await db.execute(source_stmt)
+        source_contact = source_result.scalar_one_or_none()
+        if not source_contact:
+            raise HTTPException(status_code=404, detail="Source contact not found")
+        if source_contact.id == target_contact.id:
+            raise HTTPException(status_code=400, detail="Cannot merge a contact into itself")
+
+    application_id = None
+    if payload.application_id:
+        application_id = _uuid.UUID(payload.application_id)
+        app_stmt = select(Application).where(
+            Application.id == application_id,
+            Application.user_id == user_id,
+        )
+        app_result = await db.execute(app_stmt)
+        if not app_result.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Application not found")
+
+    if payload.name is not None:
+        target_contact.name = payload.name or None
+    if payload.title is not None:
+        target_contact.title = payload.title or None
+    if payload.email is not None:
+        target_contact.email = _normalize_contact_email(str(payload.email))
+    if payload.company_name is not None:
+        target_contact.company_name = payload.company_name or None
+    if payload.phone_number is not None:
+        target_contact.phone_number = payload.phone_number or None
+    if payload.linkedin_url is not None:
+        target_contact.linkedin_url = payload.linkedin_url or None
+    if application_id is not None:
+        target_contact.application_id = application_id
+
+    if source_contact:
+        if not target_contact.application_id and source_contact.application_id:
+            target_contact.application_id = source_contact.application_id
+        if not target_contact.company_name and source_contact.company_name:
+            target_contact.company_name = source_contact.company_name
+        if not target_contact.phone_number and source_contact.phone_number:
+            target_contact.phone_number = source_contact.phone_number
+        if not target_contact.linkedin_url and source_contact.linkedin_url:
+            target_contact.linkedin_url = source_contact.linkedin_url
+
+        await db.execute(
+            update(EmailEvent)
+            .where(EmailEvent.user_id == user_id, EmailEvent.contact_id == source_contact.id)
+            .values(contact_id=target_contact.id)
+        )
+        await db.delete(source_contact)
+
+    if target_contact.email:
+        ignored_stmt = select(IgnoredNetworkContact).where(
+            IgnoredNetworkContact.user_id == user_id,
+            IgnoredNetworkContact.email == target_contact.email,
+        )
+        ignored_result = await db.execute(ignored_stmt)
+        ignored_contact = ignored_result.scalar_one_or_none()
+        if ignored_contact:
+            await db.delete(ignored_contact)
+
+    email_pair = _sorted_contact_email_pair(target_contact.email, source_contact.email if source_contact else None)
+    if email_pair:
+        decision_stmt = select(ContactDistinctDecision).where(
+            ContactDistinctDecision.user_id == user_id,
+            ContactDistinctDecision.email_a == email_pair[0],
+            ContactDistinctDecision.email_b == email_pair[1],
+        )
+        decision_result = await db.execute(decision_stmt)
+        decision = decision_result.scalar_one_or_none()
+        if decision:
+            await db.delete(decision)
+
+    await db.commit()
+    merged_stmt = (
+        select(Contact)
+        .options(selectinload(Contact.application), selectinload(Contact.company_ref))
+        .where(Contact.id == target_contact.id, Contact.user_id == user_id)
+    )
+    merged_result = await db.execute(merged_stmt)
+    return _serialize_contact(merged_result.scalar_one())
 
 
 @app.delete("/api/contacts/{contact_id}")

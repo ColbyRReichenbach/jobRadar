@@ -20,6 +20,8 @@ import {
   deleteNetworkContact,
   fetchNetworkContact,
   fetchNetworkContacts,
+  keepContactsSeparate,
+  mergeContacts,
   sendEmail,
   updateContact,
 } from '../lib/api';
@@ -92,6 +94,23 @@ interface ContactFormState {
   linkedin_url: string;
 }
 
+type MergeFieldKey = keyof ContactFormState;
+
+interface DuplicateMatch {
+  id: string;
+  name?: string | null;
+  email?: string | null;
+  title?: string | null;
+  company?: string | null;
+  phone_number?: string | null;
+  linkedin_url?: string | null;
+}
+
+interface MergeReviewState {
+  target: DuplicateMatch;
+  choices: Record<MergeFieldKey, 'current' | 'existing'>;
+}
+
 interface ComposeState {
   to: string;
   subject: string;
@@ -120,6 +139,7 @@ export function NetworkPage({ onOpenEmail, onRefreshData, focusRequest }: Networ
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const contactFormCloseRef = useRef<HTMLButtonElement>(null);
   const composeCloseRef = useRef<HTMLButtonElement>(null);
+  const mergeCloseRef = useRef<HTMLButtonElement>(null);
   const contactNameInputRef = useRef<HTMLInputElement>(null);
   const composeToInputRef = useRef<HTMLInputElement>(null);
   const [contacts, setContacts] = useState<NetworkContact[]>([]);
@@ -136,7 +156,8 @@ export function NetworkPage({ onOpenEmail, onRefreshData, focusRequest }: Networ
   const [contactFormMode, setContactFormMode] = useState<'create' | 'edit'>('create');
   const [contactFormState, setContactFormState] = useState<ContactFormState>(EMPTY_CONTACT_FORM);
   const [savingContact, setSavingContact] = useState(false);
-  const [contactDuplicateWarning, setContactDuplicateWarning] = useState<{ type: 'soft' | 'hard'; message: string; matches: any[] } | null>(null);
+  const [contactDuplicateWarning, setContactDuplicateWarning] = useState<{ type: 'soft' | 'hard'; message: string; matches: DuplicateMatch[] } | null>(null);
+  const [mergeReview, setMergeReview] = useState<MergeReviewState | null>(null);
   const [showAllEmails, setShowAllEmails] = useState(false);
 
   useEffect(() => {
@@ -287,8 +308,35 @@ export function NetworkPage({ onOpenEmail, onRefreshData, focusRequest }: Networ
     return () => window.clearTimeout(timeout);
   }, [showContactForm, contactFormMode, contactFormState.name, contactFormState.email, selectedContact]);
 
+  const openMergeReview = (match: DuplicateMatch) => {
+    const choices = (['name', 'title', 'email', 'company_name', 'phone_number', 'linkedin_url'] as MergeFieldKey[]).reduce(
+      (acc, field) => {
+        const currentValue = (contactFormState[field] || '').trim();
+        const existingValue = (
+          field === 'company_name'
+            ? match.company
+            : match[field as keyof DuplicateMatch]
+        ) || '';
+        acc[field] = currentValue && (!existingValue || currentValue !== existingValue) ? 'current' : 'existing';
+        return acc;
+      },
+      {} as Record<MergeFieldKey, 'current' | 'existing'>,
+    );
+    setMergeReview({ target: match, choices });
+  };
+
+  const resolveMergeValue = (field: MergeFieldKey, match: DuplicateMatch, choice: 'current' | 'existing') => {
+    if (choice === 'current') {
+      return contactFormState[field].trim() || undefined;
+    }
+    if (field === 'company_name') {
+      return match.company || undefined;
+    }
+    return (match[field as keyof DuplicateMatch] as string | null | undefined) || undefined;
+  };
+
   const handleSaveContact = async () => {
-    if (contactDuplicateWarning?.type === 'hard' && contactFormMode === 'create') {
+    if (contactDuplicateWarning?.type === 'hard') {
       setErrorMessage(contactDuplicateWarning.message);
       return;
     }
@@ -331,6 +379,73 @@ export function NetworkPage({ onOpenEmail, onRefreshData, focusRequest }: Networ
       }
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'Failed to save contact.');
+    } finally {
+      setSavingContact(false);
+    }
+  };
+
+  const handleKeepSeparate = async (match: DuplicateMatch) => {
+    if (!contactFormState.email.trim() || !match.email) {
+      setContactDuplicateWarning(null);
+      setStatusMessage('We will keep these contacts separate for now.');
+      return;
+    }
+
+    try {
+      await keepContactsSeparate({
+        name: contactFormState.name.trim() || match.name || undefined,
+        email: contactFormState.email.trim(),
+        match_email: match.email,
+      });
+      setContactDuplicateWarning(null);
+      setStatusMessage('We will keep those similarly named contacts separate.');
+      window.setTimeout(() => {
+        void handleSaveContact();
+      }, 0);
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to save duplicate decision.');
+    }
+  };
+
+  const handleConfirmMerge = async () => {
+    if (!mergeReview) return;
+    setSavingContact(true);
+    setErrorMessage(null);
+    try {
+      const merged = await mergeContacts({
+        target_contact_id: mergeReview.target.id,
+        source_contact_id:
+          contactFormMode === 'edit' && selectedContact && !selectedContact.id.startsWith('email-')
+            ? selectedContact.id
+            : undefined,
+        name: resolveMergeValue('name', mergeReview.target, mergeReview.choices.name),
+        title: resolveMergeValue('title', mergeReview.target, mergeReview.choices.title),
+        email: resolveMergeValue('email', mergeReview.target, mergeReview.choices.email),
+        company_name: resolveMergeValue('company_name', mergeReview.target, mergeReview.choices.company_name),
+        phone_number: resolveMergeValue('phone_number', mergeReview.target, mergeReview.choices.phone_number),
+        linkedin_url: resolveMergeValue('linkedin_url', mergeReview.target, mergeReview.choices.linkedin_url),
+      });
+      setMergeReview(null);
+      setContactDuplicateWarning(null);
+      setShowContactForm(false);
+      setStatusMessage('Contacts merged.');
+      await loadContacts(searchQuery);
+      if (merged?.email) {
+        await openDetail({
+          id: merged.id,
+          name: merged.name,
+          email: merged.email,
+          title: merged.title,
+          company: merged.company,
+          phone_number: merged.phone_number,
+          linkedin_url: merged.linkedin_url,
+          source: merged.source || 'manual',
+          reached_out: merged.reached_out || false,
+          response_received: merged.response_received || false,
+        });
+      }
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to merge contacts.');
     } finally {
       setSavingContact(false);
     }
@@ -843,11 +958,31 @@ export function NetworkPage({ onOpenEmail, onRefreshData, focusRequest }: Networ
                 }`}>
                   <div className="font-medium">{contactDuplicateWarning.message}</div>
                   {contactDuplicateWarning.matches.length > 0 && (
-                    <div className="mt-2 space-y-1 text-xs">
+                    <div className="mt-3 space-y-2">
                       {contactDuplicateWarning.matches.slice(0, 2).map((match) => (
-                        <div key={match.id}>
-                          {match.name || match.email}
-                          {match.email ? ` · ${match.email}` : ''}
+                        <div key={match.id} className="rounded-lg border border-white/70 bg-white/70 px-3 py-2 text-xs text-slate-700">
+                          <div className="font-semibold text-slate-900">{match.name || match.email}</div>
+                          <div className="mt-0.5 text-slate-500">
+                            {[match.title, match.company, match.email].filter(Boolean).join(' · ')}
+                          </div>
+                          {contactDuplicateWarning.type === 'soft' && (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={() => openMergeReview(match)}
+                                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
+                              >
+                                Merge with this
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void handleKeepSeparate(match)}
+                                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
+                              >
+                                Keep separate
+                              </button>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -934,6 +1069,106 @@ export function NetworkPage({ onOpenEmail, onRefreshData, focusRequest }: Networ
                 className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-sm font-medium rounded-xl disabled:opacity-50"
               >
                 {savingContact ? 'Saving...' : contactFormMode === 'edit' ? 'Save Changes' : 'Add Contact'}
+              </button>
+            </div>
+          </DialogShell>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {mergeReview && (
+          <DialogShell
+            onClose={() => setMergeReview(null)}
+            titleId={`${contactFormTitleId}-merge`}
+            initialFocusRef={mergeCloseRef}
+            wrapperClassName="fixed inset-0 z-[60] flex items-end justify-center p-0 md:items-center md:p-4"
+            overlayClassName="absolute inset-0 bg-slate-900/25 backdrop-blur-sm"
+            panelClassName="bg-white w-full max-w-2xl rounded-t-[2rem] md:rounded-3xl shadow-2xl overflow-hidden"
+          >
+            <div className="p-4 md:p-6 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h2 id={`${contactFormTitleId}-merge`} className="text-xl font-serif font-bold text-slate-900">
+                  Merge Contacts
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Choose which details to keep on the merged contact.
+                </p>
+              </div>
+              <button
+                ref={mergeCloseRef}
+                onClick={() => setMergeReview(null)}
+                className="p-1 hover:bg-slate-200 rounded-lg"
+              >
+                <X className="w-5 h-5 text-slate-500" />
+              </button>
+            </div>
+            <div className="max-h-[70vh] overflow-y-auto p-4 md:p-6 space-y-4">
+              {([
+                ['name', 'Name'],
+                ['title', 'Title'],
+                ['email', 'Email'],
+                ['company_name', 'Company'],
+                ['phone_number', 'Phone'],
+                ['linkedin_url', 'LinkedIn'],
+              ] as Array<[MergeFieldKey, string]>).map(([field, label]) => {
+                const currentValue = contactFormState[field].trim() || 'Empty';
+                const existingValue = (
+                  field === 'company_name'
+                    ? mergeReview.target.company
+                    : mergeReview.target[field as keyof DuplicateMatch]
+                ) || 'Empty';
+                return (
+                  <div key={field} className="rounded-2xl border border-slate-200 p-4">
+                    <div className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">{label}</div>
+                    <div className="mt-3 grid gap-3 md:grid-cols-2">
+                      <label className="rounded-xl border border-slate-200 px-3 py-3 text-sm text-slate-700">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            name={`merge-${field}`}
+                            checked={mergeReview.choices[field] === 'current'}
+                            onChange={() => setMergeReview((current) => current ? {
+                              ...current,
+                              choices: { ...current.choices, [field]: 'current' },
+                            } : current)}
+                          />
+                          <span className="font-medium text-slate-900">Current form</span>
+                        </div>
+                        <div className="mt-2 break-words text-slate-600">{currentValue}</div>
+                      </label>
+                      <label className="rounded-xl border border-slate-200 px-3 py-3 text-sm text-slate-700">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            name={`merge-${field}`}
+                            checked={mergeReview.choices[field] === 'existing'}
+                            onChange={() => setMergeReview((current) => current ? {
+                              ...current,
+                              choices: { ...current.choices, [field]: 'existing' },
+                            } : current)}
+                          />
+                          <span className="font-medium text-slate-900">Existing contact</span>
+                        </div>
+                        <div className="mt-2 break-words text-slate-600">{existingValue}</div>
+                      </label>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="px-4 pb-4 md:px-6 md:pb-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                onClick={() => setMergeReview(null)}
+                className="px-4 py-2 bg-white border border-slate-200 text-slate-700 text-sm font-medium rounded-xl"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void handleConfirmMerge()}
+                disabled={savingContact}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-sm font-medium rounded-xl disabled:opacity-50"
+              >
+                {savingContact ? 'Merging...' : 'Confirm Merge'}
               </button>
             </div>
           </DialogShell>

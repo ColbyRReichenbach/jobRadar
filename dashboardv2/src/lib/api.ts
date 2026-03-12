@@ -638,6 +638,39 @@ export async function checkContactDuplicates(payload: {
   return await res.json();
 }
 
+export async function keepContactsSeparate(payload: {
+  name?: string;
+  email: string;
+  match_email: string;
+}): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/api/contacts/duplicates/keep-separate`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to remember duplicate decision'));
+}
+
+export async function mergeContacts(payload: {
+  target_contact_id: string;
+  source_contact_id?: string;
+  name?: string;
+  title?: string;
+  email?: string;
+  company_name?: string;
+  phone_number?: string;
+  linkedin_url?: string;
+  application_id?: string;
+}): Promise<any> {
+  const res = await apiFetch(`${API_BASE}/api/contacts/merge`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to merge contacts'));
+  return await res.json();
+}
+
 // --- ATS Intelligence API ---
 
 export async function getAtsIntelligence(platform: string): Promise<any> {
