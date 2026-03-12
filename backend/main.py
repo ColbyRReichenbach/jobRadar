@@ -7,7 +7,7 @@ from urllib.parse import quote, urlparse
 from uuid import uuid4
 
 from dotenv import load_dotenv
-from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, EmailStr, Field
@@ -127,31 +127,16 @@ def _decode_oauth_context(value: str) -> dict:
     return json.loads(base64.urlsafe_b64decode(normalized).decode())
 
 
-def _set_oauth_context_cookie(response, payload: dict) -> None:
-    is_prod = os.getenv("ENVIRONMENT", "development") != "development"
-    response.set_cookie(
-        key=_OAUTH_CONTEXT_COOKIE_NAME,
-        value=_encode_oauth_context(payload),
-        httponly=True,
-        secure=is_prod,
-        samesite="lax",
-        max_age=600,
-        path="/api/auth",
-    )
+def _build_google_authorization_response(request: Request, oauth_state: str | None = None) -> str:
+    from urllib.parse import parse_qsl, urlencode
 
-
-def _clear_oauth_context_cookie(response) -> None:
-    is_prod = os.getenv("ENVIRONMENT", "development") != "development"
-    response.delete_cookie(
-        key=_OAUTH_CONTEXT_COOKIE_NAME,
-        secure=is_prod,
-        samesite="lax",
-        path="/api/auth",
-    )
-
-
-def _build_google_authorization_response(request: Request) -> str:
-    query = request.url.query
+    query_items = parse_qsl(request.url.query, keep_blank_values=True)
+    if oauth_state is not None:
+        query_items = [
+            ("state", oauth_state) if key == "state" else (key, value)
+            for key, value in query_items
+        ]
+    query = urlencode(query_items)
     if query:
         return f"{GOOGLE_REDIRECT_URI}?{query}"
     return GOOGLE_REDIRECT_URI
@@ -163,7 +148,6 @@ limiter = Limiter(
     storage_uri=_rate_limit_storage_uri,
     in_memory_fallback_enabled=bool(_rate_limit_storage_uri),
 )
-_OAUTH_CONTEXT_COOKIE_NAME = "apptrail_oauth_ctx"
 app.state.limiter = limiter
 app.add_exception_handler(
     RateLimitExceeded,
@@ -1332,15 +1316,20 @@ async def google_auth_redirect(
         "frontend_origin": resolved_frontend_origin,
         "oauth_state": oauth_state,
     }
+    encoded_state = _encode_oauth_context(oauth_context)
+
+    from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+
+    parsed = urlparse(auth_url)
+    params = parse_qs(parsed.query, keep_blank_values=True)
+    params["state"] = [encoded_state]
+    new_query = urlencode({k: v[0] for k, v in params.items()})
+    auth_url = urlunparse(parsed._replace(query=new_query))
 
     if redirect:
-        response = RedirectResponse(url=auth_url, status_code=302)
-        _set_oauth_context_cookie(response, oauth_context)
-        return response
+        return RedirectResponse(url=auth_url, status_code=302)
 
-    response = JSONResponse({"auth_url": auth_url})
-    _set_oauth_context_cookie(response, oauth_context)
-    return response
+    return {"auth_url": auth_url}
 
 
 @app.get("/api/auth/google/callback")
@@ -1349,27 +1338,26 @@ async def google_auth_callback(
     request: Request,
     code: str = Query(...),
     state: str = Query(""),
-    oauth_context: str | None = Cookie(None, alias=_OAUTH_CONTEXT_COOKIE_NAME),
     db: AsyncSession = Depends(get_db),
 ):
     """Handle Google OAuth callback. Creates/updates user and stores service scopes."""
     from google_auth_oauthlib.flow import Flow
     from fastapi.responses import RedirectResponse
 
-    authorization_response = _build_google_authorization_response(request)
     try:
-        cookie_state = _decode_oauth_context(oauth_context or "")
-        connect_gmail = bool(cookie_state.get("connect_gmail", False))
-        connect_calendar = bool(cookie_state.get("connect_calendar", False))
-        code_verifier = cookie_state.get("code_verifier")
-        oauth_state = cookie_state.get("oauth_state") or state
-        frontend_url = _resolve_frontend_origin(cookie_state.get("frontend_origin"), request)
+        oauth_context = _decode_oauth_context(state)
+        connect_gmail = bool(oauth_context.get("connect_gmail", False))
+        connect_calendar = bool(oauth_context.get("connect_calendar", False))
+        code_verifier = oauth_context.get("code_verifier")
+        oauth_state = oauth_context.get("oauth_state")
+        frontend_url = _resolve_frontend_origin(oauth_context.get("frontend_origin"), request)
     except Exception:
         connect_gmail = False
         connect_calendar = False
         code_verifier = None
         oauth_state = state
         frontend_url = _resolve_frontend_origin(None, request)
+    authorization_response = _build_google_authorization_response(request, oauth_state)
 
     try:
         flow = Flow.from_client_config(
@@ -1391,9 +1379,7 @@ async def google_auth_callback(
     except Exception as e:
         import logging
         logging.exception("OAuth token exchange failed")
-        response = RedirectResponse(url=f"{frontend_url}/?auth_error=token_exchange_failed", status_code=302)
-        _clear_oauth_context_cookie(response)
-        return response
+        return RedirectResponse(url=f"{frontend_url}/?auth_error=token_exchange_failed", status_code=302)
     credentials = flow.credentials
 
     # Get user info from Google
@@ -1441,12 +1427,10 @@ async def google_auth_callback(
             refresh_token_value = decrypt_gmail_token(existing_token.refresh_token)
 
         if not refresh_token_value:
-            response = RedirectResponse(
+            return RedirectResponse(
                 url=f"{frontend_url}/?auth_error=missing_refresh_token",
                 status_code=302,
             )
-            _clear_oauth_context_cookie(response)
-            return response
 
         granted_scopes = set(credentials.granted_scopes or credentials.scopes or [])
         expires_at = datetime.fromtimestamp(
@@ -1488,7 +1472,6 @@ async def google_auth_callback(
     redirect_url = _build_frontend_callback_url(frontend_url, access_token)
     response = _RedirectResponse(url=redirect_url, status_code=302)
     set_refresh_cookie(response, refresh_token)
-    _clear_oauth_context_cookie(response)
     return response
 
 
