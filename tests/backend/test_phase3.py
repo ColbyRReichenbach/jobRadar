@@ -276,3 +276,32 @@ async def test_patch_email_endpoint(client, db_session):
     assert resp.status_code == 200
     data = resp.json()
     assert data["collapsed"] is True
+
+
+@pytest.mark.asyncio
+async def test_patch_email_unresolve_restores_collapsed_state(client, db_session):
+    """Undoing resolved state should make the email visible again."""
+    from backend.models import EmailEvent
+
+    event = EmailEvent(
+        gmail_message_id="patch-test-msg-undo",
+        sender="test@example.com",
+        classification="job_update",
+        color_code="blue",
+        urgency="low",
+        collapsed=True,
+        resolved=True,
+    )
+    db_session.add(event)
+    await db_session.commit()
+    await db_session.refresh(event)
+
+    resp = await client.patch(
+        f"/api/emails/{event.id}",
+        json={"resolved": False},
+        headers=AUTH_HEADER,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["resolved"] is False
+    assert data["collapsed"] is False

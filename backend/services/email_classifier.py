@@ -18,22 +18,21 @@ import os
 
 import anthropic
 
+from backend.services.email_filter import (
+    ATS_DOMAINS,
+    AUTOMATED_LOCAL_PART_HINTS,
+    NON_JOB_NOTIFICATION_DOMAINS,
+    extract_domain,
+    extract_local_part,
+    has_job_signal,
+    has_recruiting_sender_signal,
+    is_obvious_noise_email,
+)
 from backend.utils.retry import with_retry
 
 logger = logging.getLogger(__name__)
 
 client = anthropic.AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-
-NON_JOB_NOTIFICATION_DOMAINS = {
-    "github.com",
-    "notifications.github.com",
-    "noreply.github.com",
-    "railway.app",
-    "railway.com",
-    "vercel.com",
-    "mailer.vercel.com",
-    "linear.app",
-}
 
 CLASSIFIER_MODEL = "claude-haiku-4-5-20251001"
 
@@ -52,6 +51,10 @@ Categories:
 Important exclusions:
 - Developer tooling notifications such as GitHub, Railway, Vercel, Linear, billing emails, deployment alerts, repository updates, account security notices, invoices, and newsletters are NOT job search emails.
 - Product updates from a company domain are still not_relevant unless they directly concern an active application, interview, or recruiting conversation.
+- Nuanced rejection phrasing such as "we will not be moving forward", "not selected", "position has been filled", "have not been accepted", and "pursuing other candidates" should all classify as rejection.
+- Recruiter or hiring-manager replies like "great speaking with you", "following up", and "can you chat this week" should classify as conversation when they are from a human sender.
+- Promotional recruiting-adjacent content from LinkedIn, alumni groups, newsletters, community events, and vendor marketing is still not_relevant unless it is directly tied to an active application or interview process.
+- Only treat a sender as human if it looks like a real individual or direct recruiter. Team aliases, no-reply mailboxes, newsletters, and system notifications are automated.
 
 Return ONLY valid JSON with these fields:
 {
@@ -131,23 +134,127 @@ Subject: {subject}
                 break
 
     # Fallback: basic keyword classification
-    return _fallback_classify(subject, body, sender_email)
+    return _fallback_classify(subject, body, sender_email, sender=sender)
 
 
-def _fallback_classify(subject: str, body: str, sender_email: str) -> dict:
+REJECTION_PHRASES = {
+    "unfortunately", "not moving forward", "not move forward", "regret to inform",
+    "other candidates", "another candidate", "pursue other candidates",
+    "decided not to proceed", "decided not to move forward", "not selected",
+    "have not been selected", "have not been accepted", "not accepted",
+    "position has been filled", "role has been filled", "filled the role",
+    "no longer under consideration", "unable to offer", "won't be advancing",
+    "will not be advancing", "were not chosen", "your application was unsuccessful",
+    "cannot move ahead", "cannot move forward",
+}
+
+INTERVIEW_PHRASES = {
+    "interview", "phone screen", "screening call", "onsite", "virtual onsite",
+    "panel interview", "technical interview", "final round", "final interview",
+    "availability", "calendly", "select a time", "schedule time", "meet with",
+    "interview loop", "hiring manager chat",
+}
+
+OFFER_PHRASES = {
+    "offer letter", "extend an offer", "pleased to offer", "excited to offer",
+    "written offer", "compensation package", "offer package", "base salary",
+    "equity grant", "benefits package", "sign your offer",
+}
+
+ACTION_REQUIRED_PHRASES = {
+    "action required", "complete assessment", "coding assessment", "coding challenge",
+    "take-home", "take home", "submit references", "background check",
+    "complete the form", "please submit", "confirm availability", "pick a time",
+    "schedule here", "book time", "complete your application", "next steps",
+    "finish your application",
+}
+
+JOB_UPDATE_PHRASES = {
+    "application received", "thank you for applying", "under review",
+    "reviewing your application", "application update", "status update",
+    "moving to the next stage", "move to the next stage", "next stage",
+    "next round", "we received your application", "application status",
+    "candidate portal", "thank you for your interest", "decision has been made",
+}
+
+NON_PERSON_SENDER_HINTS = {
+    "team", "support", "help", "community", "events", "newsletter",
+    "notifications", "notification", "noreply", "no-reply", "mailer",
+    "info", "careers", "jobs", "accounts", "security", "billing", "alerts",
+    "talent team", "recruiting team", "hiring team", "customer success",
+}
+
+
+def infer_sender_role(sender: str, sender_email: str, is_human: bool) -> str:
+    normalized = f"{(sender or '').lower()} {(sender_email or '').lower()}"
+    if not is_human:
+        return "automated"
+    if "hiring manager" in normalized:
+        return "hiring_manager"
+    if any(token in normalized for token in {"recruiter", "recruiting", "talent", "sourcer"}):
+        return "recruiter"
+    if any(token in normalized for token in {"hr", "human resources", "people ops"}):
+        return "hr"
+    return "unknown"
+
+
+def is_likely_person_sender(sender: str, sender_email: str) -> bool:
+    sender_name = (sender or "").strip().lower()
+    sender_domain = extract_domain(sender_email)
+    sender_local = extract_local_part(sender_email)
+
+    if not sender_email:
+        return False
+    if sender_domain in NON_JOB_NOTIFICATION_DOMAINS:
+        return False
+    if any(token in sender_local for token in AUTOMATED_LOCAL_PART_HINTS):
+        return False
+    if any(token in sender_name for token in NON_PERSON_SENDER_HINTS):
+        return False
+
+    if sender_name:
+        name_words = [part for part in sender_name.replace(".", " ").split() if part.isalpha()]
+        if len(name_words) >= 2:
+            return True
+
+    return bool(
+        sender_local
+        and any(sep in sender_local for sep in {".", "_", "-"})
+        and not any(token in sender_local for token in NON_PERSON_SENDER_HINTS)
+    ) or bool(sender_local and sender_local.isalpha() and len(sender_local) >= 5)
+
+
+def should_create_network_contact(sender: str, sender_email: str, classification: str | None = None) -> bool:
+    if classification == "not_relevant":
+        return False
+    return is_likely_person_sender(sender, sender_email)
+
+
+def _contains_any(combined: str, phrases: set[str]) -> bool:
+    return any(phrase in combined for phrase in phrases)
+
+
+def _fallback_classify(subject: str, body: str, sender_email: str, sender: str = "") -> dict:
     """Rule-based fallback when LLM is unavailable."""
     lower_subject = subject.lower()
     lower_body = (body[:500] if body else "").lower()
     combined = f"{lower_subject} {lower_body}"
-    sender_domain = sender_email.lower().split("@")[-1] if "@" in sender_email else ""
+    sender_domain = extract_domain(sender_email)
+    is_human = is_likely_person_sender(sender, sender_email)
 
-    classification = "job_update"
+    classification = "not_relevant"
     action_needed = False
 
-    if sender_domain in NON_JOB_NOTIFICATION_DOMAINS:
+    if is_obvious_noise_email({
+        "sender": sender_email,
+        "sender_email": sender_email,
+        "sender_name": sender,
+        "subject": subject,
+        "body": body,
+    }):
         return {
             "classification": "not_relevant",
-            "confidence": 0.8,
+            "confidence": 0.9,
             "company_name": None,
             "sender_role": "automated",
             "key_sentence": subject,
@@ -156,32 +263,31 @@ def _fallback_classify(subject: str, body: str, sender_email: str) -> dict:
             "is_automated": True,
         }
 
-    if any(w in lower_subject for w in ["interview", "schedule", "phone screen", "onsite", "technical"]):
-        classification = "interview_request"
-        action_needed = True
-    elif any(w in combined for w in ["unfortunately", "not moving forward", "other candidates", "regret to inform", "decided not to"]):
+    if _contains_any(combined, REJECTION_PHRASES):
         classification = "rejection"
-    elif any(w in lower_subject for w in ["offer", "compensation", "package", "offer letter"]):
+    elif _contains_any(combined, OFFER_PHRASES):
         classification = "offer"
         action_needed = True
-    elif any(w in lower_subject for w in ["action required", "next steps", "complete", "assessment", "please submit"]):
+    elif _contains_any(combined, INTERVIEW_PHRASES):
+        classification = "interview_request"
+        action_needed = any(token in combined for token in {"availability", "calendly", "select a time", "schedule", "book time"})
+    elif _contains_any(combined, ACTION_REQUIRED_PHRASES):
         classification = "action_item"
         action_needed = True
-    elif any(w in sender_email.lower() for w in ["noreply", "no-reply", "notifications", "mailer"]):
+    elif _contains_any(combined, JOB_UPDATE_PHRASES) or sender_domain in ATS_DOMAINS:
         classification = "job_update"
-    elif "@" in sender_email and not any(w in sender_email.lower() for w in ["noreply", "no-reply", "notifications"]):
-        # Personal email from someone — likely a conversation
+    elif is_human and (has_job_signal(combined) or has_recruiting_sender_signal(sender, sender_email)):
         classification = "conversation"
 
     return {
         "classification": classification,
-        "confidence": 0.3,
+        "confidence": 0.45 if classification != "not_relevant" else 0.6,
         "company_name": None,
-        "sender_role": "unknown",
+        "sender_role": infer_sender_role(sender, sender_email, is_human),
         "key_sentence": subject,
         "summary": f"Email from {sender_email}: {subject}",
         "action_needed": action_needed,
-        "is_automated": "noreply" in sender_email.lower() or "no-reply" in sender_email.lower(),
+        "is_automated": not is_human,
     }
 
 

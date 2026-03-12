@@ -39,7 +39,12 @@ jobs:
           cache-dependency-path: dashboardv2/package-lock.json
 
       - name: Install dashboard dependencies
-        run: npm ci
+        run: npm ci --include=optional
+
+      - name: Restore Tailwind native binding
+        run: |
+          TAILWIND_OXIDE_VERSION=$(node -p "require('./package-lock.json').packages['node_modules/@tailwindcss/oxide'].version")
+          npm install --no-save "@tailwindcss/oxide-linux-x64-gnu@${TAILWIND_OXIDE_VERSION}"
 
       - name: Build dashboard
         run: npm run build

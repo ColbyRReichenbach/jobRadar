@@ -15,6 +15,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import {
   createContact,
+  deleteNetworkContact,
   fetchNetworkContact,
   fetchNetworkContacts,
   sendEmail,
@@ -57,6 +58,8 @@ interface ContactDetailPayload {
     name?: string | null;
     title?: string | null;
     email?: string | null;
+    company?: string | null;
+    company_id?: string | null;
     phone_number?: string | null;
     linkedin_url?: string | null;
     source?: string | null;
@@ -109,6 +112,8 @@ export function NetworkPage({ onOpenEmail, onRefreshData }: NetworkPageProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const contactFormCloseRef = useRef<HTMLButtonElement>(null);
   const composeCloseRef = useRef<HTMLButtonElement>(null);
+  const contactNameInputRef = useRef<HTMLInputElement>(null);
+  const composeToInputRef = useRef<HTMLInputElement>(null);
   const [contacts, setContacts] = useState<NetworkContact[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
@@ -248,6 +253,20 @@ export function NetworkPage({ onOpenEmail, onRefreshData }: NetworkPageProps) {
     }
   };
 
+  const handleDeleteContact = async () => {
+    if (!selectedContact?.email) return;
+    setErrorMessage(null);
+    try {
+      await deleteNetworkContact(selectedContact.email);
+      setStatusMessage('Contact removed from your network.');
+      setSelectedContact(null);
+      setContactDetail(null);
+      await loadContacts(searchQuery);
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to delete contact.');
+    }
+  };
+
   const handleSendEmail = async () => {
     if (!composeState.to.trim() || !composeState.subject.trim() || !composeState.body.trim()) {
       setErrorMessage('Recipient, subject, and message are required.');
@@ -287,6 +306,7 @@ export function NetworkPage({ onOpenEmail, onRefreshData }: NetworkPageProps) {
   const visibleEmails = showAllEmails
     ? contactDetail?.emails || []
     : (contactDetail?.emails || []).slice(0, 2);
+  const selectedCompany = contactDetail?.contact?.company || selectedContact?.company || null;
 
   return (
     <div className="flex-1 h-full overflow-y-auto p-4 md:p-8 bg-[#F5F5F0]">
@@ -402,7 +422,7 @@ export function NetworkPage({ onOpenEmail, onRefreshData }: NetworkPageProps) {
                         event.stopPropagation();
                         openCompose(contact);
                       }}
-                      className="text-xs font-medium text-indigo-600 hover:text-indigo-700 opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="text-[11px] font-medium text-indigo-600 hover:text-indigo-700 opacity-0 group-hover:opacity-100 transition-opacity"
                     >
                       Email
                     </button>
@@ -450,10 +470,19 @@ export function NetworkPage({ onOpenEmail, onRefreshData }: NetworkPageProps) {
                       )
                     }
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-slate-200 rounded-lg text-slate-700 hover:bg-slate-50"
-                  >
-                    <Pencil className="w-3.5 h-3.5" />
-                    {selectedContact.id.startsWith('email-') ? 'Save Contact' : 'Edit'}
-                  </button>
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                      Edit Contact
+                    </button>
+                  {selectedContact.email && (
+                    <button
+                      onClick={handleDeleteContact}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-red-200 rounded-lg text-red-600 hover:bg-red-50"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      Delete Contact
+                    </button>
+                  )}
                   <button
                     ref={closeButtonRef}
                     onClick={() => {
@@ -499,10 +528,16 @@ export function NetworkPage({ onOpenEmail, onRefreshData }: NetworkPageProps) {
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              {(selectedContact.email || selectedContact.phone_number || selectedContact.linkedin_url) && (
+              {(selectedContact.email || selectedContact.phone_number || selectedContact.linkedin_url || selectedCompany) && (
                 <div>
                   <h3 className="text-sm font-bold text-slate-900 mb-3">Contact Info</h3>
                   <div className="grid gap-3 sm:grid-cols-2">
+                    {selectedCompany && (
+                      <div className="p-4 bg-slate-50 rounded-2xl">
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400 mb-1">Company</div>
+                        <div className="text-sm font-medium text-slate-900">{selectedCompany}</div>
+                      </div>
+                    )}
                     {selectedContact.email && (
                       <div className="p-4 bg-slate-50 rounded-2xl">
                         <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400 mb-1">Email</div>
@@ -618,7 +653,7 @@ export function NetworkPage({ onOpenEmail, onRefreshData }: NetworkPageProps) {
           <DialogShell
             onClose={() => setShowComposeModal(false)}
             titleId={composeDialogTitleId}
-            initialFocusRef={composeCloseRef}
+            initialFocusRef={composeToInputRef}
             wrapperClassName="fixed inset-0 z-50 flex items-center justify-center p-4"
             overlayClassName="absolute inset-0 bg-slate-900/20 backdrop-blur-sm"
             panelClassName="bg-white w-full max-w-xl rounded-3xl shadow-2xl overflow-hidden"
@@ -641,6 +676,7 @@ export function NetworkPage({ onOpenEmail, onRefreshData }: NetworkPageProps) {
                   To
                 </label>
                 <input
+                  ref={composeToInputRef}
                   value={composeState.to}
                   onChange={(event) => setComposeState((prev) => ({ ...prev, to: event.target.value }))}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm"
@@ -694,7 +730,7 @@ export function NetworkPage({ onOpenEmail, onRefreshData }: NetworkPageProps) {
           <DialogShell
             onClose={() => setShowContactForm(false)}
             titleId={contactFormTitleId}
-            initialFocusRef={contactFormCloseRef}
+            initialFocusRef={contactNameInputRef}
             wrapperClassName="fixed inset-0 z-50 flex items-center justify-center p-4"
             overlayClassName="absolute inset-0 bg-slate-900/20 backdrop-blur-sm"
             panelClassName="bg-white w-full max-w-xl rounded-3xl shadow-2xl overflow-hidden"
@@ -717,6 +753,7 @@ export function NetworkPage({ onOpenEmail, onRefreshData }: NetworkPageProps) {
                   Name
                 </label>
                 <input
+                  ref={contactNameInputRef}
                   value={contactFormState.name}
                   onChange={(event) => setContactFormState((prev) => ({ ...prev, name: event.target.value }))}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm"

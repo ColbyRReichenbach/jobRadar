@@ -3,6 +3,7 @@ import re
 import time
 from datetime import datetime, timezone
 from typing import Optional
+from urllib.parse import urlparse
 from uuid import uuid4
 
 from dotenv import load_dotenv
@@ -13,9 +14,11 @@ from pydantic import BaseModel, EmailStr, Field
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
-from sqlalchemy import select, text
+from sqlalchemy import inspect as sa_inspect, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+from sqlalchemy.orm.attributes import NO_VALUE
 
 load_dotenv(override=True)
 
@@ -29,7 +32,7 @@ from backend.metrics import (
     metrics_payload,
     observe_request,
 )
-from backend.models import Application, Contact, EmailEvent, EmailFeedback, User, GmailToken, Company, RoleUmbrella, CompanyTechProfile, UserProfile, UserRoleInterest, AtsBehavior, WarmConnection, Alert, Interview, CompanyVisit, InterviewNote, NotificationPreference, ResumeDraft
+from backend.models import Application, Contact, EmailEvent, EmailFeedback, User, GmailToken, Company, RoleUmbrella, CompanyTechProfile, UserProfile, UserRoleInterest, AtsBehavior, WarmConnection, Alert, Interview, CompanyVisit, InterviewNote, NotificationPreference, ResumeDraft, IgnoredNetworkContact
 from backend.monitoring import configure_sentry
 from backend.services.hunter import find_contacts, generate_linkedin_search_url
 from backend.services.scraper import extract_job, validate_job_parse_url
@@ -50,10 +53,12 @@ _dashboard_url = os.getenv("DASHBOARD_URL")
 if _dashboard_url:
     _cors_origins.append(_dashboard_url.rstrip("/"))
 
+_VERCEL_PREVIEW_ORIGIN_RE = re.compile(r"^https://apptrail[a-z0-9-]*\.vercel\.app$")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
-    allow_origin_regex=r"^chrome-extension://.*$",
+    allow_origin_regex=r"^(chrome-extension://.*|https://apptrail[a-z0-9-]*\.vercel\.app)$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -67,6 +72,39 @@ def _get_request_ip(request: Request) -> str:
     if request.client and request.client.host:
         return request.client.host
     return "unknown"
+
+
+def _is_allowed_frontend_origin(origin: str | None) -> bool:
+    if not origin:
+        return False
+
+    parsed = urlparse(origin)
+    normalized = f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return False
+
+    if normalized in _cors_origins:
+        return True
+
+    return bool(_VERCEL_PREVIEW_ORIGIN_RE.fullmatch(normalized))
+
+
+def _resolve_frontend_origin(frontend_origin: str | None, request: Request) -> str:
+    candidates = [
+        frontend_origin,
+        request.headers.get("origin"),
+        request.headers.get("referer"),
+    ]
+
+    for candidate in candidates:
+        if not candidate:
+            continue
+        parsed = urlparse(candidate)
+        normalized = f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
+        if _is_allowed_frontend_origin(normalized):
+            return normalized
+
+    return os.getenv("DASHBOARD_URL", "http://localhost:5173").rstrip("/")
 
 
 _rate_limit_storage_uri = os.getenv("RATE_LIMIT_STORAGE_URI") or os.getenv("REDIS_URL")
@@ -250,6 +288,7 @@ class EmailUpdate(BaseModel):
     application_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
     classification: Optional[str] = Field(None, max_length=MAX_SHORT_TEXT_LEN)
     resolved: Optional[bool] = None
+    hidden: Optional[bool] = None
 
 
 # --- Helpers ---
@@ -448,6 +487,7 @@ def _serialize_email_event(event: EmailEvent) -> dict:
         "summary": event.summary,
         "read": event.read,
         "collapsed": event.collapsed,
+        "hidden": event.hidden,
         "company_name": event.company_name,
         "company_logo_url": event.company_logo_url,
         "sender_domain": event.sender_domain,
@@ -462,6 +502,18 @@ def _serialize_email_event(event: EmailEvent) -> dict:
 
 
 def _serialize_contact(contact_row: Contact) -> dict:
+    state = sa_inspect(contact_row)
+    application = None
+    company_ref = None
+
+    application_value = state.attrs.application.loaded_value
+    if application_value is not NO_VALUE:
+        application = application_value
+
+    company_value = state.attrs.company_ref.loaded_value
+    if company_value is not NO_VALUE:
+        company_ref = company_value
+
     return {
         "id": str(contact_row.id),
         "application_id": str(contact_row.application_id) if contact_row.application_id else None,
@@ -475,6 +527,8 @@ def _serialize_contact(contact_row: Contact) -> dict:
         "reached_out": contact_row.reached_out,
         "reached_out_at": contact_row.reached_out_at.isoformat() if contact_row.reached_out_at else None,
         "response_received": contact_row.response_received,
+        "company": company_ref.name if company_ref else application.company if application else None,
+        "company_id": str(contact_row.company_id) if contact_row.company_id else None,
     }
 
 
@@ -803,7 +857,7 @@ async def update_contact(
     if payload.title is not None:
         contact.title = payload.title
     if payload.email is not None:
-        contact.email = str(payload.email)
+        contact.email = str(payload.email).lower()
     if payload.phone_number is not None:
         contact.phone_number = payload.phone_number
     if payload.linkedin_url is not None:
@@ -831,9 +885,24 @@ async def update_contact(
                 raise HTTPException(status_code=404, detail="Application not found")
             contact.application_id = app.id
 
+    if contact.email:
+        ignored_stmt = select(IgnoredNetworkContact).where(
+            IgnoredNetworkContact.user_id == user_id,
+            IgnoredNetworkContact.email == contact.email.lower(),
+        )
+        ignored_result = await db.execute(ignored_stmt)
+        ignored_contact = ignored_result.scalar_one_or_none()
+        if ignored_contact:
+            await db.delete(ignored_contact)
+
     await db.commit()
-    await db.refresh(contact)
-    return _serialize_contact(contact)
+    contact_stmt = (
+        select(Contact)
+        .options(selectinload(Contact.application), selectinload(Contact.company_ref))
+        .where(Contact.id == contact.id, Contact.user_id == user_id)
+    )
+    contact_result = await db.execute(contact_stmt)
+    return _serialize_contact(contact_result.scalar_one())
 
 
 @app.post("/api/contacts", status_code=201)
@@ -860,15 +929,31 @@ async def create_contact(
         application_id=app_id,
         name=payload.name,
         title=payload.title,
-        email=str(payload.email) if payload.email else None,
+        email=str(payload.email).lower() if payload.email else None,
         phone_number=payload.phone_number,
         linkedin_url=payload.linkedin_url,
         source="manual",
     )
     db.add(contact)
+
+    if contact.email:
+        ignored_stmt = select(IgnoredNetworkContact).where(
+            IgnoredNetworkContact.user_id == user_id,
+            IgnoredNetworkContact.email == contact.email.lower(),
+        )
+        ignored_result = await db.execute(ignored_stmt)
+        ignored_contact = ignored_result.scalar_one_or_none()
+        if ignored_contact:
+            await db.delete(ignored_contact)
+
     await db.commit()
-    await db.refresh(contact)
-    return _serialize_contact(contact)
+    contact_stmt = (
+        select(Contact)
+        .options(selectinload(Contact.application), selectinload(Contact.company_ref))
+        .where(Contact.id == contact.id, Contact.user_id == user_id)
+    )
+    contact_result = await db.execute(contact_stmt)
+    return _serialize_contact(contact_result.scalar_one())
 
 
 @app.get("/api/emails")
@@ -884,7 +969,8 @@ async def list_emails(
     from sqlalchemy.orm import selectinload
 
     stmt = select(EmailEvent).options(selectinload(EmailEvent.application)).where(
-        EmailEvent.user_id == user_id
+        EmailEvent.user_id == user_id,
+        EmailEvent.hidden.is_(False),
     )
 
     if application_id:
@@ -938,6 +1024,14 @@ async def update_email(
         event.classification = payload.classification
     if payload.resolved is not None:
         event.resolved = payload.resolved
+        if payload.resolved:
+            event.collapsed = True
+        else:
+            event.collapsed = False
+    if payload.hidden is not None:
+        event.hidden = payload.hidden
+        if payload.hidden:
+            event.collapsed = True
 
     await db.commit()
     await db.refresh(event)
@@ -1102,6 +1196,7 @@ async def google_auth_redirect(
     connect_gmail: bool = Query(False),
     connect_calendar: bool = Query(False),
     redirect: bool = Query(False),
+    frontend_origin: str | None = Query(None),
 ):
     """Redirect to Google OAuth for sign-in and optional Gmail/Calendar access."""
     from google_auth_oauthlib.flow import Flow
@@ -1128,11 +1223,14 @@ async def google_auth_redirect(
         include_granted_scopes="true",
     )
 
+    resolved_frontend_origin = _resolve_frontend_origin(frontend_origin, request)
+
     # Encode intent + code_verifier into state so the callback can use it
     state_data = {
         "connect_gmail": connect_gmail,
         "connect_calendar": connect_calendar,
         "code_verifier": flow.code_verifier,
+        "frontend_origin": resolved_frontend_origin,
     }
     state_str = base64.urlsafe_b64encode(json.dumps(state_data).encode()).decode()
 
@@ -1164,18 +1262,18 @@ async def google_auth_callback(
     from fastapi.responses import RedirectResponse
     import json, base64
 
-    frontend_url = os.getenv("DASHBOARD_URL", "http://localhost:5173").rstrip("/")
-
     # Decode state to get intent and PKCE code_verifier
     try:
         state_data = json.loads(base64.urlsafe_b64decode(state).decode())
         connect_gmail = bool(state_data.get("connect_gmail", False))
         connect_calendar = bool(state_data.get("connect_calendar", False))
         code_verifier = state_data.get("code_verifier")
+        frontend_url = _resolve_frontend_origin(state_data.get("frontend_origin"), request)
     except Exception:
         connect_gmail = False
         connect_calendar = False
         code_verifier = None
+        frontend_url = _resolve_frontend_origin(None, request)
 
     try:
         flow = Flow.from_client_config(
@@ -1433,8 +1531,10 @@ async def sync_gmail(
         classify_email as classify_email_llm,
         CLASSIFICATION_TO_COLOR,
         CLASSIFICATION_TO_EMAIL_TYPE,
+        is_likely_person_sender,
     )
     from backend.services.company_identity import extract_domain, get_company_info
+    from backend.services.email_filter import is_obvious_noise_email
 
     # Get Gmail credentials
     user_id = current_user.id
@@ -1543,6 +1643,15 @@ async def sync_gmail(
 
         is_from_user = sender_email_addr.lower() == user_email.lower() if user_email else False
 
+        if is_obvious_noise_email({
+            "sender": sender_email_addr,
+            "sender_email": sender_email_addr,
+            "sender_name": sender_name,
+            "subject": subject,
+            "body": body_text,
+        }):
+            continue
+
         # Classify with Haiku LLM
         classification = await classify_email_llm(
             subject=subject,
@@ -1595,7 +1704,7 @@ async def sync_gmail(
             key_sentence=classification.get("key_sentence"),
             summary=classification.get("summary"),
             is_from_user=is_from_user,
-            is_human=not classification.get("is_automated", False),
+            is_human=is_likely_person_sender(sender_name, sender_email_addr) and not classification.get("is_automated", False),
             read=is_from_user,
             company_name=email_company_name,
             company_logo_url=company_info.get("logo_url"),
@@ -2211,9 +2320,15 @@ async def list_network(
     """Unified network view: all contacts + unique email senders."""
     from sqlalchemy import or_, func
     from sqlalchemy.orm import selectinload
+    from backend.services.email_classifier import should_create_network_contact
+    from backend.services.contact_enrichment import build_inferred_contact_from_email_event
 
     user_id = _require_user_id(auth)
     contacts_list = []
+    ignored_result = await db.execute(
+        select(IgnoredNetworkContact.email).where(IgnoredNetworkContact.user_id == user_id)
+    )
+    ignored_emails = {row[0].lower() for row in ignored_result.all()}
 
     # Get contacts from Contact table
     contact_stmt = select(Contact).options(selectinload(Contact.application)).where(Contact.user_id == user_id)
@@ -2234,6 +2349,8 @@ async def list_network(
     seen_emails: set[str] = set()
     for c in contacts:
         email = (c.email or "").lower()
+        if email and email in ignored_emails:
+            continue
         if email in seen_emails:
             continue
         seen_emails.add(email)
@@ -2252,41 +2369,69 @@ async def list_network(
         })
 
     # Add unique email senders not already in contacts
-    email_stmt = select(
-        EmailEvent.sender_email,
-        EmailEvent.sender,
-        EmailEvent.company_name,
-        func.count(EmailEvent.id).label("email_count"),
-        func.max(EmailEvent.received_at).label("last_interaction"),
-    ).where(
+    email_stmt = select(EmailEvent).where(
         EmailEvent.user_id == user_id,
         EmailEvent.sender_email.isnot(None),
         EmailEvent.is_from_user.is_(False),
-    ).group_by(
-        EmailEvent.sender_email, EmailEvent.sender, EmailEvent.company_name,
-    ).order_by(func.max(EmailEvent.received_at).desc()).offset(offset).limit(limit)
+        EmailEvent.hidden.is_(False),
+        EmailEvent.is_human.is_(True),
+        EmailEvent.email_type == "conversation",
+    ).order_by(EmailEvent.received_at.desc())
     email_result = await db.execute(email_stmt)
-    for row in email_result.all():
-        email_addr = (row[0] or "").lower()
+    sender_aggregate: dict[str, dict] = {}
+    for email_event in email_result.scalars():
+        email_addr = (email_event.sender_email or "").lower()
+        if not email_addr:
+            continue
+        aggregate = sender_aggregate.setdefault(
+            email_addr,
+            {
+                "event": email_event,
+                "email_count": 0,
+                "last_interaction": email_event.received_at,
+            },
+        )
+        aggregate["email_count"] += 1
+        if aggregate["last_interaction"] is None or (
+            email_event.received_at and email_event.received_at > aggregate["last_interaction"]
+        ):
+            aggregate["last_interaction"] = email_event.received_at
+            aggregate["event"] = email_event
+
+    derived_contacts = sorted(
+        sender_aggregate.items(),
+        key=lambda item: item[1]["last_interaction"] or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
+
+    for email_addr, aggregate in derived_contacts[offset : offset + limit]:
+        if email_addr in ignored_emails:
+            continue
         if email_addr in seen_emails:
             continue
+        event = aggregate["event"]
+        if not should_create_network_contact(event.sender or "", email_addr):
+            continue
         seen_emails.add(email_addr)
-        if q and q.lower() not in email_addr and q.lower() not in (row[1] or "").lower():
+        inferred = build_inferred_contact_from_email_event(event)
+        display_name = inferred["name"] or event.sender
+        haystack = " ".join(filter(None, [email_addr, display_name, inferred["title"], inferred["company"]])).lower()
+        if q and q.lower() not in haystack:
             continue
         contacts_list.append({
             "id": f"email-{email_addr}",
-            "name": row[1],
-            "email": row[0],
-            "title": None,
+            "name": display_name,
+            "email": email_addr,
+            "title": inferred["title"],
             "phone_number": None,
-            "company": row[2],
+            "company": inferred["company"],
             "company_id": None,
             "source": "email",
             "reached_out": False,
             "response_received": False,
-            "linkedin_url": None,
-            "email_count": row[3],
-            "last_interaction_at": row[4].isoformat() if row[4] else None,
+            "linkedin_url": inferred["linkedin_url"],
+            "email_count": aggregate["email_count"],
+            "last_interaction_at": aggregate["last_interaction"].isoformat() if aggregate["last_interaction"] else None,
         })
 
     return contacts_list[:limit]
@@ -2296,12 +2441,12 @@ async def list_network(
 async def get_network_contact(email: EmailStr, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
     """Full contact profile: emails, linked applications, company info."""
     from sqlalchemy.orm import selectinload
-    from sqlalchemy import func
+    from backend.services.contact_enrichment import build_inferred_contact
 
     user_id = _require_user_id(auth)
     email_value = str(email)
     # Get contact record
-    contact_stmt = select(Contact).where(
+    contact_stmt = select(Contact).options(selectinload(Contact.application)).where(
         Contact.email == email_value,
         Contact.user_id == user_id,
     ).limit(1)
@@ -2316,7 +2461,8 @@ async def get_network_contact(email: EmailStr, db: AsyncSession = Depends(get_db
         EmailEvent.sender_email == email_value,
     ).order_by(EmailEvent.received_at.desc()).limit(50)
     email_result = await db.execute(email_stmt)
-    emails = [_serialize_email_event(e) for e in email_result.scalars().all()]
+    email_events = email_result.scalars().all()
+    emails = [_serialize_email_event(e) for e in email_events]
 
     # Get linked applications
     linked_apps = []
@@ -2330,11 +2476,66 @@ async def get_network_contact(email: EmailStr, db: AsyncSession = Depends(get_db
         if app:
             linked_apps.append(_serialize_app(app))
 
+    inferred_contact = build_inferred_contact(
+        sender_name=emails[0]["sender"] if emails else None,
+        sender_email=email_value,
+        explicit_company=(contact.application.company if contact and getattr(contact, "application", None) else None)
+        or (emails[0].get("company_name") if emails else None),
+        texts=[
+            *(email.get("summary") for email in emails),
+            *(email.get("key_sentence") for email in emails),
+            *(email.get("body") for email in emails),
+            *(email.get("snippet") for email in emails),
+            *(email.get("subject") for email in emails),
+        ],
+    )
+
+    contact_payload = _serialize_contact(contact) if contact else {"email": email_value}
+    if inferred_contact["name"] and not contact_payload.get("name"):
+        contact_payload["name"] = inferred_contact["name"]
+    if inferred_contact["title"] and not contact_payload.get("title"):
+        contact_payload["title"] = inferred_contact["title"]
+    if inferred_contact["linkedin_url"] and not contact_payload.get("linkedin_url"):
+        contact_payload["linkedin_url"] = inferred_contact["linkedin_url"]
+    if inferred_contact["company"] and not contact_payload.get("company"):
+        contact_payload["company"] = inferred_contact["company"]
+
     return {
-        "contact": _serialize_contact(contact) if contact else {"email": email_value},
+        "contact": contact_payload,
         "emails": emails,
         "applications": linked_apps,
     }
+
+
+@app.delete("/api/network/{email}")
+async def delete_network_contact(email: EmailStr, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    user_id = _require_user_id(auth)
+    email_value = str(email).lower()
+
+    contacts_result = await db.execute(
+        select(Contact).where(
+            Contact.user_id == user_id,
+            Contact.email == email_value,
+        )
+    )
+    contacts = contacts_result.scalars().all()
+    deleted_contacts = 0
+    for contact in contacts:
+        await db.delete(contact)
+        deleted_contacts += 1
+
+    ignored_result = await db.execute(
+        select(IgnoredNetworkContact).where(
+            IgnoredNetworkContact.user_id == user_id,
+            IgnoredNetworkContact.email == email_value,
+        )
+    )
+    ignored_contact = ignored_result.scalar_one_or_none()
+    if not ignored_contact:
+        db.add(IgnoredNetworkContact(user_id=user_id, email=email_value))
+
+    await db.commit()
+    return {"status": "ok", "deleted_contacts": deleted_contacts, "email": email_value}
 
 
 # --- Sprint 11: Alerts ---

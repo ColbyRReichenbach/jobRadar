@@ -152,6 +152,7 @@ export function buildGoogleAuthStartUrl(options: GoogleAuthOptions = {}): string
   if (options.connectGmail) params.set('connect_gmail', 'true');
   if (options.connectCalendar) params.set('connect_calendar', 'true');
   params.set('redirect', 'true');
+  params.set('frontend_origin', window.location.origin);
   const query = params.toString();
   return `${API_BASE}/api/auth/google${query ? `?${query}` : ''}`;
 }
@@ -336,8 +337,12 @@ function mapEmail(raw: any): Email {
     senderDomain: raw.sender_domain || undefined,
     confidence: raw.confidence || undefined,
     summary: raw.summary || undefined,
+    category: raw.classification || undefined,
+    colorCode: raw.color_code || undefined,
     inPipeline: raw.application_id ? true : false,
     resolved: raw.resolved || false,
+    hidden: raw.hidden || false,
+    collapsed: raw.collapsed || false,
     actionUrl: raw.action_url || undefined,
   };
 }
@@ -433,6 +438,23 @@ export async function markEmailResolved(id: string): Promise<void> {
     headers: authHeaders(),
     body: JSON.stringify({ resolved: true }),
   });
+}
+
+export async function updateEmail(id: string, payload: {
+  read?: boolean;
+  collapsed?: boolean;
+  application_id?: string;
+  classification?: string;
+  resolved?: boolean;
+  hidden?: boolean;
+}): Promise<Email> {
+  const res = await apiFetch(`${API_BASE}/api/emails/${id}`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to update email'));
+  return mapEmail(await res.json());
 }
 
 // --- Search API ---
@@ -590,6 +612,14 @@ export async function fetchNetworkContact(email: string): Promise<any> {
   });
   if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to load contact detail'));
   return await res.json();
+}
+
+export async function deleteNetworkContact(email: string): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/api/network/${encodeURIComponent(email)}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to delete contact'));
 }
 
 export async function createContact(payload: {
