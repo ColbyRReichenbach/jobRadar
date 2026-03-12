@@ -57,7 +57,7 @@ def test_frontend_callback_url_embeds_access_token_in_fragment():
 
 
 def test_oauth_state_roundtrip_survives_missing_padding():
-    from backend.main import _decode_oauth_state, _encode_oauth_state
+    from backend.main import _decode_oauth_context, _encode_oauth_context
 
     payload = {
         "connect_gmail": True,
@@ -66,6 +66,6 @@ def test_oauth_state_roundtrip_survives_missing_padding():
         "frontend_origin": "https://apptrail1.vercel.app",
     }
 
-    encoded = _encode_oauth_state(payload)
+    encoded = _encode_oauth_context(payload)
     assert "=" not in encoded
-    assert _decode_oauth_state(encoded) == payload
+    assert _decode_oauth_context(encoded) == payload
