@@ -114,3 +114,34 @@ jobs:
 
       - name: Run frontend typecheck
         run: npm run lint
+
+  dashboard-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: dashboardv2
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+          cache-dependency-path: dashboardv2/package-lock.json
+
+      - name: Install dashboard dependencies
+        run: npm ci --include=optional
+
+      - name: Restore Tailwind native binding
+        run: |
+          TAILWIND_OXIDE_VERSION=$(node -p "require('./package-lock.json').packages['node_modules/@tailwindcss/oxide'].version")
+          npm install --no-save "@tailwindcss/oxide-linux-x64-gnu@${TAILWIND_OXIDE_VERSION}"
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run dashboard smoke tests
+        run: npm run test:smoke
