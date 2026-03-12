@@ -55,3 +55,34 @@ def test_frontend_callback_url_embeds_access_token_in_fragment():
 
     assert callback_url == "https://apptrail1.vercel.app/auth/callback#access_token=header.payload.signature"
 
+
+def test_oauth_context_roundtrip_survives_missing_padding():
+    from backend.main import _decode_oauth_context, _encode_oauth_context
+
+    payload = {
+        "connect_gmail": True,
+        "connect_calendar": False,
+        "code_verifier": "abc123verifier",
+        "frontend_origin": "https://apptrail1.vercel.app",
+        "oauth_state": "google-generated-state",
+    }
+
+    encoded = _encode_oauth_context(payload)
+    assert "=" not in encoded
+    assert _decode_oauth_context(encoded) == payload
+
+
+def test_google_authorization_response_uses_configured_callback_origin():
+    from backend.main import GOOGLE_REDIRECT_URI, _build_google_authorization_response
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/api/auth/google/callback",
+            "query_string": b"code=abc&state=xyz",
+            "headers": [],
+        }
+    )
+
+    assert _build_google_authorization_response(request) == f"{GOOGLE_REDIRECT_URI}?code=abc&state=xyz"
