@@ -71,12 +71,6 @@ function AppContent() {
     setIsMobileMenuOpen(false);
   }, [activeTab]);
 
-  if (!authLoading && !user) {
-    return <LoginPage />;
-  }
-
-  const showInbox = activeTab !== 'emails' && activeTab !== 'conversations';
-
   const handleOpenEmail = useCallback((email: any) => {
     const emailKind = email.email_type || email.type;
     const tab = emailKind === 'conversation' ? 'conversations' : 'emails';
@@ -88,6 +82,12 @@ function AppContent() {
       token: Date.now(),
     });
   }, []);
+
+  if (!authLoading && !user) {
+    return <LoginPage />;
+  }
+
+  const showInbox = activeTab !== 'emails' && activeTab !== 'conversations';
 
   if (loading || authLoading) {
     return (
