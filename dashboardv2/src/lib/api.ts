@@ -618,6 +618,14 @@ export async function createInterview(data: any): Promise<any> {
   return await res.json();
 }
 
+export async function deleteInterview(interviewId: string): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/api/interviews/${interviewId}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to delete interview'));
+}
+
 export async function fetchNetworkContacts(query = ''): Promise<any[]> {
   return await fetchPaginatedArray<any>((limit, offset) => {
     const params = new URLSearchParams();

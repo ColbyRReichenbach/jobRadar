@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo, useId, useRef } from 'react';
 import { AnimatePresence } from 'motion/react';
-import { ChevronLeft, ChevronRight, Plus, Phone, Code, Building2, Users, X, Clock, MapPin, MessageSquare, BookOpen, AlertCircle, RefreshCw, Video, Mail } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Phone, Code, Building2, Users, X, Clock, MapPin, MessageSquare, BookOpen, AlertCircle, RefreshCw, Video, Mail, Trash2 } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { apiFetch, authHeaders, fetchInterviews, syncCalendar } from '../lib/api';
+import { apiFetch, authHeaders, deleteInterview, fetchInterviews, syncCalendar } from '../lib/api';
 import { DialogShell } from './DialogShell';
 import { useAuth } from '../lib/AuthContext';
 
@@ -216,6 +216,25 @@ export function Calendar() {
       loadInterviews();
     } catch {
       setErrorMessage('Failed to update interview.');
+    }
+  };
+
+  const handleDeleteInterview = async (interview: InterviewData) => {
+    const confirmed = window.confirm(
+      `Delete this ${interview.interview_type} interview${interview.company_name ? ` at ${interview.company_name}` : ''}?`,
+    );
+    if (!confirmed) return;
+
+    try {
+      await deleteInterview(interview.id);
+      setErrorMessage(null);
+      setStatusMessage('Interview deleted.');
+      setSelectedInterview(null);
+      setShowNoteForm(false);
+      setEditingInterview(null);
+      await Promise.all([loadInterviews(), loadPastDue()]);
+    } catch {
+      setErrorMessage('Failed to delete interview.');
     }
   };
 
@@ -600,7 +619,7 @@ export function Calendar() {
                     onCancel={() => setShowNoteForm(false)}
                   />
                 ) : (
-                  <div className="grid gap-2 sm:grid-cols-2">
+                  <div className="grid gap-2 sm:grid-cols-3">
                     <button
                       onClick={() => {
                         setEditingInterview(selectedInterview);
@@ -609,6 +628,12 @@ export function Calendar() {
                       className="w-full px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 flex items-center justify-center gap-2"
                     >
                       <BookOpen className="w-4 h-4" /> Edit Interview
+                    </button>
+                    <button
+                      onClick={() => void handleDeleteInterview(selectedInterview)}
+                      className="w-full px-3 py-2 text-sm font-medium text-red-700 bg-red-50 rounded-xl hover:bg-red-100 flex items-center justify-center gap-2"
+                    >
+                      <Trash2 className="w-4 h-4" /> Delete Interview
                     </button>
                     <button
                       onClick={() => setShowNoteForm(true)}
