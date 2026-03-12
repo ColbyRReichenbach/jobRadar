@@ -124,3 +124,62 @@ async def test_gmail_sync_skips_obvious_tooling_noise(client, db_session):
 
     event_result = await db_session.execute(select(EmailEvent).where(EmailEvent.gmail_message_id == "sync-msg-noise-1"))
     assert event_result.scalar_one_or_none() is None
+
+
+@pytest.mark.asyncio
+async def test_gmail_sync_does_not_hard_block_real_employer_domains(client, db_session):
+    from backend.models import EmailEvent, GmailToken
+
+    token = GmailToken(
+        user_id=TEST_USER_ID,
+        access_token=encrypt_gmail_token("access-token"),
+        refresh_token=encrypt_gmail_token("refresh-token"),
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+    )
+    db_session.add(token)
+    await db_session.commit()
+
+    gmail_service = Mock()
+    gmail_service.users.return_value.messages.return_value.list.return_value.execute.return_value = {
+        "messages": [{"id": "sync-msg-amazon-1"}]
+    }
+    gmail_service.users.return_value.messages.return_value.get.return_value.execute.return_value = {
+        "threadId": "thread-amazon-1",
+        "snippet": "Interview invite",
+        "payload": {
+            "headers": [
+                {"name": "From", "value": "Jane Recruiter <jane@amazon.com>"},
+                {"name": "Subject", "value": "Schedule your interview"},
+                {"name": "Date", "value": "Wed, 11 Mar 2026 10:00:00 +0000"},
+            ],
+            "body": {"data": ""},
+        },
+    }
+
+    classifier = AsyncMock(
+        return_value={
+            "classification": "interview_request",
+            "action_needed": True,
+            "summary": "Interview scheduling email",
+            "confidence": 0.95,
+        }
+    )
+
+    with patch("googleapiclient.discovery.build", return_value=gmail_service):
+        with patch(
+            "backend.services.email_parser.parse_email_body",
+            return_value="Please choose a time for your Software Engineer interview next week.",
+        ):
+            with patch("backend.services.email_classifier.classify_email", new=classifier):
+                with patch(
+                    "backend.services.company_identity.get_company_info",
+                    return_value={"company_name": "Amazon", "logo_url": None},
+                ):
+                    resp = await client.post("/api/gmail/sync", headers=AUTH_HEADER)
+
+    assert resp.status_code == 200
+    assert resp.json()["new_emails"] == 1
+    classifier.assert_awaited()
+
+    event_result = await db_session.execute(select(EmailEvent).where(EmailEvent.gmail_message_id == "sync-msg-amazon-1"))
+    assert event_result.scalar_one_or_none() is not None

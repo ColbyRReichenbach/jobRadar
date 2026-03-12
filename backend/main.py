@@ -966,6 +966,8 @@ async def update_email(
         event.resolved = payload.resolved
         if payload.resolved:
             event.collapsed = True
+        else:
+            event.collapsed = False
     if payload.hidden is not None:
         event.hidden = payload.hidden
         if payload.hidden:

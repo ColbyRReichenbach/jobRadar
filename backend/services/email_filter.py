@@ -14,13 +14,6 @@ NON_JOB_NOTIFICATION_DOMAINS = {
     "vercel.com",
     "mailer.vercel.com",
     "linear.app",
-    "linkedin.com",
-    "em.linkedin.com",
-    "amazon.com",
-    "mgmresorts.com",
-    "mgmgrand.com",
-    "pennplay.com",
-    "wellsfargo.com",
 }
 
 AUTOMATED_LOCAL_PART_HINTS = {
