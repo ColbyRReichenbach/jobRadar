@@ -127,6 +127,16 @@ export interface NotificationPrefs {
   sms_enabled: boolean;
   sms_phone: string | null;
   weekly_digest_enabled: boolean;
+  browser_notifications_enabled: boolean;
+  inbox_updates_enabled: boolean;
+  conversations_enabled: boolean;
+  network_enabled: boolean;
+  interviews_enabled: boolean;
+  followups_enabled: boolean;
+  listings_enabled: boolean;
+  quiet_hours_enabled: boolean;
+  quiet_hours_start: number | null;
+  quiet_hours_end: number | null;
 }
 
 export interface ApiKeyStatus {
@@ -167,6 +177,31 @@ export interface StructuredProfile {
   certifications: string[];
   resume_text: string | null;
   updated_at: string | null;
+}
+
+export interface ProfilePreferences {
+  preferred_locations: string[] | null;
+  preferred_remote_type: string | null;
+  target_salary_min: number | null;
+  target_salary_max: number | null;
+  onboarding_complete?: boolean;
+}
+
+export interface SearchMatchPreview {
+  id?: string | null;
+  url?: string | null;
+  score: number | null;
+  fit_label: 'best_fit' | 'good_fit' | 'stretch' | null;
+  matched_skills: string[];
+  missing_skills: string[];
+  transferable_skills: string[];
+  preference_signals: string[];
+}
+
+export interface DuplicateCheckResult<T = any> {
+  duplicate_type: 'none' | 'soft' | 'hard';
+  message: string | null;
+  matches: T[];
 }
 
 export function buildGoogleAuthStartUrl(options: GoogleAuthOptions = {}): string {
@@ -490,6 +525,24 @@ export async function searchJobs(query: string, location: string = ''): Promise<
   return data.results || [];
 }
 
+export async function getSearchMatchPreview(jobs: Array<{
+  id?: string;
+  title?: string;
+  company?: string;
+  location?: string;
+  salary?: string;
+  description?: string;
+  url?: string;
+}>): Promise<{ profile_available: boolean; jobs: SearchMatchPreview[] }> {
+  const res = await apiFetch(`${API_BASE}/api/search/match-preview`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ jobs }),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to score search results'));
+  return await res.json();
+}
+
 // --- Resume / Match API ---
 
 export async function parseResume(text: string): Promise<StructuredProfile> {
@@ -526,6 +579,22 @@ export async function updateProfile(payload: {
   return await res.json();
 }
 
+export async function getProfilePreferences(): Promise<ProfilePreferences> {
+  const res = await apiFetch(`${API_BASE}/api/profile/preferences`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to load profile preferences'));
+  return await res.json();
+}
+
+export async function updateProfilePreferences(payload: ProfilePreferences): Promise<ProfilePreferences> {
+  const res = await apiFetch(`${API_BASE}/api/profile/preferences`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to save profile preferences'));
+  return await res.json();
+}
+
 export async function clearProfile(): Promise<void> {
   const res = await apiFetch(`${API_BASE}/api/profile`, {
     method: 'DELETE',
@@ -537,6 +606,35 @@ export async function clearProfile(): Promise<void> {
 export async function getJobMatch(jobId: string): Promise<any> {
   const res = await apiFetch(`${API_BASE}/api/jobs/${jobId}/match`, { headers: authHeaders() });
   if (!res.ok) throw new Error(`Failed to get match: ${res.status}`);
+  return await res.json();
+}
+
+export async function checkJobDuplicates(payload: {
+  company: string;
+  role_title: string;
+  job_url?: string;
+  location?: string;
+}): Promise<DuplicateCheckResult> {
+  const res = await apiFetch(`${API_BASE}/api/jobs/duplicates/check`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to check for duplicate jobs'));
+  return await res.json();
+}
+
+export async function checkContactDuplicates(payload: {
+  contact_id?: string;
+  name?: string;
+  email?: string;
+}): Promise<DuplicateCheckResult> {
+  const res = await apiFetch(`${API_BASE}/api/contacts/duplicates/check`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to check for duplicate contacts'));
   return await res.json();
 }
 

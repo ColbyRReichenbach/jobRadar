@@ -160,6 +160,81 @@ async def test_match_no_profile(client):
     assert match_resp.status_code == 404
 
 
+@pytest.mark.asyncio
+async def test_search_match_preview(client):
+    await client.post(
+        "/api/resume/parse",
+        json={"text": "Skills: Python, React, Docker, PostgreSQL"},
+        headers=AUTH_HEADER,
+    )
+    await client.post(
+        "/api/profile/preferences",
+        json={
+            "preferred_locations": ["Remote"],
+            "preferred_remote_type": "remote",
+            "target_salary_min": 120000,
+            "target_salary_max": 180000,
+        },
+        headers=AUTH_HEADER,
+    )
+
+    resp = await client.post(
+        "/api/search/match-preview",
+        json={
+            "jobs": [
+                {
+                    "id": "job-1",
+                    "title": "Backend Engineer",
+                    "company": "TestCo",
+                    "location": "Remote",
+                    "salary": "$140,000 - $160,000",
+                    "description": "Python, React, PostgreSQL, and Docker required.",
+                    "url": "https://example.com/jobs/1",
+                }
+            ]
+        },
+        headers=AUTH_HEADER,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["profile_available"] is True
+    assert data["jobs"][0]["score"] >= 75
+    assert data["jobs"][0]["fit_label"] == "best_fit"
+    assert "preferred_location" in data["jobs"][0]["preference_signals"]
+
+
+@pytest.mark.asyncio
+async def test_profile_preferences_allow_clearing_fields(client):
+    save_resp = await client.post(
+        "/api/profile/preferences",
+        json={
+            "preferred_locations": ["Remote"],
+            "preferred_remote_type": "remote",
+            "target_salary_min": 90000,
+            "target_salary_max": 130000,
+        },
+        headers=AUTH_HEADER,
+    )
+    assert save_resp.status_code == 200
+
+    clear_resp = await client.post(
+        "/api/profile/preferences",
+        json={
+            "preferred_locations": [],
+            "preferred_remote_type": None,
+            "target_salary_min": None,
+            "target_salary_max": None,
+        },
+        headers=AUTH_HEADER,
+    )
+    assert clear_resp.status_code == 200
+    data = clear_resp.json()
+    assert data["preferred_locations"] == []
+    assert data["preferred_remote_type"] is None
+    assert data["target_salary_min"] is None
+    assert data["target_salary_max"] is None
+
+
 # --- Unit tests for match scorer ---
 
 from backend.services.match_scorer import score_match

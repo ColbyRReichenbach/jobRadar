@@ -592,7 +592,10 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
                               contact_email: otherEmail?.senderEmail || undefined,
                               draft_type: 'follow_up',
                             });
-                            setReplyText(draft.body);
+                            setReplyComposer((current) => ({
+                              ...current,
+                              body: draft.body,
+                            }));
                             setIsReplying(true);
                           } catch (err) {
                             console.error('Failed to generate draft:', err);

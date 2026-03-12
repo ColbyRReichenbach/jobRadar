@@ -1,7 +1,11 @@
 name: Deploy
 
 on:
-  push:
+  workflow_run:
+    workflows:
+      - Test
+    types:
+      - completed
     branches:
       - main
   workflow_dispatch:
@@ -9,10 +13,12 @@ on:
 jobs:
   deploy-backend:
     runs-on: ubuntu-latest
-    if: ${{ secrets.RAILWAY_API_TOKEN != '' && secrets.RAILWAY_PROJECT_ID != '' && secrets.RAILWAY_ENVIRONMENT != '' && secrets.RAILWAY_SERVICE != '' }}
+    if: ${{ (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success') && secrets.RAILWAY_API_TOKEN != '' && secrets.RAILWAY_PROJECT_ID != '' && secrets.RAILWAY_ENVIRONMENT != '' && secrets.RAILWAY_SERVICE != '' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
       - name: Set up Node.js for Railway CLI
         uses: actions/setup-node@v4
@@ -32,13 +38,15 @@ jobs:
     defaults:
       run:
         working-directory: dashboardv2
-    if: ${{ secrets.VERCEL_TOKEN != '' && secrets.VERCEL_ORG_ID != '' && secrets.VERCEL_PROJECT_ID != '' }}
+    if: ${{ (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success') && secrets.VERCEL_TOKEN != '' && secrets.VERCEL_ORG_ID != '' && secrets.VERCEL_PROJECT_ID != '' }}
     env:
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4

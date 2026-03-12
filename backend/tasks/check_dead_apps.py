@@ -84,13 +84,18 @@ async def _check_url(url: str) -> dict:
 async def _run_check():
     """Check up to 50 active applications for dead listings."""
     from backend.database import async_session_factory
-    from backend.models import Alert, Application, User
+    from backend.models import Alert, Application, NotificationPreference, User
+    from backend.services.notification_preferences import is_alert_enabled
 
     async with async_session_factory() as db:
         enabled_users_result = await db.execute(
             select(User.id).where(User.notifications_started_at.isnot(None))
         )
         enabled_user_ids = {row[0] for row in enabled_users_result.all()}
+        pref_result = await db.execute(
+            select(NotificationPreference).where(NotificationPreference.user_id.in_(enabled_user_ids))
+        )
+        prefs_by_user = {pref.user_id: pref for pref in pref_result.scalars().all()}
 
         stmt = (
             select(Application)
@@ -113,7 +118,7 @@ async def _run_check():
             if not result["alive"]:
                 app.listing_alive = False
                 app.listing_died_at = datetime.now(timezone.utc)
-                if app.user_id and app.user_id in enabled_user_ids:
+                if app.user_id and app.user_id in enabled_user_ids and is_alert_enabled(prefs_by_user.get(app.user_id), "dead_listing"):
                     db.add(
                         Alert(
                             user_id=app.user_id,

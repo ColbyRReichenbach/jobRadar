@@ -1,4 +1,5 @@
-import { Component, ErrorInfo, ReactNode } from 'react';
+import * as React from 'react';
+import { type ErrorInfo, type ReactNode } from 'react';
 import { Logo } from './Logo';
 
 interface ErrorBoundaryProps {
@@ -10,7 +11,9 @@ interface ErrorBoundaryState {
   errorMessage: string | null;
 }
 
-export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  declare props: Readonly<ErrorBoundaryProps>;
+
   state: ErrorBoundaryState = {
     hasError: false,
     errorMessage: null,
@@ -31,7 +34,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     window.location.reload();
   };
 
-  render() {
+  render(): ReactNode {
     if (!this.state.hasError) {
       return this.props.children;
     }

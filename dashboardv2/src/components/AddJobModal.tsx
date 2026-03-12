@@ -1,6 +1,6 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { type FormEvent, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Contact, Job, JobStatus } from '../types';
-import { createJob, fetchNetworkContacts, linkContactToApplication } from '../lib/api';
+import { checkJobDuplicates, createJob, fetchNetworkContacts, linkContactToApplication } from '../lib/api';
 import { Link2, Search, X } from 'lucide-react';
 import { DialogShell } from './DialogShell';
 
@@ -26,6 +26,7 @@ export function AddJobModal({ isOpen, onClose, onJobAdded, initialValues }: AddJ
   const [selectedContactIds, setSelectedContactIds] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [duplicateWarning, setDuplicateWarning] = useState<{ type: 'soft' | 'hard'; message: string; matches: any[] } | null>(null);
 
   const resetForm = () => {
     setCompany(initialValues?.company || '');
@@ -38,6 +39,7 @@ export function AddJobModal({ isOpen, onClose, onJobAdded, initialValues }: AddJ
     setContactsQuery('');
     setSelectedContactIds([]);
     setError('');
+    setDuplicateWarning(null);
   };
 
   useEffect(() => {
@@ -64,6 +66,39 @@ export function AddJobModal({ isOpen, onClose, onJobAdded, initialValues }: AddJ
     resetForm();
   }, [initialValues, isOpen]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const hasEnoughData = Boolean(url.trim()) || Boolean(company.trim() && role.trim());
+    if (!hasEnoughData) {
+      setDuplicateWarning(null);
+      return;
+    }
+
+    const timeout = window.setTimeout(async () => {
+      try {
+        const result = await checkJobDuplicates({
+          company: company.trim(),
+          role_title: role.trim(),
+          job_url: url.trim() || undefined,
+          location: location.trim() || undefined,
+        });
+        if (result.duplicate_type === 'none') {
+          setDuplicateWarning(null);
+          return;
+        }
+        setDuplicateWarning({
+          type: result.duplicate_type,
+          message: result.message || 'Potential duplicate found.',
+          matches: result.matches || [],
+        });
+      } catch {
+        setDuplicateWarning(null);
+      }
+    }, 250);
+
+    return () => window.clearTimeout(timeout);
+  }, [company, role, url, location, isOpen]);
+
   const filteredContacts = useMemo(() => {
     const query = contactsQuery.trim().toLowerCase();
     if (!query) return contacts.slice(0, 8);
@@ -74,9 +109,13 @@ export function AddJobModal({ isOpen, onClose, onJobAdded, initialValues }: AddJ
 
   if (!isOpen) return null;
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!company.trim() || !role.trim()) return;
+    if (duplicateWarning?.type === 'hard') {
+      setError(duplicateWarning.message);
+      return;
+    }
 
     setIsSubmitting(true);
     setError('');
@@ -140,6 +179,26 @@ export function AddJobModal({ isOpen, onClose, onJobAdded, initialValues }: AddJ
           {error && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
               {error}
+            </div>
+          )}
+
+          {duplicateWarning && !error && (
+            <div className={`rounded-xl border px-3 py-3 text-sm ${
+              duplicateWarning.type === 'hard'
+                ? 'border-red-200 bg-red-50 text-red-700'
+                : 'border-amber-200 bg-amber-50 text-amber-800'
+            }`}>
+              <div className="font-medium">{duplicateWarning.message}</div>
+              {duplicateWarning.matches.length > 0 && (
+                <div className="mt-2 space-y-1 text-xs">
+                  {duplicateWarning.matches.slice(0, 2).map((match) => (
+                    <div key={match.id}>
+                      {match.company} · {match.role_title}
+                      {match.location ? ` · ${match.location}` : ''}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

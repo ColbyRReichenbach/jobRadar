@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
+  checkContactDuplicates,
   createContact,
   deleteContact,
   deleteNetworkContact,
@@ -135,6 +136,7 @@ export function NetworkPage({ onOpenEmail, onRefreshData, focusRequest }: Networ
   const [contactFormMode, setContactFormMode] = useState<'create' | 'edit'>('create');
   const [contactFormState, setContactFormState] = useState<ContactFormState>(EMPTY_CONTACT_FORM);
   const [savingContact, setSavingContact] = useState(false);
+  const [contactDuplicateWarning, setContactDuplicateWarning] = useState<{ type: 'soft' | 'hard'; message: string; matches: any[] } | null>(null);
   const [showAllEmails, setShowAllEmails] = useState(false);
 
   useEffect(() => {
@@ -246,10 +248,50 @@ export function NetworkPage({ onOpenEmail, onRefreshData, focusRequest }: Networ
       phone_number: contact?.phone_number || '',
       linkedin_url: contact?.linkedin_url || '',
     });
+    setContactDuplicateWarning(null);
     setShowContactForm(true);
   };
 
+  useEffect(() => {
+    if (!showContactForm) return;
+    const hasEnoughData = Boolean(contactFormState.email.trim()) || Boolean(contactFormState.name.trim());
+    if (!hasEnoughData) {
+      setContactDuplicateWarning(null);
+      return;
+    }
+
+    const timeout = window.setTimeout(async () => {
+      try {
+        const result = await checkContactDuplicates({
+          contact_id:
+            contactFormMode === 'edit' && selectedContact && !selectedContact.id.startsWith('email-')
+              ? selectedContact.id
+              : undefined,
+          name: contactFormState.name.trim() || undefined,
+          email: contactFormState.email.trim() || undefined,
+        });
+        if (result.duplicate_type === 'none') {
+          setContactDuplicateWarning(null);
+          return;
+        }
+        setContactDuplicateWarning({
+          type: result.duplicate_type,
+          message: result.message || 'Potential duplicate contact found.',
+          matches: result.matches || [],
+        });
+      } catch {
+        setContactDuplicateWarning(null);
+      }
+    }, 250);
+
+    return () => window.clearTimeout(timeout);
+  }, [showContactForm, contactFormMode, contactFormState.name, contactFormState.email, selectedContact]);
+
   const handleSaveContact = async () => {
+    if (contactDuplicateWarning?.type === 'hard' && contactFormMode === 'create') {
+      setErrorMessage(contactDuplicateWarning.message);
+      return;
+    }
     setSavingContact(true);
     setErrorMessage(null);
     try {
@@ -793,6 +835,25 @@ export function NetworkPage({ onOpenEmail, onRefreshData, focusRequest }: Networ
               </button>
             </div>
             <div className="p-4 md:p-6 grid gap-4 sm:grid-cols-2">
+              {contactDuplicateWarning && (
+                <div className={`sm:col-span-2 rounded-xl border px-3 py-3 text-sm ${
+                  contactDuplicateWarning.type === 'hard'
+                    ? 'border-red-200 bg-red-50 text-red-700'
+                    : 'border-amber-200 bg-amber-50 text-amber-800'
+                }`}>
+                  <div className="font-medium">{contactDuplicateWarning.message}</div>
+                  {contactDuplicateWarning.matches.length > 0 && (
+                    <div className="mt-2 space-y-1 text-xs">
+                      {contactDuplicateWarning.matches.slice(0, 2).map((match) => (
+                        <div key={match.id}>
+                          {match.name || match.email}
+                          {match.email ? ` · ${match.email}` : ''}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="sm:col-span-2">
                 <label className="block text-xs font-medium uppercase tracking-[0.18em] text-slate-400 mb-2">
                   Name

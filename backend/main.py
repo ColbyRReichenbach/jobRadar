@@ -36,6 +36,7 @@ from backend.metrics import (
 from backend.models import Application, Contact, EmailEvent, EmailFeedback, User, GmailToken, Company, RoleUmbrella, CompanyTechProfile, UserProfile, UserRoleInterest, AtsBehavior, WarmConnection, Alert, Interview, CompanyVisit, InterviewNote, NotificationPreference, ResumeDraft, IgnoredNetworkContact
 from backend.monitoring import configure_sentry
 from backend.services.hunter import find_contacts, generate_linkedin_search_url
+from backend.services.notification_preferences import is_alert_enabled, serialize_notification_preferences
 from backend.services.scraper import extract_job, validate_job_parse_url
 import structlog
 
@@ -339,6 +340,33 @@ class EmailUpdate(BaseModel):
     hidden: Optional[bool] = None
 
 
+class SearchMatchPreviewJob(BaseModel):
+    id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
+    title: Optional[str] = Field(None, max_length=MAX_NAME_LEN)
+    company: Optional[str] = Field(None, max_length=MAX_NAME_LEN)
+    location: Optional[str] = Field(None, max_length=MAX_NAME_LEN)
+    salary: Optional[str] = Field(None, max_length=MAX_SHORT_TEXT_LEN)
+    description: Optional[str] = Field(None, max_length=MAX_LONG_TEXT_LEN)
+    url: Optional[str] = Field(None, max_length=MAX_URL_LEN)
+
+
+class SearchMatchPreviewPayload(BaseModel):
+    jobs: list[SearchMatchPreviewJob]
+
+
+class JobDuplicateCheckPayload(BaseModel):
+    company: str = Field(..., max_length=MAX_NAME_LEN)
+    role_title: str = Field(..., max_length=MAX_NAME_LEN)
+    job_url: Optional[str] = Field(None, max_length=MAX_URL_LEN)
+    location: Optional[str] = Field(None, max_length=MAX_NAME_LEN)
+
+
+class ContactDuplicateCheckPayload(BaseModel):
+    contact_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
+    name: Optional[str] = Field(None, max_length=MAX_NAME_LEN)
+    email: Optional[EmailStr] = None
+
+
 # --- Helpers ---
 
 import uuid as _uuid
@@ -358,6 +386,77 @@ def _require_user_id(auth: dict) -> _uuid.UUID:
     if not user_id:
         raise HTTPException(status_code=401, detail="JWT authentication required")
     return user_id
+
+
+def _normalize_match_text(value: str | None) -> str:
+    return re.sub(r"\s+", " ", (value or "").strip().lower())
+
+
+def _parse_salary_numbers(value: str | None) -> tuple[int | None, int | None]:
+    if not value:
+        return (None, None)
+    numbers = [int(part.replace(",", "")) for part in re.findall(r"[\d,]+", value)]
+    if not numbers:
+        return (None, None)
+    if len(numbers) == 1:
+        return (numbers[0], numbers[0])
+    return (numbers[0], numbers[1])
+
+
+def _fit_label(score: int) -> str:
+    if score >= 75:
+        return "best_fit"
+    if score >= 45:
+        return "good_fit"
+    return "stretch"
+
+
+def _score_search_preview(profile: UserProfile, user: User, preview: SearchMatchPreviewJob) -> dict:
+    from backend.services.match_scorer import score_match
+
+    profile_dict = {
+        "skills": profile.skills or [],
+        "tools": profile.tools or [],
+        "experience_years": profile.experience_years,
+    }
+    description = preview.description or ""
+    base_match = score_match(profile_dict, [], description)
+    score = base_match["score"]
+    preference_signals: list[str] = []
+
+    normalized_location = _normalize_match_text(preview.location)
+    preferred_locations = [_normalize_match_text(item) for item in (user.preferred_locations or []) if isinstance(item, str)]
+    if normalized_location and preferred_locations and any(pref in normalized_location for pref in preferred_locations):
+        score = min(100, score + 10)
+        preference_signals.append("preferred_location")
+
+    remote_pref = _normalize_match_text(user.preferred_remote_type)
+    combined_text = _normalize_match_text(f"{preview.location or ''} {preview.description or ''}")
+    if remote_pref and remote_pref != "onsite":
+        if remote_pref == "remote" and "remote" in combined_text:
+            score = min(100, score + 5)
+            preference_signals.append("remote_match")
+        elif remote_pref == "hybrid" and "hybrid" in combined_text:
+            score = min(100, score + 5)
+            preference_signals.append("hybrid_match")
+
+    salary_min, salary_max = _parse_salary_numbers(preview.salary)
+    if salary_min is not None and salary_max is not None:
+        target_min = user.target_salary_min
+        target_max = user.target_salary_max
+        if target_min is not None and salary_max >= target_min:
+            score = min(100, score + 5)
+            preference_signals.append("salary_match")
+        elif target_max is not None and salary_min <= target_max:
+            score = min(100, score + 5)
+            preference_signals.append("salary_match")
+
+    return {
+        **base_match,
+        "score": score,
+        "fit_label": _fit_label(score),
+        "preference_signals": preference_signals,
+    }
 
 
 def _escape_like(value: str) -> str:
@@ -752,6 +851,58 @@ async def create_application(payload: ApplicationCreate, auth: dict = Depends(ve
     return _serialize_app(new_app)
 
 
+@app.post("/api/jobs/duplicates/check")
+async def check_job_duplicates(
+    payload: JobDuplicateCheckPayload,
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    user_id = _require_user_id(auth)
+
+    if payload.job_url:
+        stmt = select(Application).where(
+            Application.user_id == user_id,
+            Application.job_url == payload.job_url,
+        )
+        result = await db.execute(stmt)
+        exact = result.scalar_one_or_none()
+        if exact:
+            return {
+                "duplicate_type": "hard",
+                "message": "This job URL is already in your pipeline.",
+                "matches": [_serialize_app(exact)],
+            }
+
+    company_key = _normalize_match_text(payload.company)
+    role_key = _normalize_match_text(payload.role_title)
+    location_key = _normalize_match_text(payload.location)
+
+    stmt = select(Application).where(Application.user_id == user_id)
+    result = await db.execute(stmt)
+    matches = []
+    for app_row in result.scalars().all():
+        if _normalize_match_text(app_row.company) != company_key:
+            continue
+        if _normalize_match_text(app_row.role_title) != role_key:
+            continue
+        if location_key and _normalize_match_text(app_row.location) not in {"", location_key}:
+            continue
+        matches.append(_serialize_app(app_row))
+
+    if matches:
+        return {
+            "duplicate_type": "soft",
+            "message": "We found a similar role already in your pipeline. Review before saving a duplicate.",
+            "matches": matches[:5],
+        }
+
+    return {
+        "duplicate_type": "none",
+        "message": None,
+        "matches": [],
+    }
+
+
 @app.get("/api/jobs")
 async def list_applications(
     status: Optional[str] = Query(None),
@@ -1025,6 +1176,53 @@ async def create_contact(
     )
     contact_result = await db.execute(contact_stmt)
     return _serialize_contact(contact_result.scalar_one())
+
+
+@app.post("/api/contacts/duplicates/check")
+async def check_contact_duplicates(
+    payload: ContactDuplicateCheckPayload,
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    user_id = _require_user_id(auth)
+    exclude_contact_id = _uuid.UUID(payload.contact_id) if payload.contact_id else None
+    email_value = str(payload.email).lower() if payload.email else None
+    normalized_name = _normalize_match_text(payload.name)
+
+    stmt = select(Contact).where(Contact.user_id == user_id)
+    result = await db.execute(stmt)
+
+    hard_matches = []
+    soft_matches = []
+    for contact in result.scalars().all():
+        if exclude_contact_id and contact.id == exclude_contact_id:
+            continue
+        serialized = _serialize_contact(contact)
+        if email_value and (contact.email or "").lower() == email_value:
+            hard_matches.append(serialized)
+            continue
+        if normalized_name and _normalize_match_text(contact.name) == normalized_name:
+            soft_matches.append(serialized)
+
+    if hard_matches:
+        return {
+            "duplicate_type": "hard",
+            "message": "A contact with this email already exists.",
+            "matches": hard_matches[:5],
+        }
+
+    if soft_matches:
+        return {
+            "duplicate_type": "soft",
+            "message": "We found another contact with this name. Review before saving.",
+            "matches": soft_matches[:5],
+        }
+
+    return {
+        "duplicate_type": "none",
+        "message": None,
+        "matches": [],
+    }
 
 
 @app.delete("/api/contacts/{contact_id}")
@@ -1687,6 +1885,11 @@ async def sync_gmail(
 
     service = build("gmail", "v1", credentials=creds)
     notifications_enabled = current_user.notifications_started_at is not None
+    notification_pref = None
+    if notifications_enabled:
+        pref_stmt = select(NotificationPreference).where(NotificationPreference.user_id == user_id)
+        pref_result = await db.execute(pref_stmt)
+        notification_pref = pref_result.scalar_one_or_none()
 
     # Get feedback blocklist
     feedback_stmt = (
@@ -1844,7 +2047,7 @@ async def sync_gmail(
 
         action_path = "/conversations" if email_event.email_type == "conversation" else "/emails"
         action_tab = "conversations" if email_event.email_type == "conversation" else "emails"
-        if notifications_enabled:
+        if notifications_enabled and is_alert_enabled(notification_pref, _email_alert_type(email_event.email_type, cls)):
             email_alert = Alert(
                 user_id=user_id,
                 alert_type=_email_alert_type(email_event.email_type, cls),
@@ -1859,7 +2062,7 @@ async def sync_gmail(
             )
             db.add(email_alert)
 
-            if should_alert_network_contact:
+            if should_alert_network_contact and is_alert_enabled(notification_pref, "network_contact"):
                 db.add(
                     Alert(
                         user_id=user_id,
@@ -1922,8 +2125,13 @@ async def sync_calendar(
             user_email=current_user.email,
         )
         if current_user.notifications_started_at is not None:
+            pref_stmt = select(NotificationPreference).where(NotificationPreference.user_id == current_user.id)
+            pref_result = await db.execute(pref_stmt)
+            notification_pref = pref_result.scalar_one_or_none()
             for item in result.get("synced", []):
                 if item.get("status") not in {"created", "updated"}:
+                    continue
+                if not is_alert_enabled(notification_pref, "interview_request"):
                     continue
                 status_label = "added to your calendar" if item.get("status") == "created" else "updated on your calendar"
                 db.add(
@@ -2425,6 +2633,54 @@ async def get_job_match(job_id: str, db: AsyncSession = Depends(get_db), auth: d
     return match
 
 
+@app.post("/api/search/match-preview")
+async def get_search_match_preview(
+    payload: SearchMatchPreviewPayload,
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    user_id = _require_user_id(auth)
+    profile_stmt = select(UserProfile).where(UserProfile.user_id == user_id).limit(1)
+    profile_result = await db.execute(profile_stmt)
+    profile = profile_result.scalar_one_or_none()
+
+    user_stmt = select(User).where(User.id == user_id).limit(1)
+    user_result = await db.execute(user_stmt)
+    user = user_result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    if not profile:
+        return {
+            "profile_available": False,
+            "jobs": [
+                {
+                    "id": job.id,
+                    "url": job.url,
+                    "score": None,
+                    "fit_label": None,
+                    "matched_skills": [],
+                    "missing_skills": [],
+                    "transferable_skills": [],
+                    "preference_signals": [],
+                }
+                for job in payload.jobs
+            ],
+        }
+
+    return {
+        "profile_available": True,
+        "jobs": [
+            {
+                "id": job.id,
+                "url": job.url,
+                **_score_search_preview(profile, user, job),
+            }
+            for job in payload.jobs
+        ],
+    }
+
+
 # --- Sprint 6: Onboarding / Preferences ---
 
 class PreferencesPayload(BaseModel):
@@ -2446,25 +2702,26 @@ async def save_preferences(
     import uuid as _uuid
 
     user = current_user
+    fields = payload.model_fields_set
 
-    if payload.preferred_locations is not None:
+    if "preferred_locations" in fields:
         user.preferred_locations = payload.preferred_locations
-    if payload.preferred_remote_type is not None:
+    if "preferred_remote_type" in fields:
         user.preferred_remote_type = payload.preferred_remote_type
-    if payload.target_salary_min is not None:
+    if "target_salary_min" in fields:
         user.target_salary_min = payload.target_salary_min
-    if payload.target_salary_max is not None:
+    if "target_salary_max" in fields:
         user.target_salary_max = payload.target_salary_max
-    if payload.onboarding_complete is not None:
+    if "onboarding_complete" in fields:
         user.onboarding_complete = payload.onboarding_complete
 
     # Handle role interests
-    if payload.role_interest_ids is not None:
+    if "role_interest_ids" in fields:
         # Clear existing
         from sqlalchemy import delete
         await db.execute(delete(UserRoleInterest).where(UserRoleInterest.user_id == user.id))
         # Add new
-        for uid in payload.role_interest_ids:
+        for uid in payload.role_interest_ids or []:
             db.add(UserRoleInterest(user_id=user.id, umbrella_id=_uuid.UUID(uid)))
 
     await db.commit()
@@ -3941,6 +4198,16 @@ class NotificationPrefPayload(BaseModel):
     sms_enabled: bool | None = None
     sms_phone: str | None = Field(None, max_length=MAX_PHONE_LEN)
     weekly_digest_enabled: bool | None = None
+    browser_notifications_enabled: bool | None = None
+    inbox_updates_enabled: bool | None = None
+    conversations_enabled: bool | None = None
+    network_enabled: bool | None = None
+    interviews_enabled: bool | None = None
+    followups_enabled: bool | None = None
+    listings_enabled: bool | None = None
+    quiet_hours_enabled: bool | None = None
+    quiet_hours_start: int | None = Field(None, ge=0, le=23)
+    quiet_hours_end: int | None = Field(None, ge=0, le=23)
 
 
 @app.get("/api/notifications/preferences")
@@ -3954,21 +4221,7 @@ async def get_notification_preferences(
     result = await db.execute(stmt)
     pref = result.scalars().first()
 
-    if not pref:
-        return {
-            "sms_enabled": False,
-            "sms_phone": None,
-            "weekly_digest_enabled": False,
-        }
-
-    return {
-        "id": str(pref.id),
-        "sms_enabled": pref.sms_enabled,
-        "sms_phone": pref.sms_phone,
-        "weekly_digest_enabled": pref.weekly_digest_enabled,
-        "created_at": pref.created_at.isoformat() if pref.created_at else None,
-        "updated_at": pref.updated_at.isoformat() if pref.updated_at else None,
-    }
+    return serialize_notification_preferences(pref)
 
 
 @app.put("/api/notifications/preferences")
@@ -3979,6 +4232,7 @@ async def update_notification_preferences(
 ):
     """Create or update notification preferences."""
     user_id = _require_user_id(auth)
+    fields = payload.model_fields_set
     stmt = select(NotificationPreference).where(NotificationPreference.user_id == user_id)
     result = await db.execute(stmt)
     pref = result.scalars().first()
@@ -3987,26 +4241,39 @@ async def update_notification_preferences(
         pref = NotificationPreference(user_id=user_id)
         db.add(pref)
 
-    if payload.sms_enabled is not None:
+    if "sms_enabled" in fields:
         pref.sms_enabled = payload.sms_enabled
-    if payload.sms_phone is not None:
+    if "sms_phone" in fields:
         pref.sms_phone = payload.sms_phone
-    if payload.weekly_digest_enabled is not None:
+    if "weekly_digest_enabled" in fields:
         pref.weekly_digest_enabled = payload.weekly_digest_enabled
+    if "browser_notifications_enabled" in fields:
+        pref.browser_notifications_enabled = payload.browser_notifications_enabled
+    if "inbox_updates_enabled" in fields:
+        pref.inbox_updates_enabled = payload.inbox_updates_enabled
+    if "conversations_enabled" in fields:
+        pref.conversations_enabled = payload.conversations_enabled
+    if "network_enabled" in fields:
+        pref.network_enabled = payload.network_enabled
+    if "interviews_enabled" in fields:
+        pref.interviews_enabled = payload.interviews_enabled
+    if "followups_enabled" in fields:
+        pref.followups_enabled = payload.followups_enabled
+    if "listings_enabled" in fields:
+        pref.listings_enabled = payload.listings_enabled
+    if "quiet_hours_enabled" in fields:
+        pref.quiet_hours_enabled = payload.quiet_hours_enabled
+    if "quiet_hours_start" in fields:
+        pref.quiet_hours_start = payload.quiet_hours_start
+    if "quiet_hours_end" in fields:
+        pref.quiet_hours_end = payload.quiet_hours_end
 
     from datetime import datetime, timezone
     pref.updated_at = datetime.now(timezone.utc)
 
     await db.commit()
     await db.refresh(pref)
-
-    return {
-        "id": str(pref.id),
-        "sms_enabled": pref.sms_enabled,
-        "sms_phone": pref.sms_phone,
-        "weekly_digest_enabled": pref.weekly_digest_enabled,
-        "updated_at": pref.updated_at.isoformat() if pref.updated_at else None,
-    }
+    return serialize_notification_preferences(pref)
 
 
 class AlertCreatePayload(BaseModel):

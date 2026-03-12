@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Bell, Briefcase, Mail, MessageSquare, UserPlus, X } from 'lucide-react';
+import { Bell, Briefcase, Filter, Mail, MessageSquare, UserPlus, X } from 'lucide-react';
 import { formatDistanceToNow, isToday, isYesterday } from 'date-fns';
 import { cn } from '../lib/utils';
-import { AlertItem, fetchAlerts, getUnreadAlertCount, markAlertRead, markAllAlertsRead } from '../lib/api';
+import { AlertItem, NotificationPrefs, fetchAlerts, fetchNotificationPreferences, getUnreadAlertCount, markAlertRead, markAllAlertsRead } from '../lib/api';
 
 interface NotificationCenterProps {
   onNavigate: (actionUrl: string | null) => void;
@@ -79,6 +79,8 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [prefs, setPrefs] = useState<NotificationPrefs | null>(null);
+  const [unreadOnly, setUnreadOnly] = useState(false);
   const [toasts, setToasts] = useState<ToastAlert[]>([]);
   const [browserPermission, setBrowserPermission] = useState<string | null>(
     typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : null
@@ -88,16 +90,29 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
 
   const loadAlerts = async () => {
     try {
-      const [items, unread] = await Promise.all([
+      const [items, unread, prefData] = await Promise.all([
         fetchAlerts(),
         getUnreadAlertCount(),
+        fetchNotificationPreferences(),
       ]);
       setAlerts(items);
       setUnreadCount(unread);
+      setPrefs(prefData);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load notifications.');
     }
+  };
+
+  const isWithinQuietHours = (preferences: NotificationPrefs | null) => {
+    if (!preferences?.quiet_hours_enabled) return false;
+    if (preferences.quiet_hours_start == null || preferences.quiet_hours_end == null) return false;
+    const hour = new Date().getHours();
+    if (preferences.quiet_hours_start === preferences.quiet_hours_end) return true;
+    if (preferences.quiet_hours_start < preferences.quiet_hours_end) {
+      return hour >= preferences.quiet_hours_start && hour < preferences.quiet_hours_end;
+    }
+    return hour >= preferences.quiet_hours_start || hour < preferences.quiet_hours_end;
   };
 
   useEffect(() => {
@@ -132,6 +147,10 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
       alertType: alert.alert_type,
     }));
 
+    if (!prefs?.browser_notifications_enabled || isWithinQuietHours(prefs)) {
+      return;
+    }
+
     if (document.visibilityState === 'visible') {
       setToasts((prev) => [...nextToasts, ...prev].slice(0, 4));
       return;
@@ -150,7 +169,7 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
         };
       });
     }
-  }, [alerts, onNavigate]);
+  }, [alerts, onNavigate, prefs]);
 
   useEffect(() => {
     if (toasts.length === 0) return;
@@ -174,7 +193,7 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
     };
 
     const groupsByKey = new Map<string, AlertGroup>();
-    for (const alert of alerts) {
+    for (const alert of alerts.filter((item) => !unreadOnly || !item.read)) {
       const section = getSection(alert.created_at);
       const key = [
         section,
@@ -206,7 +225,8 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
     return ['Today', 'Yesterday', 'Earlier']
       .map((section) => ({ section, groups: buckets.get(section) || [] }))
       .filter((entry) => entry.groups.length > 0);
-  }, [alerts]);
+  }, [alerts, unreadOnly]);
+  const hasVisibleAlerts = groupedAlerts.length > 0;
 
   const handleOpen = async () => {
     setIsOpen((prev) => !prev);
@@ -307,6 +327,17 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
               <p className="text-xs text-slate-500">{unreadAlerts} unread</p>
             </div>
             <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setUnreadOnly((current) => !current)}
+                className={cn(
+                  'inline-flex h-8 items-center justify-center gap-1 rounded-lg px-2 text-[11px] font-semibold',
+                  unreadOnly ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-200'
+                )}
+              >
+                <Filter className="w-3.5 h-3.5" />
+                {unreadOnly ? 'Unread' : 'All'}
+              </button>
               {browserPermission && browserPermission !== 'granted' && (
                 <button
                   type="button"
@@ -341,13 +372,17 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
               <div className="px-5 py-4 text-sm text-red-700 bg-red-50 border-b border-red-100">{error}</div>
             )}
 
-            {!alerts.length ? (
+            {!hasVisibleAlerts ? (
               <div className="px-6 py-12 text-center">
                 <div className="mx-auto mb-3 h-12 w-12 rounded-2xl bg-slate-100 flex items-center justify-center">
                   <Bell className="w-6 h-6 text-slate-300" />
                 </div>
-                <p className="text-sm font-medium text-slate-700">No notifications yet</p>
-                <p className="text-xs text-slate-500 mt-1">New alerts will show up here across the app.</p>
+                <p className="text-sm font-medium text-slate-700">
+                  {alerts.length === 0 ? 'No notifications yet' : 'No unread notifications'}
+                </p>
+                <p className="text-xs text-slate-500 mt-1">
+                  {alerts.length === 0 ? 'New alerts will show up here across the app.' : 'Switch back to all alerts to review older updates.'}
+                </p>
               </div>
             ) : (
               <div className="p-3 space-y-4">

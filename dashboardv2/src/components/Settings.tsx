@@ -15,6 +15,16 @@ export function Settings() {
     sms_enabled: false,
     sms_phone: null,
     weekly_digest_enabled: false,
+    browser_notifications_enabled: false,
+    inbox_updates_enabled: true,
+    conversations_enabled: true,
+    network_enabled: true,
+    interviews_enabled: true,
+    followups_enabled: true,
+    listings_enabled: true,
+    quiet_hours_enabled: false,
+    quiet_hours_start: null,
+    quiet_hours_end: null,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -54,20 +64,57 @@ export function Settings() {
     setErrorMessage(null);
     setStatusMessage(null);
     try {
+      let browserNotificationsEnabled = prefs.browser_notifications_enabled;
+      if (
+        prefs.browser_notifications_enabled &&
+        typeof window !== 'undefined' &&
+        'Notification' in window &&
+        Notification.permission !== 'granted'
+      ) {
+        const permission = await Notification.requestPermission();
+        browserNotificationsEnabled = permission === 'granted';
+        if (permission !== 'granted') {
+          setStatusMessage('Browser notifications were not granted. In-app notifications will still work.');
+        }
+      }
       const data = await updateNotificationPreferences({
         sms_enabled: prefs.sms_enabled,
         sms_phone: phone || null,
         weekly_digest_enabled: prefs.weekly_digest_enabled,
+        browser_notifications_enabled: browserNotificationsEnabled,
+        inbox_updates_enabled: prefs.inbox_updates_enabled,
+        conversations_enabled: prefs.conversations_enabled,
+        network_enabled: prefs.network_enabled,
+        interviews_enabled: prefs.interviews_enabled,
+        followups_enabled: prefs.followups_enabled,
+        listings_enabled: prefs.listings_enabled,
+        quiet_hours_enabled: prefs.quiet_hours_enabled,
+        quiet_hours_start: prefs.quiet_hours_enabled ? prefs.quiet_hours_start : null,
+        quiet_hours_end: prefs.quiet_hours_enabled ? prefs.quiet_hours_end : null,
       });
       setPrefs(data);
       setSaved(true);
-      setStatusMessage('Preferences saved.');
+      setStatusMessage((current) => current || 'Preferences saved.');
       setTimeout(() => setSaved(false), 3000);
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'Failed to save preferences.');
     } finally {
       setSaving(false);
     }
+  };
+
+  const togglePref = (
+    key:
+      | 'browser_notifications_enabled'
+      | 'inbox_updates_enabled'
+      | 'conversations_enabled'
+      | 'network_enabled'
+      | 'interviews_enabled'
+      | 'followups_enabled'
+      | 'listings_enabled'
+      | 'quiet_hours_enabled'
+  ) => {
+    setPrefs((current) => ({ ...current, [key]: !current[key] }));
   };
 
   const createNewApiKey = async () => {
@@ -116,7 +163,7 @@ export function Settings() {
     <div className="flex-1 overflow-auto p-8">
       <div className="max-w-2xl mx-auto">
         <h1 className="text-2xl font-serif font-bold text-slate-900 mb-1">Settings</h1>
-        <p className="text-sm text-slate-500 mb-8">Manage your notification preferences</p>
+        <p className="text-sm text-slate-500 mb-8">Manage notifications, browser alerts, and account tools.</p>
 
         {(errorMessage || statusMessage) && (
           <div className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${
@@ -127,6 +174,105 @@ export function Settings() {
         )}
 
         <div className="space-y-6">
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.025 }}
+            className="bg-white rounded-2xl border border-slate-200/60 p-6 shadow-sm"
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center">
+                <Bell className="w-5 h-5 text-amber-600" />
+              </div>
+              <div>
+                <h2 className="text-base font-semibold text-slate-900">Notification Center</h2>
+                <p className="text-xs text-slate-500">Choose which events create persistent alerts</p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={prefs.browser_notifications_enabled}
+                  onChange={() => togglePref('browser_notifications_enabled')}
+                  className="mt-0.5 w-4 h-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                />
+                <span className="text-sm text-slate-700">
+                  <span className="block font-medium text-slate-900">Browser banner notifications</span>
+                  Show system-style notifications when AppTrail is open in a background tab or installed web app.
+                </span>
+              </label>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                {[
+                  ['inbox_updates_enabled', 'Inbox updates', 'Interview, offer, rejection, and status updates'],
+                  ['conversations_enabled', 'Conversations', 'New recruiter or hiring-team threads that need attention'],
+                  ['network_enabled', 'Network', 'New real-person contacts added from conversations'],
+                  ['interviews_enabled', 'Interviews', 'Calendar interview sync events and changes'],
+                  ['followups_enabled', 'Follow-ups', 'Applications that have gone quiet and need action'],
+                  ['listings_enabled', 'Dead listings', 'Jobs that appear to have closed or expired'],
+                ].map(([key, label, description]) => (
+                  <label key={key} className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={prefs[key as keyof NotificationPrefs] as boolean}
+                      onChange={() => togglePref(key as Parameters<typeof togglePref>[0])}
+                      className="mt-0.5 w-4 h-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                    />
+                    <span className="text-sm text-slate-700">
+                      <span className="block font-medium text-slate-900">{label}</span>
+                      {description}
+                    </span>
+                  </label>
+                ))}
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={prefs.quiet_hours_enabled}
+                    onChange={() => togglePref('quiet_hours_enabled')}
+                    className="mt-0.5 w-4 h-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                  />
+                  <span className="text-sm text-slate-700">
+                    <span className="block font-medium text-slate-900">Quiet hours</span>
+                    Suppress toast/browser banners during the hours below while still storing alerts in AppTrail.
+                  </span>
+                </label>
+                {prefs.quiet_hours_enabled && (
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    <label className="space-y-1">
+                      <span className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">Start</span>
+                      <select
+                        value={prefs.quiet_hours_start ?? 22}
+                        onChange={(event) => setPrefs((current) => ({ ...current, quiet_hours_start: Number(event.target.value) }))}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                      >
+                        {Array.from({ length: 24 }, (_, hour) => (
+                          <option key={hour} value={hour}>{hour.toString().padStart(2, '0')}:00</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="space-y-1">
+                      <span className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">End</span>
+                      <select
+                        value={prefs.quiet_hours_end ?? 7}
+                        onChange={(event) => setPrefs((current) => ({ ...current, quiet_hours_end: Number(event.target.value) }))}
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                      >
+                        {Array.from({ length: 24 }, (_, hour) => (
+                          <option key={hour} value={hour}>{hour.toString().padStart(2, '0')}:00</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                )}
+              </div>
+            </div>
+          </motion.div>
+
           {/* Weekly Digest */}
           <motion.div
             initial={{ opacity: 0, y: 10 }}
@@ -226,30 +372,6 @@ export function Settings() {
                 {generatingKey ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
                 {apiKeyStatus?.has_api_key ? 'Rotate API Key' : 'Generate API Key'}
               </button>
-            </div>
-          </motion.div>
-
-          {/* In-App Notifications Info */}
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.15 }}
-            className="bg-white rounded-2xl border border-slate-200/60 p-6 shadow-sm"
-          >
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center">
-                <Bell className="w-5 h-5 text-amber-600" />
-              </div>
-              <div>
-                <h2 className="text-base font-semibold text-slate-900">In-App Notifications</h2>
-                <p className="text-xs text-slate-500">Always enabled</p>
-              </div>
-            </div>
-            <div className="flex gap-3">
-              <div className="w-10 shrink-0" />
-              <p className="text-sm text-slate-500">
-                You'll always receive in-app alerts for dead listings, follow-up reminders, and status changes.
-              </p>
             </div>
           </motion.div>
 

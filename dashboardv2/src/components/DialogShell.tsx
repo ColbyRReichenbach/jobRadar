@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useRef } from 'react';
+import { type ReactNode, type RefObject, useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
 
 const FOCUSABLE_SELECTOR = [
@@ -17,9 +17,13 @@ interface DialogShellProps {
   panelClassName: string;
   wrapperClassName?: string;
   overlayClassName?: string;
-  initialFocusRef?: React.RefObject<HTMLElement | null>;
+  initialFocusRef?: RefObject<HTMLElement | null>;
   describedById?: string;
   layoutId?: string;
+}
+
+function isFocusableElement(element: Element): element is HTMLElement {
+  return element instanceof HTMLElement;
 }
 
 export function DialogShell({
@@ -65,9 +69,9 @@ export function DialogShell({
 
       if (event.key !== 'Tab' || !panelRef.current) return;
 
-      const focusable = Array.from(
-        panelRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
-      ).filter((element) => !element.hasAttribute('disabled') && element.tabIndex !== -1);
+      const focusable = Array.from(panelRef.current.querySelectorAll(FOCUSABLE_SELECTOR))
+        .filter(isFocusableElement)
+        .filter((element) => !element.hasAttribute('disabled') && element.tabIndex !== -1);
 
       if (focusable.length === 0) {
         event.preventDefault();

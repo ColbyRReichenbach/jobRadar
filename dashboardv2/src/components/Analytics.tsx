@@ -65,7 +65,7 @@ export function Analytics({ jobs }: AnalyticsProps) {
 
   const topCompaniesData = Object.entries(companyCounts)
     .map(([name, count]) => ({ name, count }))
-    .sort((a, b) => b.count - a.count)
+    .sort((a, b) => Number(b.count) - Number(a.count))
     .slice(0, 5); // Top 5 companies
 
   // Calculate conversion rates

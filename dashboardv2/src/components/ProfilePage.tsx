@@ -1,7 +1,7 @@
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
-import { Briefcase, FileText, Link as LinkIcon, Loader2, Pencil, Save, Sparkles, Trash2, UserRound } from 'lucide-react';
-import { clearProfile, getProfile, parseResume, StructuredProfile, updateProfile } from '../lib/api';
+import { Briefcase, FileText, Link as LinkIcon, Loader2, MapPin, Pencil, Save, Sparkles, Trash2, UserRound } from 'lucide-react';
+import { clearProfile, getProfile, getProfilePreferences, parseResume, ProfilePreferences, StructuredProfile, updateProfile, updateProfilePreferences } from '../lib/api';
 import { useAuth } from '../lib/AuthContext';
 
 interface ProfilePageProps {
@@ -26,6 +26,13 @@ const EMPTY_FORM: ProfileFormState = {
   certifications_text: '',
   education_text: '',
   resume_text: '',
+};
+
+const EMPTY_PREFERENCES: ProfilePreferences = {
+  preferred_locations: [],
+  preferred_remote_type: null,
+  target_salary_min: null,
+  target_salary_max: null,
 };
 
 function formatEducationItem(item: string | Record<string, unknown>) {
@@ -69,6 +76,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 export function ProfilePage({ onProfileUpdated }: ProfilePageProps) {
   const { user, refreshUser } = useAuth();
   const [profile, setProfile] = useState<StructuredProfile | null>(null);
+  const [preferences, setPreferences] = useState<ProfilePreferences>(EMPTY_PREFERENCES);
   const [form, setForm] = useState<ProfileFormState>(EMPTY_FORM);
   const [editing, setEditing] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -81,9 +89,18 @@ export function ProfilePage({ onProfileUpdated }: ProfilePageProps) {
     setLoading(true);
     setErrorMessage(null);
     try {
-      const data = await getProfile();
+      const [data, preferenceData] = await Promise.all([
+        getProfile(),
+        getProfilePreferences(),
+      ]);
       setProfile(data);
       setForm(mapProfileToForm(data));
+      setPreferences({
+        preferred_locations: preferenceData.preferred_locations || [],
+        preferred_remote_type: preferenceData.preferred_remote_type || null,
+        target_salary_min: preferenceData.target_salary_min,
+        target_salary_max: preferenceData.target_salary_max,
+      });
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'Failed to load profile.');
     } finally {
@@ -121,8 +138,20 @@ export function ProfilePage({ onProfileUpdated }: ProfilePageProps) {
         education: splitList(form.education_text),
         resume_text: form.resume_text || null,
       });
+      const savedPreferences = await updateProfilePreferences({
+        preferred_locations: preferences.preferred_locations?.filter(Boolean) || [],
+        preferred_remote_type: preferences.preferred_remote_type || null,
+        target_salary_min: preferences.target_salary_min ?? null,
+        target_salary_max: preferences.target_salary_max ?? null,
+      });
       setProfile(data);
       setForm(mapProfileToForm(data));
+      setPreferences({
+        preferred_locations: savedPreferences.preferred_locations || [],
+        preferred_remote_type: savedPreferences.preferred_remote_type || null,
+        target_salary_min: savedPreferences.target_salary_min,
+        target_salary_max: savedPreferences.target_salary_max,
+      });
       setEditing(false);
       setStatusMessage('Profile saved.');
       await Promise.all([refreshUser(), Promise.resolve(onProfileUpdated?.())]);
@@ -141,9 +170,18 @@ export function ProfilePage({ onProfileUpdated }: ProfilePageProps) {
     setErrorMessage(null);
     setStatusMessage(null);
     try {
-      await clearProfile();
+      await Promise.all([
+        clearProfile(),
+        updateProfilePreferences({
+          preferred_locations: [],
+          preferred_remote_type: null,
+          target_salary_min: null,
+          target_salary_max: null,
+        }),
+      ]);
       setProfile(null);
       setForm(EMPTY_FORM);
+      setPreferences(EMPTY_PREFERENCES);
       setEditing(false);
       setStatusMessage('Profile cleared.');
     } catch (err) {
@@ -186,6 +224,7 @@ export function ProfilePage({ onProfileUpdated }: ProfilePageProps) {
   const skillItems = splitList(activeProfile.skills_text);
   const toolItems = splitList(activeProfile.tools_text);
   const certificationItems = splitList(activeProfile.certifications_text);
+  const preferredLocations = preferences.preferred_locations || [];
 
   return (
     <div className="flex-1 overflow-auto p-8">
@@ -295,6 +334,102 @@ export function ProfilePage({ onProfileUpdated }: ProfilePageProps) {
             </div>
           )}
         </Section>
+
+        {(editing || preferredLocations.length > 0 || preferences.preferred_remote_type || preferences.target_salary_min || preferences.target_salary_max) && (
+          <Section title="Search Preferences">
+            {editing ? (
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="space-y-2 md:col-span-2">
+                  <span className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">Preferred Locations</span>
+                  <textarea
+                    value={preferredLocations.join('\n')}
+                    onChange={(event) => setPreferences((current) => ({
+                      ...current,
+                      preferred_locations: splitList(event.target.value),
+                    }))}
+                    className="min-h-[120px] w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-slate-300 focus:ring-2 focus:ring-slate-200"
+                    placeholder="Remote&#10;New York, NY&#10;San Francisco, CA"
+                  />
+                </label>
+                <label className="space-y-2">
+                  <span className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">Remote Preference</span>
+                  <select
+                    value={preferences.preferred_remote_type || ''}
+                    onChange={(event) => setPreferences((current) => ({
+                      ...current,
+                      preferred_remote_type: event.target.value || null,
+                    }))}
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-slate-300 focus:ring-2 focus:ring-slate-200"
+                  >
+                    <option value="">No preference</option>
+                    <option value="remote">Remote</option>
+                    <option value="hybrid">Hybrid</option>
+                    <option value="onsite">On-site</option>
+                  </select>
+                </label>
+                <label className="space-y-2">
+                  <span className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">Target Salary Range</span>
+                  <div className="grid grid-cols-2 gap-3">
+                    <input
+                      type="number"
+                      min="0"
+                      value={preferences.target_salary_min ?? ''}
+                      onChange={(event) => setPreferences((current) => ({
+                        ...current,
+                        target_salary_min: event.target.value ? Number(event.target.value) : null,
+                      }))}
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-slate-300 focus:ring-2 focus:ring-slate-200"
+                      placeholder="Min"
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      value={preferences.target_salary_max ?? ''}
+                      onChange={(event) => setPreferences((current) => ({
+                        ...current,
+                        target_salary_max: event.target.value ? Number(event.target.value) : null,
+                      }))}
+                      className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-slate-300 focus:ring-2 focus:ring-slate-200"
+                      placeholder="Max"
+                    />
+                  </div>
+                </label>
+              </div>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2">
+                {preferredLocations.length > 0 && (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 md:col-span-2">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Preferred Locations</div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {preferredLocations.map((item) => (
+                        <span key={item} className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1.5 text-sm font-medium text-slate-700 border border-slate-200">
+                          <MapPin className="w-3.5 h-3.5 text-slate-400" />
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {preferences.preferred_remote_type && (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Work Style</div>
+                    <div className="mt-1 text-sm font-medium text-slate-800 capitalize">{preferences.preferred_remote_type}</div>
+                  </div>
+                )}
+                {(preferences.target_salary_min || preferences.target_salary_max) && (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Target Salary</div>
+                    <div className="mt-1 text-sm font-medium text-slate-800">
+                      {preferences.target_salary_min ? `$${preferences.target_salary_min.toLocaleString()}` : 'Open'}
+                      {' - '}
+                      {preferences.target_salary_max ? `$${preferences.target_salary_max.toLocaleString()}` : 'Open'}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </Section>
+        )}
 
         {editing && (
           <Section title="Resume">

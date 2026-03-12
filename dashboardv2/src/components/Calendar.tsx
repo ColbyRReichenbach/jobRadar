@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useId, useRef } from 'react';
+import { type FormEvent, useState, useEffect, useMemo, useId, useRef } from 'react';
 import { AnimatePresence } from 'motion/react';
 import { ChevronLeft, ChevronRight, Plus, Phone, Code, Building2, Users, X, Clock, MapPin, MessageSquare, BookOpen, AlertCircle, RefreshCw, Video, Mail, Trash2 } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -705,7 +705,7 @@ function AddInterviewModal({
   const [location, setLocation] = useState(initialInterview?.location_or_link || '');
   const [notes, setNotes] = useState(initialInterview?.notes || '');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     const payload = {
       interview_type: type,
