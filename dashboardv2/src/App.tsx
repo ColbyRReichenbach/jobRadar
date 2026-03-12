@@ -219,6 +219,7 @@ function AppContent() {
             isCollapsed={isInboxCollapsed}
             setIsCollapsed={setIsInboxCollapsed}
             onOpenAddJob={handleOpenAddJob}
+            onNavigateToEmail={handleOpenEmail}
             focusRequest={emailFocusRequest?.tab === 'emails' ? emailFocusRequest : null}
           />
         </div>

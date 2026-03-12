@@ -31,6 +31,7 @@ interface EmailFeedProps {
   setIsCollapsed: (c: boolean) => void;
   forceOpen?: boolean;
   onOpenAddJob?: (draft: Partial<Job>) => void;
+  onNavigateToEmail?: (email: Email) => void;
   focusRequest?: {
     emailId: string;
     threadId?: string;
@@ -131,6 +132,7 @@ export function EmailFeed({
   setIsCollapsed,
   forceOpen,
   onOpenAddJob,
+  onNavigateToEmail,
   focusRequest,
 }: EmailFeedProps) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -319,6 +321,10 @@ export function EmailFeed({
         // Ignore pipeline check failures.
       }
     }
+  };
+
+  const handleNavigateToFullView = (email: Email) => {
+    onNavigateToEmail?.(email);
   };
 
   const handleNotJobRelated = async (event: React.MouseEvent, email: Email) => {
@@ -677,6 +683,16 @@ export function EmailFeed({
                   <ArrowRight className="w-4 h-4 rotate-180" />
                 </button>
                 <span className="text-xs font-medium text-slate-500 truncate">Back to updates</span>
+                {onNavigateToEmail && (
+                  <button
+                    type="button"
+                    onClick={() => selectedMessage && handleNavigateToFullView(selectedMessage)}
+                    className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
+                  >
+                    {selectedMessage?.type === 'conversation' ? 'View in Conversations' : 'View in Inbox'}
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
               <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 {selectedThread.emails.map((email) => (
@@ -697,6 +713,21 @@ export function EmailFeed({
                       <span className="text-[10px] text-slate-400">{format(new Date(email.date), 'MMM d')}</span>
                     </div>
                     <p className="text-xs text-slate-500 line-clamp-2 [overflow-wrap:anywhere]">{email.snippet}</p>
+                    {selectedMessageId === email.id && onNavigateToEmail && (
+                      <div className="mt-3">
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            handleNavigateToFullView(email);
+                          }}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-100"
+                        >
+                          {email.type === 'conversation' ? 'View in Conversations' : 'View in Inbox'}
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
                   </button>
                 ))}
               </div>
