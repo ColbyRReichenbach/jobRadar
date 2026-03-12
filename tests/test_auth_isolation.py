@@ -103,6 +103,9 @@ async def test_other_users_contact_detail_is_hidden(client, db_session):
     other_response = await client.get("/api/network/hidden@contactco.com", headers=other_auth)
 
     assert own_response.status_code == 200
-    assert own_response.json()["contact"] == {"email": "hidden@contactco.com"}
+    assert own_response.json()["contact"] == {
+        "email": "hidden@contactco.com",
+        "company": "Contactco",
+    }
     assert other_response.status_code == 200
     assert other_response.json()["contact"]["name"] == "Hidden Person"

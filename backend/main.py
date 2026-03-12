@@ -13,9 +13,11 @@ from pydantic import BaseModel, EmailStr, Field
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
-from sqlalchemy import select, text
+from sqlalchemy import inspect as sa_inspect, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+from sqlalchemy.orm.attributes import NO_VALUE
 
 load_dotenv(override=True)
 
@@ -464,6 +466,18 @@ def _serialize_email_event(event: EmailEvent) -> dict:
 
 
 def _serialize_contact(contact_row: Contact) -> dict:
+    state = sa_inspect(contact_row)
+    application = None
+    company_ref = None
+
+    application_value = state.attrs.application.loaded_value
+    if application_value is not NO_VALUE:
+        application = application_value
+
+    company_value = state.attrs.company_ref.loaded_value
+    if company_value is not NO_VALUE:
+        company_ref = company_value
+
     return {
         "id": str(contact_row.id),
         "application_id": str(contact_row.application_id) if contact_row.application_id else None,
@@ -477,7 +491,7 @@ def _serialize_contact(contact_row: Contact) -> dict:
         "reached_out": contact_row.reached_out,
         "reached_out_at": contact_row.reached_out_at.isoformat() if contact_row.reached_out_at else None,
         "response_received": contact_row.response_received,
-        "company": contact_row.application.company if getattr(contact_row, "application", None) else None,
+        "company": company_ref.name if company_ref else application.company if application else None,
         "company_id": str(contact_row.company_id) if contact_row.company_id else None,
     }
 
@@ -846,8 +860,13 @@ async def update_contact(
             await db.delete(ignored_contact)
 
     await db.commit()
-    await db.refresh(contact)
-    return _serialize_contact(contact)
+    contact_stmt = (
+        select(Contact)
+        .options(selectinload(Contact.application), selectinload(Contact.company_ref))
+        .where(Contact.id == contact.id, Contact.user_id == user_id)
+    )
+    contact_result = await db.execute(contact_stmt)
+    return _serialize_contact(contact_result.scalar_one())
 
 
 @app.post("/api/contacts", status_code=201)
@@ -892,8 +911,13 @@ async def create_contact(
             await db.delete(ignored_contact)
 
     await db.commit()
-    await db.refresh(contact)
-    return _serialize_contact(contact)
+    contact_stmt = (
+        select(Contact)
+        .options(selectinload(Contact.application), selectinload(Contact.company_ref))
+        .where(Contact.id == contact.id, Contact.user_id == user_id)
+    )
+    contact_result = await db.execute(contact_stmt)
+    return _serialize_contact(contact_result.scalar_one())
 
 
 @app.get("/api/emails")
