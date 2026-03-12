@@ -356,12 +356,14 @@ export function EmailFeed({
     }
   };
 
-  const handleResolveThread = async (resolved: boolean) => {
-    if (!selectedThread) return;
-    const threadId = selectedThread.id;
+  const handleThreadResolvedChange = async (
+    threadId: string,
+    threadEmails: Email[],
+    resolved: boolean,
+  ) => {
     setThreadResolutionOverrides((prev) => ({ ...prev, [threadId]: resolved }));
     try {
-      await Promise.all(selectedThread.emails.map((email) => updateEmail(email.id, { resolved })));
+      await Promise.all(threadEmails.map((email) => updateEmail(email.id, { resolved })));
     } catch (err) {
       setThreadResolutionOverrides((prev) => {
         const next = { ...prev };
@@ -370,6 +372,11 @@ export function EmailFeed({
       });
       console.error('Failed to update email resolution:', err);
     }
+  };
+
+  const handleResolveThread = async (resolved: boolean) => {
+    if (!selectedThread) return;
+    await handleThreadResolvedChange(selectedThread.id, selectedThread.emails, resolved);
   };
 
   const handleAddToPipeline = async () => {
@@ -687,7 +694,22 @@ export function EmailFeed({
                                 exit={{ opacity: 0, height: 0 }}
                                 className="overflow-hidden mt-2 space-y-2"
                               >
-                                {doneThreads.map((thread) => renderThreadCard(thread, false))}
+                                {doneThreads.map((thread) => (
+                                  <div key={thread.id} className="relative">
+                                    {renderThreadCard(thread, false)}
+                                    <button
+                                      type="button"
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        void handleThreadResolvedChange(thread.id, thread.emails, false);
+                                      }}
+                                      className="absolute top-4 right-4 inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-white border border-slate-200 text-[11px] font-medium text-slate-600 hover:bg-slate-50"
+                                    >
+                                      <Undo2 className="w-3 h-3" />
+                                      Undo
+                                    </button>
+                                  </div>
+                                ))}
                               </motion.div>
                             )}
                           </AnimatePresence>
@@ -706,7 +728,7 @@ export function EmailFeed({
         <div className={cn('flex-1 flex flex-col bg-white h-full overflow-hidden', !selectedThread && 'hidden md:flex')}>
           {selectedThread && selectedMessage ? (
             <>
-              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                 <div className="flex items-center gap-4 min-w-0">
                   <button
                     onClick={() => {
@@ -746,7 +768,7 @@ export function EmailFeed({
 
               {pipelineAlert && !pipelineAlert.in_pipeline && (
                 <div className="px-8 pt-4">
-                <div className="max-w-[72rem] mx-auto p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3">
+                  <div className="max-w-[72rem] mx-auto p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3">
                     <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
                     <div className="flex-1">
                       <p className="text-sm text-amber-800 font-medium">{pipelineAlert.suggestion}</p>
@@ -762,8 +784,27 @@ export function EmailFeed({
                 </div>
               )}
 
-              <div className="flex-1 overflow-y-auto p-4 lg:p-6">
-                <div className="max-w-[72rem] mx-auto space-y-4">
+              {selectedThread.resolved && (
+                <div className="px-8 pt-4">
+                  <div className="max-w-[72rem] mx-auto p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
+                      <span className="text-sm font-medium text-emerald-800">This update thread is done and compacted into your Done section.</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void handleResolveThread(false)}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white border border-emerald-200 text-sm font-medium text-emerald-700 hover:bg-emerald-100 shrink-0"
+                    >
+                      <Undo2 className="w-4 h-4" />
+                      Undo
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex-1 overflow-y-auto p-4 lg:p-5">
+                <div className="max-w-[72rem] mx-auto space-y-3">
                   {selectedThread.emails
                     .slice()
                     .reverse()
@@ -774,7 +815,7 @@ export function EmailFeed({
                           messageRefs.current[email.id] = node;
                         }}
                         className={cn(
-                          'flex flex-col gap-3 p-5 rounded-2xl border transition-colors overflow-hidden',
+                          'flex flex-col gap-3 p-4 rounded-2xl border transition-colors overflow-hidden',
                           selectedMessageId === email.id
                             ? 'ring-2 ring-indigo-200 border-indigo-200'
                             : 'bg-white border-slate-100 shadow-sm',
@@ -803,7 +844,7 @@ export function EmailFeed({
                           </div>
                         </div>
                         <div
-                          className="text-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere] font-sans text-slate-700 leading-6 cursor-pointer"
+                          className="text-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere] font-sans text-slate-700 leading-5 cursor-pointer"
                           onClick={() => setSelectedMessageId(email.id)}
                         >
                           {email.body || email.snippet}

@@ -132,12 +132,14 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
   const activeThreads = threads.filter((thread) => !thread.resolved);
   const doneThreads = threads.filter((thread) => thread.resolved);
 
-  const handleMarkResolved = async (resolved: boolean) => {
-    if (!selectedThread) return;
-    const threadId = selectedThread.id;
+  const handleThreadResolvedChange = async (
+    threadId: string,
+    threadEmails: Email[],
+    resolved: boolean,
+  ) => {
     setResolvedThreadOverrides((prev) => ({ ...prev, [threadId]: resolved }));
     try {
-      await Promise.all(selectedThread.emails.map((email) => updateEmail(email.id, { resolved })));
+      await Promise.all(threadEmails.map((email) => updateEmail(email.id, { resolved })));
     } catch (err) {
       setResolvedThreadOverrides((prev) => {
         const next = { ...prev };
@@ -146,6 +148,11 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
       });
       console.error('Failed to mark email resolved:', err);
     }
+  };
+
+  const handleMarkResolved = async (resolved: boolean) => {
+    if (!selectedThread) return;
+    await handleThreadResolvedChange(selectedThread.id, selectedThread.emails, resolved);
   };
 
   const handleHideThread = async () => {
@@ -312,7 +319,7 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
                             )}
                             {thread.resolved && (
                               <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-md font-sans font-medium uppercase tracking-wider">
-                                Resolved
+                                Done
                               </span>
                             )}
                           </h3>
@@ -425,10 +432,23 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
                                 <div className="text-sm font-serif font-bold text-slate-900 truncate">{email.sender}</div>
                                 <div className="text-xs text-slate-500 truncate">{email.subject}</div>
                               </div>
-                              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-emerald-50 text-emerald-700 text-[10px] font-semibold uppercase tracking-wider">
-                                <CheckCircle2 className="w-3 h-3" />
-                                Done
-                              </span>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-emerald-50 text-emerald-700 text-[10px] font-semibold uppercase tracking-wider">
+                                  <CheckCircle2 className="w-3 h-3" />
+                                  Done
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    void handleThreadResolvedChange(thread.id, thread.emails, false);
+                                  }}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-white border border-slate-200 text-[11px] font-medium text-slate-600 hover:bg-slate-50"
+                                >
+                                  <Undo2 className="w-3 h-3" />
+                                  Undo
+                                </button>
+                              </div>
                             </div>
                           </button>
                         );
@@ -447,7 +467,7 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
       <div className={cn("flex-1 flex flex-col bg-white h-full overflow-hidden", !selectedThreadId && "hidden md:flex")}>
         {selectedThread ? (
           <>
-            <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50 shrink-0">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50 shrink-0">
               <div className="flex items-center gap-4">
                 <button
                   onClick={() => {
@@ -470,8 +490,8 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 lg:p-6">
-              <div className="max-w-[72rem] mx-auto space-y-4">
+            <div className="flex-1 overflow-y-auto p-4 lg:p-5">
+              <div className="max-w-[72rem] mx-auto space-y-3">
                 {selectedThread.latest.requiresFollowUp && !selectedThread.resolved && (
                   <div className="p-4 bg-orange-50 border border-orange-200 rounded-xl flex items-start gap-3">
                     <AlertCircle className="w-5 h-5 text-orange-500 shrink-0 mt-0.5" />
@@ -503,9 +523,19 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
                 )}
 
                 {selectedThread.resolved && (
-                  <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-3">
-                    <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-                    <span className="text-sm font-medium text-emerald-800">This conversation has been marked as resolved.</span>
+                  <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
+                      <span className="text-sm font-medium text-emerald-800">This conversation is done and collapsed into your Done section.</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void handleMarkResolved(false)}
+                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white border border-emerald-200 text-sm font-medium text-emerald-700 hover:bg-emerald-100 shrink-0"
+                    >
+                      <Undo2 className="w-4 h-4" />
+                      Undo
+                    </button>
                   </div>
                 )}
 
@@ -517,7 +547,7 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
                       messageRefs.current[email.id] = node;
                     }}
                     className={cn(
-                      "flex flex-col gap-3 p-5 rounded-2xl border transition-colors overflow-hidden",
+                      "flex flex-col gap-3 p-4 rounded-2xl border transition-colors overflow-hidden",
                       selectedMessageId === email.id
                         ? "ring-2 ring-indigo-200 border-indigo-200"
                         : email.isFromUser
@@ -543,7 +573,7 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
                         {format(new Date(email.date), 'MMM d, yyyy • h:mm a')}
                       </span>
                     </div>
-                    <div className="text-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere] font-sans text-slate-700 leading-6 max-w-none">
+                    <div className="text-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere] font-sans text-slate-700 leading-5 max-w-none">
                       {email.body || email.snippet}
                     </div>
                   </div>
@@ -598,7 +628,7 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
                   </div>
                 </div>
               ) : (
-                <div className="max-w-[72rem] mx-auto flex gap-3">
+                <div className="max-w-[72rem] mx-auto flex gap-3 flex-wrap">
                   <button
                     onClick={() => setIsReplying(true)}
                     className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-sm font-medium rounded-xl shadow-sm transition-colors"
