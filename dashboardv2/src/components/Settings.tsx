@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Bell, Phone, Mail, Save, Loader2, KeyRound, Copy, RefreshCw } from 'lucide-react';
+import { Bell, Mail, Save, Loader2, KeyRound, Copy, RefreshCw } from 'lucide-react';
 import {
   ApiKeyStatus,
   NotificationPrefs,
@@ -127,64 +127,11 @@ export function Settings() {
         )}
 
         <div className="space-y-6">
-          {/* SMS Notifications */}
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="bg-white rounded-2xl border border-slate-200/60 p-6 shadow-sm"
-          >
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
-                <Phone className="w-5 h-5 text-blue-600" />
-              </div>
-              <div>
-                <h2 className="text-base font-semibold text-slate-900">SMS Alerts</h2>
-                <p className="text-xs text-slate-500">Get text messages for urgent updates</p>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={prefs.sms_enabled}
-                  onChange={(e) => setPrefs({ ...prefs, sms_enabled: e.target.checked })}
-                  className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                />
-                <span className="text-sm text-slate-700">
-                  Enable SMS for offers and interview requests
-                </span>
-              </label>
-
-              {prefs.sms_enabled && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  className="ml-7"
-                >
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Phone Number
-                  </label>
-                  <input
-                    type="tel"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="+1 (555) 123-4567"
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                  />
-                  <p className="text-xs text-slate-400 mt-1">
-                    Used for offer notifications and interview reminders only
-                  </p>
-                </motion.div>
-              )}
-            </div>
-          </motion.div>
-
           {/* Weekly Digest */}
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
+            transition={{ delay: 0.05 }}
             className="bg-white rounded-2xl border border-slate-200/60 p-6 shadow-sm"
           >
             <div className="flex items-center gap-3 mb-4">
@@ -213,7 +160,7 @@ export function Settings() {
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.15 }}
+            transition={{ delay: 0.1 }}
             className="bg-white rounded-2xl border border-slate-200/60 p-6 shadow-sm"
           >
             <div className="flex items-center gap-3 mb-4">
@@ -286,7 +233,7 @@ export function Settings() {
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
+            transition={{ delay: 0.15 }}
             className="bg-white rounded-2xl border border-slate-200/60 p-6 shadow-sm"
           >
             <div className="flex items-center gap-3 mb-2">
