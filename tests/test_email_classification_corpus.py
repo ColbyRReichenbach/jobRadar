@@ -133,6 +133,20 @@ def test_prefilter_blocks_promotional_company_noise():
     assert should_classify(email, {"company.com"}) is False
 
 
+def test_prefilter_blocks_linkedin_career_promo():
+    from backend.services.email_filter import is_obvious_noise_email, should_classify
+
+    email = {
+        "sender_email": "linkedin@em.linkedin.com",
+        "sender_name": "LinkedIn",
+        "subject": "Take control of your career in the AI age",
+        "body": "Our practical guide is coming soon. Subscribe for more career content.",
+    }
+
+    assert is_obvious_noise_email(email) is True
+    assert should_classify(email, set()) is False
+
+
 def test_prefilter_keeps_recruiter_follow_up():
     from backend.services.email_filter import should_classify
 

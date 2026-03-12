@@ -25,7 +25,7 @@ AUTOMATED_LOCAL_PART_HINTS = {
 
 RECRUITING_HINTS = {
     "application", "applying", "applied", "candidate", "candidacy",
-    "career", "careers", "hiring", "interview", "interviewer", "recruiter",
+    "hiring", "interview", "interviewer", "recruiter",
     "recruiting", "talent", "onsite", "phone screen", "screening call",
     "assessment", "take-home", "take home", "coding challenge", "offer",
     "offer letter", "compensation", "availability", "background check",
