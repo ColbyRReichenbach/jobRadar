@@ -110,3 +110,47 @@ async def test_network_contact_detail_rejects_invalid_email(client):
     """GET /api/network/{email} rejects invalid email path values."""
     resp = await client.get("/api/network/not-an-email", headers=AUTH_HEADER)
     assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_network_excludes_non_human_email_senders(client, db_session):
+    from backend.models import EmailEvent
+
+    db_session.add_all(
+        [
+            EmailEvent(
+                gmail_message_id="network-human-1",
+                sender="Jane Doe",
+                sender_email="jane.doe@company.com",
+                subject="Following up on your interview",
+                classification="conversation",
+                is_human=True,
+            ),
+            EmailEvent(
+                gmail_message_id="network-noise-1",
+                sender="GitHub",
+                sender_email="noreply@github.com",
+                subject="Build failed",
+                classification="not_relevant",
+                is_human=False,
+            ),
+            EmailEvent(
+                gmail_message_id="network-team-1",
+                sender="Talent Team",
+                sender_email="talent@company.com",
+                subject="Application received",
+                classification="job_update",
+                is_human=True,
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    resp = await client.get("/api/network", headers=AUTH_HEADER)
+    assert resp.status_code == 200
+    data = resp.json()
+
+    emails = {contact["email"] for contact in data}
+    assert "jane.doe@company.com" in emails
+    assert "noreply@github.com" not in emails
+    assert "talent@company.com" not in emails

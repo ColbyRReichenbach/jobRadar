@@ -76,3 +76,51 @@ async def test_gmail_sync_matches_application_by_company_domain(client, db_sessi
     event_result = await db_session.execute(select(EmailEvent).where(EmailEvent.gmail_message_id == "sync-msg-1"))
     event = event_result.scalar_one()
     assert event.application_id == app.id
+
+
+@pytest.mark.asyncio
+async def test_gmail_sync_skips_obvious_tooling_noise(client, db_session):
+    from backend.models import EmailEvent, GmailToken
+
+    token = GmailToken(
+        user_id=TEST_USER_ID,
+        access_token=encrypt_gmail_token("access-token"),
+        refresh_token=encrypt_gmail_token("refresh-token"),
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+    )
+    db_session.add(token)
+    await db_session.commit()
+
+    gmail_service = Mock()
+    gmail_service.users.return_value.messages.return_value.list.return_value.execute.return_value = {
+        "messages": [{"id": "sync-msg-noise-1"}]
+    }
+    gmail_service.users.return_value.messages.return_value.get.return_value.execute.return_value = {
+        "threadId": "thread-noise-1",
+        "snippet": "Build failed",
+        "payload": {
+            "headers": [
+                {"name": "From", "value": "Railway <hello@notify.railway.app>"},
+                {"name": "Subject", "value": "Build failed for AppTrail"},
+                {"name": "Date", "value": "Wed, 11 Mar 2026 10:00:00 +0000"},
+            ],
+            "body": {"data": ""},
+        },
+    }
+
+    classifier = AsyncMock(return_value={"classification": "job_update"})
+
+    with patch("googleapiclient.discovery.build", return_value=gmail_service):
+        with patch(
+            "backend.services.email_parser.parse_email_body",
+            return_value="One of your builds failed to leave the wheelhouse. View build logs.",
+        ):
+            with patch("backend.services.email_classifier.classify_email", new=classifier):
+                resp = await client.post("/api/gmail/sync", headers=AUTH_HEADER)
+
+    assert resp.status_code == 200
+    assert resp.json()["new_emails"] == 0
+    classifier.assert_not_awaited()
+
+    event_result = await db_session.execute(select(EmailEvent).where(EmailEvent.gmail_message_id == "sync-msg-noise-1"))
+    assert event_result.scalar_one_or_none() is None

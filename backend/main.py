@@ -1442,8 +1442,10 @@ async def sync_gmail(
         classify_email as classify_email_llm,
         CLASSIFICATION_TO_COLOR,
         CLASSIFICATION_TO_EMAIL_TYPE,
+        is_likely_person_sender,
     )
     from backend.services.company_identity import extract_domain, get_company_info
+    from backend.services.email_filter import is_obvious_noise_email
 
     # Get Gmail credentials
     user_id = current_user.id
@@ -1552,6 +1554,15 @@ async def sync_gmail(
 
         is_from_user = sender_email_addr.lower() == user_email.lower() if user_email else False
 
+        if is_obvious_noise_email({
+            "sender": sender_email_addr,
+            "sender_email": sender_email_addr,
+            "sender_name": sender_name,
+            "subject": subject,
+            "body": body_text,
+        }):
+            continue
+
         # Classify with Haiku LLM
         classification = await classify_email_llm(
             subject=subject,
@@ -1604,7 +1615,7 @@ async def sync_gmail(
             key_sentence=classification.get("key_sentence"),
             summary=classification.get("summary"),
             is_from_user=is_from_user,
-            is_human=not classification.get("is_automated", False),
+            is_human=is_likely_person_sender(sender_name, sender_email_addr) and not classification.get("is_automated", False),
             read=is_from_user,
             company_name=email_company_name,
             company_logo_url=company_info.get("logo_url"),
@@ -2220,6 +2231,7 @@ async def list_network(
     """Unified network view: all contacts + unique email senders."""
     from sqlalchemy import or_, func
     from sqlalchemy.orm import selectinload
+    from backend.services.email_classifier import should_create_network_contact
 
     user_id = _require_user_id(auth)
     contacts_list = []
@@ -2271,6 +2283,8 @@ async def list_network(
         EmailEvent.user_id == user_id,
         EmailEvent.sender_email.isnot(None),
         EmailEvent.is_from_user.is_(False),
+        EmailEvent.hidden.is_(False),
+        EmailEvent.is_human.is_(True),
     ).group_by(
         EmailEvent.sender_email, EmailEvent.sender, EmailEvent.company_name,
     ).order_by(func.max(EmailEvent.received_at).desc()).offset(offset).limit(limit)
@@ -2278,6 +2292,8 @@ async def list_network(
     for row in email_result.all():
         email_addr = (row[0] or "").lower()
         if email_addr in seen_emails:
+            continue
+        if not should_create_network_contact(row[1] or "", email_addr):
             continue
         seen_emails.add(email_addr)
         if q and q.lower() not in email_addr and q.lower() not in (row[1] or "").lower():
