@@ -17,6 +17,7 @@ import { Menu, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { fetchJobs, fetchEmails } from './lib/api';
 import { AuthProvider, useAuth } from './lib/AuthContext';
+import { AddJobModal } from './components/AddJobModal';
 
 const USE_API = true;
 
@@ -29,6 +30,8 @@ function AppContent() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [loading, setLoading] = useState(USE_API);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [showAddJobModal, setShowAddJobModal] = useState(false);
+  const [pendingJobDraft, setPendingJobDraft] = useState<Partial<Job> | null>(null);
   const [emailFocusRequest, setEmailFocusRequest] = useState<{
     emailId: string;
     threadId?: string;
@@ -81,6 +84,21 @@ function AppContent() {
       tab,
       token: Date.now(),
     });
+  }, []);
+
+  const handleOpenAddJob = useCallback((draft?: Partial<Job>) => {
+    setPendingJobDraft(draft || null);
+    setShowAddJobModal(true);
+  }, []);
+
+  const handleJobAdded = useCallback((job: Job) => {
+    setJobs((prev) => {
+      if (prev.some((existing) => existing.id === job.id)) return prev;
+      return [job, ...prev];
+    });
+    setShowAddJobModal(false);
+    setPendingJobDraft(null);
+    setActiveTab('dashboard');
   }, []);
 
   if (!authLoading && !user) {
@@ -178,7 +196,15 @@ function AppContent() {
             {activeTab === 'settings' && <Settings />}
             {activeTab === 'emails' && (
               <div className="flex-1 flex overflow-hidden">
-                <EmailFeed emails={emails} jobs={jobs} isCollapsed={false} setIsCollapsed={() => {}} forceOpen={true} focusRequest={emailFocusRequest?.tab === 'emails' ? emailFocusRequest : null} />
+                <EmailFeed
+                  emails={emails}
+                  jobs={jobs}
+                  isCollapsed={false}
+                  setIsCollapsed={() => {}}
+                  forceOpen={true}
+                  onOpenAddJob={handleOpenAddJob}
+                  focusRequest={emailFocusRequest?.tab === 'emails' ? emailFocusRequest : null}
+                />
               </div>
             )}
           </div>
@@ -192,10 +218,25 @@ function AppContent() {
             jobs={jobs}
             isCollapsed={isInboxCollapsed}
             setIsCollapsed={setIsInboxCollapsed}
+            onOpenAddJob={handleOpenAddJob}
             focusRequest={emailFocusRequest?.tab === 'emails' ? emailFocusRequest : null}
           />
         </div>
       )}
+
+      <AnimatePresence>
+        {showAddJobModal && (
+          <AddJobModal
+            isOpen={showAddJobModal}
+            onClose={() => {
+              setShowAddJobModal(false);
+              setPendingJobDraft(null);
+            }}
+            onJobAdded={handleJobAdded}
+            initialValues={pendingJobDraft}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

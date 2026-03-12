@@ -8,9 +8,10 @@ interface AddJobModalProps {
   isOpen: boolean;
   onClose: () => void;
   onJobAdded: (job: Job) => void;
+  initialValues?: Partial<Job> | null;
 }
 
-export function AddJobModal({ isOpen, onClose, onJobAdded }: AddJobModalProps) {
+export function AddJobModal({ isOpen, onClose, onJobAdded, initialValues }: AddJobModalProps) {
   const titleId = useId();
   const companyInputRef = useRef<HTMLInputElement>(null);
   const [company, setCompany] = useState('');
@@ -25,6 +26,19 @@ export function AddJobModal({ isOpen, onClose, onJobAdded }: AddJobModalProps) {
   const [selectedContactIds, setSelectedContactIds] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+
+  const resetForm = () => {
+    setCompany(initialValues?.company || '');
+    setRole(initialValues?.role || '');
+    setUrl(initialValues?.url || '');
+    setLocation(initialValues?.location || '');
+    setSalary(initialValues?.salary || '');
+    setStatus(initialValues?.status || 'saved');
+    setNotes(initialValues?.notes || '');
+    setContactsQuery('');
+    setSelectedContactIds([]);
+    setError('');
+  };
 
   useEffect(() => {
     if (!isOpen) return;
@@ -44,6 +58,11 @@ export function AddJobModal({ isOpen, onClose, onJobAdded }: AddJobModalProps) {
       })
       .catch(() => setContacts([]));
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    resetForm();
+  }, [initialValues, isOpen]);
 
   const filteredContacts = useMemo(() => {
     const query = contactsQuery.trim().toLowerCase();
@@ -79,16 +98,7 @@ export function AddJobModal({ isOpen, onClose, onJobAdded }: AddJobModalProps) {
       }
       onJobAdded(newJob);
       onClose();
-      // Reset form
-      setCompany('');
-      setRole('');
-      setUrl('');
-      setLocation('');
-      setSalary('');
-      setStatus('saved');
-      setNotes('');
-      setContactsQuery('');
-      setSelectedContactIds([]);
+      resetForm();
     } catch (err: any) {
       if (err.message?.includes('409')) {
         setError('This job is already in your pipeline.');

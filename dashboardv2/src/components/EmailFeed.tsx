@@ -21,7 +21,7 @@ import {
   Undo2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { submitEmailFeedback, checkEmailPipeline, createJob, updateEmail } from '../lib/api';
+import { submitEmailFeedback, checkEmailPipeline, updateEmail } from '../lib/api';
 
 interface EmailFeedProps {
   emails: Email[];
@@ -29,6 +29,7 @@ interface EmailFeedProps {
   isCollapsed: boolean;
   setIsCollapsed: (c: boolean) => void;
   forceOpen?: boolean;
+  onOpenAddJob?: (draft: Partial<Job>) => void;
   focusRequest?: {
     emailId: string;
     threadId?: string;
@@ -121,6 +122,7 @@ export function EmailFeed({
   isCollapsed,
   setIsCollapsed,
   forceOpen,
+  onOpenAddJob,
   focusRequest,
 }: EmailFeedProps) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -381,16 +383,62 @@ export function EmailFeed({
 
   const handleAddToPipeline = async () => {
     if (!selectedMessage || !pipelineAlert?.company_name) return;
-    try {
-      await createJob({
-        company: pipelineAlert.company_name,
-        role: selectedMessage.subject,
-        status: 'applied',
-      });
-      setPipelineAlert(null);
-    } catch (err) {
-      console.error('Failed to add to pipeline:', err);
-    }
+    const classificationToStatus: Record<string, Job['status']> = {
+      interview_request: 'interviewing',
+      offer: 'offer',
+      rejection: 'rejected',
+      action_item: 'applied',
+      job_update: 'applied',
+      conversation: 'applied',
+    };
+
+    const extractRoleFromEmail = (email: Email) => {
+      const candidates = [
+        email.subject,
+        email.summary,
+        email.snippet,
+        email.body,
+      ].filter(Boolean) as string[];
+
+      const patterns = [
+        /\bfor (?:the )?([A-Z][A-Za-z0-9/&,\- ]{2,80}?) (?:role|position)\b/i,
+        /\b([A-Z][A-Za-z0-9/&,\- ]{2,80}?) (?:role|position)\b/i,
+        /\binterview for (?:the )?([A-Z][A-Za-z0-9/&,\- ]{2,80})\b/i,
+        /\boffer for (?:the )?([A-Z][A-Za-z0-9/&,\- ]{2,80})\b/i,
+      ];
+
+      for (const text of candidates) {
+        for (const pattern of patterns) {
+          const match = text.match(pattern);
+          if (match?.[1]) {
+            return match[1].trim().replace(/\s+/g, ' ');
+          }
+        }
+      }
+
+      return email.subject
+        .replace(/^(re|fw|fwd):\s*/i, '')
+        .replace(/\b(application update|decision on your candidacy|following up on our conversation|thank you for applying)\b/gi, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    };
+
+    const extractUrlFromEmail = (email: Email) => {
+      if (email.actionUrl) return email.actionUrl;
+      const text = [email.body, email.snippet, email.summary].filter(Boolean).join(' ');
+      const match = text.match(/https?:\/\/[^\s)>"']+/i);
+      return match?.[0];
+    };
+
+    onOpenAddJob?.({
+      company: pipelineAlert.company_name,
+      role: extractRoleFromEmail(selectedMessage),
+      url: extractUrlFromEmail(selectedMessage),
+      status: classificationToStatus[selectedMessage.category || 'job_update'] || 'applied',
+      notes: `Created from email: ${selectedMessage.subject}`,
+      source: 'other',
+    });
+    setPipelineAlert(null);
   };
 
   const renderThreadCard = (thread: (typeof allThreads)[number], allowExpand = true) => {
