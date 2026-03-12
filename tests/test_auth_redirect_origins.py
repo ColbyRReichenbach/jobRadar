@@ -43,3 +43,14 @@ def test_resolve_frontend_origin_prefers_allowed_preview_query_value():
     )
 
     assert resolved == "https://apptrail-git-local-dev-colbys-projects-24eca82b.vercel.app"
+
+
+def test_frontend_callback_url_embeds_access_token_in_fragment():
+    from backend.main import _build_frontend_callback_url
+
+    callback_url = _build_frontend_callback_url(
+        "https://apptrail1.vercel.app",
+        "header.payload.signature",
+    )
+
+    assert callback_url == "https://apptrail1.vercel.app/auth/callback#access_token=header.payload.signature"

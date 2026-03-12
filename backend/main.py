@@ -3,7 +3,7 @@ import re
 import time
 from datetime import datetime, timezone
 from typing import Optional
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 from uuid import uuid4
 
 from dotenv import load_dotenv
@@ -105,6 +105,10 @@ def _resolve_frontend_origin(frontend_origin: str | None, request: Request) -> s
             return normalized
 
     return os.getenv("DASHBOARD_URL", "http://localhost:5173").rstrip("/")
+
+
+def _build_frontend_callback_url(frontend_url: str, access_token: str) -> str:
+    return f"{frontend_url}/auth/callback#access_token={quote(access_token, safe='')}"
 
 
 _rate_limit_storage_uri = os.getenv("RATE_LIMIT_STORAGE_URI") or os.getenv("REDIS_URL")
@@ -1427,10 +1431,13 @@ async def google_auth_callback(
 
     # Create refresh token for cookie-based session bootstrap.
     refresh_token = create_refresh_token(str(user.id))
+    access_token = create_jwt(str(user.id), user.email, user.name, user.picture)
 
-    # Redirect to frontend callback and rely on refresh cookie for session bootstrap.
+    # Redirect to frontend callback and include a one-time access-token bootstrap
+    # in the URL fragment for mobile/PWA contexts where the cross-site refresh
+    # cookie may not survive the redirect handoff.
     from starlette.responses import RedirectResponse as _RedirectResponse
-    redirect_url = f"{frontend_url}/auth/callback"
+    redirect_url = _build_frontend_callback_url(frontend_url, access_token)
     response = _RedirectResponse(url=redirect_url, status_code=302)
     set_refresh_cookie(response, refresh_token)
     return response
