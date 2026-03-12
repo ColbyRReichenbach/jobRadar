@@ -43,6 +43,14 @@ function AppContent() {
     email: string;
     token: number;
   } | null>(null);
+  const [calendarFocusRequest, setCalendarFocusRequest] = useState<{
+    interviewId: string;
+    token: number;
+  } | null>(null);
+  const [dashboardFocusRequest, setDashboardFocusRequest] = useState<{
+    jobId: string;
+    token: number;
+  } | null>(null);
 
   const loadData = useCallback(async () => {
     if (!USE_API) return;
@@ -98,11 +106,31 @@ function AppContent() {
     const threadId = resolved.searchParams.get('thread_id') || undefined;
     const tab = resolved.searchParams.get('tab');
     const email = resolved.searchParams.get('email');
+    const interviewId = resolved.searchParams.get('interview_id');
+    const jobId = resolved.searchParams.get('job_id');
 
     if (resolved.pathname === '/network' && email) {
       setActiveTab('network');
       setNetworkFocusRequest({
         email,
+        token: Date.now(),
+      });
+      return;
+    }
+
+    if (resolved.pathname === '/calendar' && interviewId) {
+      setActiveTab('calendar');
+      setCalendarFocusRequest({
+        interviewId,
+        token: Date.now(),
+      });
+      return;
+    }
+
+    if ((resolved.pathname === '/dashboard' || resolved.pathname === '/') && jobId) {
+      setActiveTab('dashboard');
+      setDashboardFocusRequest({
+        jobId,
         token: Date.now(),
       });
       return;
@@ -238,13 +266,13 @@ function AppContent() {
             </div>
           )}
           <div className="flex-1 flex overflow-hidden">
-            {activeTab === 'dashboard' && <KanbanBoard jobs={jobs} setJobs={setJobs} />}
+            {activeTab === 'dashboard' && <KanbanBoard jobs={jobs} setJobs={setJobs} focusRequest={dashboardFocusRequest} />}
             {activeTab === 'search' && <JobSearch jobs={jobs} setJobs={setJobs} />}
             {activeTab === 'analytics' && <Analytics jobs={jobs} />}
             {activeTab === 'export' && <ExportData />}
             {activeTab === 'conversations' && <Conversations emails={emails} jobs={jobs} focusRequest={emailFocusRequest?.tab === 'conversations' ? emailFocusRequest : null} />}
             {activeTab === 'network' && <NetworkPage onOpenEmail={handleOpenEmail} onRefreshData={loadData} focusRequest={networkFocusRequest} />}
-            {activeTab === 'calendar' && <Calendar />}
+            {activeTab === 'calendar' && <Calendar focusRequest={calendarFocusRequest} />}
             {activeTab === 'settings' && <Settings />}
             {activeTab === 'emails' && (
               <div className="flex-1 flex overflow-hidden">

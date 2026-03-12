@@ -62,7 +62,14 @@ const OUTCOME_COLORS: Record<string, string> = {
   failed: 'bg-red-100 text-red-700',
 };
 
-export function Calendar() {
+interface CalendarProps {
+  focusRequest?: {
+    interviewId: string;
+    token: number;
+  } | null;
+}
+
+export function Calendar({ focusRequest }: CalendarProps) {
   const { user, connectCalendar, refreshUser } = useAuth();
   const selectedInterviewTitleId = useId();
   const selectedInterviewCloseButtonRef = useRef<HTMLButtonElement>(null);
@@ -85,6 +92,14 @@ export function Calendar() {
     loadInterviews();
     loadPastDue();
   }, []);
+
+  useEffect(() => {
+    if (!focusRequest?.interviewId || interviews.length === 0) return;
+    const target = interviews.find((interview) => interview.id === focusRequest.interviewId);
+    if (target) {
+      void handleSelectInterview(target);
+    }
+  }, [focusRequest, interviews]);
 
   const getErrorMessage = async (res: Response, fallback: string) => {
     const payload = await res.json().catch(() => null);

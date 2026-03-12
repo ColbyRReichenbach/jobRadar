@@ -1916,6 +1916,24 @@ async def sync_calendar(
             user_id=current_user.id,
             user_email=current_user.email,
         )
+        for item in result.get("synced", []):
+            if item.get("status") not in {"created", "updated"}:
+                continue
+            status_label = "added to your calendar" if item.get("status") == "created" else "updated on your calendar"
+            db.add(
+                Alert(
+                    user_id=current_user.id,
+                    alert_type="interview_request",
+                    title=f"Interview {status_label}",
+                    body=item.get("summary") or "Open your calendar to review the interview details.",
+                    action_url=_alert_action_url(
+                        "/calendar",
+                        interview_id=item.get("interview_id"),
+                    ),
+                )
+            )
+        if result.get("synced"):
+            await db.commit()
         return {
             "status": "ok",
             **result,

@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlalchemy import select
 
 from tests.conftest import AUTH_HEADER, TEST_USER_ID
 
@@ -150,6 +151,43 @@ async def test_followup_flagging(db_session):
 
     await db_session.refresh(app)
     assert app.follow_up_due is True
+
+
+@pytest.mark.asyncio
+async def test_followup_task_creates_pipeline_alert(db_session):
+    from backend.models import Alert, Application
+    from backend.tasks.check_followups import _check_followups_async
+
+    class _SessionCtx:
+        def __init__(self, session):
+            self.session = session
+
+        async def __aenter__(self):
+            return self.session
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    app = Application(
+        user_id=TEST_USER_ID,
+        company="FollowUpCo",
+        role_title="Engineer",
+        status="applied",
+        applied_at=datetime.now(timezone.utc) - timedelta(days=8),
+    )
+    db_session.add(app)
+    await db_session.commit()
+
+    with patch("backend.database.async_session_factory", return_value=_SessionCtx(db_session)):
+        count = await _check_followups_async()
+
+    assert count == 1
+
+    alert_result = await db_session.execute(select(Alert).where(Alert.user_id == TEST_USER_ID))
+    alert = alert_result.scalar_one()
+    assert alert.alert_type == "follow_up"
+    assert alert.action_url == f"/dashboard?job_id={app.id}"
+    assert "Follow up with FollowUpCo" in alert.title
 
 
 # --- 4.3 Contact response tracking ---

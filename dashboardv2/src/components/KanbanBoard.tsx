@@ -59,7 +59,16 @@ const SECTIONS: { id: JobStatus; title: string; color: string; bg: string; borde
   { id: 'rejected', title: 'Rejected', color: 'text-red-700', bg: 'bg-red-100', border: 'border-red-200' },
 ];
 
-export function KanbanBoard({ jobs, setJobs }: { jobs: Job[], setJobs: (jobs: Job[]) => void }) {
+interface KanbanBoardProps {
+  jobs: Job[];
+  setJobs: (jobs: Job[]) => void;
+  focusRequest?: {
+    jobId: string;
+    token: number;
+  } | null;
+}
+
+export function KanbanBoard({ jobs, setJobs, focusRequest }: KanbanBoardProps) {
   const jobDialogTitleId = useId();
   const selectedJobCloseButtonRef = useRef<HTMLButtonElement>(null);
   const [dateFilter, setDateFilter] = useState<string>('all');
@@ -88,6 +97,16 @@ export function KanbanBoard({ jobs, setJobs }: { jobs: Job[], setJobs: (jobs: Jo
       return true;
     });
   }, [jobs, dateFilter]);
+
+  useEffect(() => {
+    if (!focusRequest?.jobId || jobs.length === 0) return;
+    const target = jobs.find((job) => job.id === focusRequest.jobId);
+    if (target) {
+      setSelectedJob(target);
+      setEditingNotes(false);
+      setEditingDescription(false);
+    }
+  }, [focusRequest, jobs]);
 
   const updateJobStatus = async (jobId: string, newStatus: JobStatus) => {
     const previousJobs = jobs;
