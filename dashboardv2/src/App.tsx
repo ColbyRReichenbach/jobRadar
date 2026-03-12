@@ -9,6 +9,7 @@ import { Conversations } from './components/Conversations';
 import { NetworkPage } from './components/NetworkPage';
 import { Calendar } from './components/Calendar';
 import { Settings } from './components/Settings';
+import { ProfilePage } from './components/ProfilePage';
 import { LoginPage } from './components/LoginPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { NotificationCenter } from './components/NotificationCenter';
@@ -32,6 +33,7 @@ function AppContent() {
   const [loading, setLoading] = useState(USE_API);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [showAddJobModal, setShowAddJobModal] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(false);
   const [pendingJobDraft, setPendingJobDraft] = useState<Partial<Job> | null>(null);
   const [emailFocusRequest, setEmailFocusRequest] = useState<{
     emailId: string;
@@ -81,6 +83,14 @@ function AppContent() {
     const interval = setInterval(loadData, 30000);
     return () => clearInterval(interval);
   }, [authLoading, loadData, user]);
+
+  useEffect(() => {
+    const media = window.matchMedia('(min-width: 768px)');
+    const sync = () => setIsDesktop(media.matches);
+    sync();
+    media.addEventListener('change', sync);
+    return () => media.removeEventListener('change', sync);
+  }, []);
 
   // Close mobile menu when tab changes
   useEffect(() => {
@@ -204,15 +214,12 @@ function AppContent() {
             AppTrail
           </span>
         </div>
-        <div className="flex items-center gap-2">
-          <NotificationCenter onNavigate={handleNotificationNavigate} />
-          <button
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            className="p-2 -mr-2 text-slate-600 hover:text-slate-900 hover:bg-slate-200/50 rounded-lg transition-colors"
-          >
-            {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-          </button>
-        </div>
+        <button
+          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+          className="p-2 -mr-2 text-slate-600 hover:text-slate-900 hover:bg-slate-200/50 rounded-lg transition-colors"
+        >
+          {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+        </button>
       </div>
 
       {/* Desktop Sidebar */}
@@ -244,10 +251,11 @@ function AppContent() {
         )}
       </AnimatePresence>
 
+      <div className={isDesktop ? 'fixed top-4 right-4 z-40' : 'fixed top-3 right-16 z-40'}>
+        <NotificationCenter onNavigate={handleNotificationNavigate} />
+      </div>
+
       <main className="flex-1 flex overflow-hidden pt-16 md:pt-0">
-        <div className="hidden md:block fixed top-4 right-4 z-40">
-          <NotificationCenter onNavigate={handleNotificationNavigate} />
-        </div>
         <div className="flex-1 flex flex-col overflow-hidden">
           {loadError && (
             <div className="px-4 md:px-6 pt-4 md:pt-5">
@@ -273,6 +281,7 @@ function AppContent() {
             {activeTab === 'conversations' && <Conversations emails={emails} jobs={jobs} focusRequest={emailFocusRequest?.tab === 'conversations' ? emailFocusRequest : null} />}
             {activeTab === 'network' && <NetworkPage onOpenEmail={handleOpenEmail} onRefreshData={loadData} focusRequest={networkFocusRequest} />}
             {activeTab === 'calendar' && <Calendar focusRequest={calendarFocusRequest} />}
+            {activeTab === 'profile' && <ProfilePage />}
             {activeTab === 'settings' && <Settings />}
             {activeTab === 'emails' && (
               <div className="flex-1 flex overflow-hidden">

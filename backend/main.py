@@ -1686,6 +1686,7 @@ async def sync_gmail(
         await db.commit()
 
     service = build("gmail", "v1", credentials=creds)
+    notifications_enabled = current_user.notifications_started_at is not None
 
     # Get feedback blocklist
     feedback_stmt = (
@@ -1843,30 +1844,31 @@ async def sync_gmail(
 
         action_path = "/conversations" if email_event.email_type == "conversation" else "/emails"
         action_tab = "conversations" if email_event.email_type == "conversation" else "emails"
-        email_alert = Alert(
-            user_id=user_id,
-            alert_type=_email_alert_type(email_event.email_type, cls),
-            title=f"{sender_name or sender_email_addr or 'New update'}: {subject or '(no subject)'}",
-            body=(classification.get("summary") or snippet or body_text[:160] if body_text else snippet),
-            action_url=_alert_action_url(
-                action_path,
-                tab=action_tab,
-                email_id=str(email_event.id),
-                thread_id=email_event.thread_id or None,
-            ),
-        )
-        db.add(email_alert)
-
-        if should_alert_network_contact:
-            db.add(
-                Alert(
-                    user_id=user_id,
-                    alert_type="network_contact",
-                    title=f"Added {sender_name or sender_email_addr} to your network",
-                    body="Open their card to review contact details from this conversation.",
-                    action_url=_alert_action_url("/network", email=sender_email_addr),
-                )
+        if notifications_enabled:
+            email_alert = Alert(
+                user_id=user_id,
+                alert_type=_email_alert_type(email_event.email_type, cls),
+                title=f"{sender_name or sender_email_addr or 'New update'}: {subject or '(no subject)'}",
+                body=(classification.get("summary") or snippet or body_text[:160] if body_text else snippet),
+                action_url=_alert_action_url(
+                    action_path,
+                    tab=action_tab,
+                    email_id=str(email_event.id),
+                    thread_id=email_event.thread_id or None,
+                ),
             )
+            db.add(email_alert)
+
+            if should_alert_network_contact:
+                db.add(
+                    Alert(
+                        user_id=user_id,
+                        alert_type="network_contact",
+                        title=f"Added {sender_name or sender_email_addr} to your network",
+                        body="Open their card to review contact details from this conversation.",
+                        action_url=_alert_action_url("/network", email=sender_email_addr),
+                    )
+                )
 
         new_count += 1
         emails_synced.append({
@@ -1876,7 +1878,10 @@ async def sync_gmail(
             "company": email_company_name,
         })
 
-    if new_count > 0:
+    if current_user.notifications_started_at is None:
+        current_user.notifications_started_at = datetime.now(timezone.utc)
+
+    if new_count > 0 or current_user.notifications_started_at is not None:
         await db.commit()
 
     return {
@@ -1916,23 +1921,24 @@ async def sync_calendar(
             user_id=current_user.id,
             user_email=current_user.email,
         )
-        for item in result.get("synced", []):
-            if item.get("status") not in {"created", "updated"}:
-                continue
-            status_label = "added to your calendar" if item.get("status") == "created" else "updated on your calendar"
-            db.add(
-                Alert(
-                    user_id=current_user.id,
-                    alert_type="interview_request",
-                    title=f"Interview {status_label}",
-                    body=item.get("summary") or "Open your calendar to review the interview details.",
-                    action_url=_alert_action_url(
-                        "/calendar",
-                        interview_id=item.get("interview_id"),
-                    ),
+        if current_user.notifications_started_at is not None:
+            for item in result.get("synced", []):
+                if item.get("status") not in {"created", "updated"}:
+                    continue
+                status_label = "added to your calendar" if item.get("status") == "created" else "updated on your calendar"
+                db.add(
+                    Alert(
+                        user_id=current_user.id,
+                        alert_type="interview_request",
+                        title=f"Interview {status_label}",
+                        body=item.get("summary") or "Open your calendar to review the interview details.",
+                        action_url=_alert_action_url(
+                            "/calendar",
+                            interview_id=item.get("interview_id"),
+                        ),
+                    )
                 )
-            )
-        if result.get("synced"):
+        if result.get("synced") and current_user.notifications_started_at is not None:
             await db.commit()
         return {
             "status": "ok",
@@ -2234,6 +2240,16 @@ class ResumeTextUpload(BaseModel):
     text: str = Field(..., max_length=MAX_RESUME_TEXT_LEN)
 
 
+class ProfileUpdatePayload(BaseModel):
+    linkedin_url: Optional[str] = Field(None, max_length=MAX_URL_LEN)
+    skills: Optional[list[str]] = None
+    education: Optional[list] = None
+    experience_years: Optional[int] = None
+    tools: Optional[list[str]] = None
+    certifications: Optional[list[str]] = None
+    resume_text: Optional[str] = Field(None, max_length=MAX_RESUME_TEXT_LEN)
+
+
 @app.post("/api/resume/parse", status_code=201)
 async def parse_resume_text(
     payload: ResumeTextUpload,
@@ -2276,11 +2292,14 @@ async def parse_resume_text(
 
     return {
         "id": str(profile.id),
+        "linkedin_url": profile.linkedin_url,
         "skills": profile.skills or [],
         "education": profile.education or [],
         "experience_years": profile.experience_years,
         "tools": profile.tools or [],
         "certifications": profile.certifications or [],
+        "resume_text": profile.raw_text,
+        "updated_at": profile.updated_at.isoformat() if profile.updated_at else None,
     }
 
 
@@ -2295,12 +2314,76 @@ async def get_profile(db: AsyncSession = Depends(get_db), auth: dict = Depends(v
         return None
     return {
         "id": str(profile.id),
+        "linkedin_url": profile.linkedin_url,
         "skills": profile.skills or [],
         "education": profile.education or [],
         "experience_years": profile.experience_years,
         "tools": profile.tools or [],
         "certifications": profile.certifications or [],
+        "resume_text": profile.raw_text,
+        "updated_at": profile.updated_at.isoformat() if profile.updated_at else None,
     }
+
+
+@app.patch("/api/profile")
+async def update_profile(
+    payload: ProfileUpdatePayload,
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    """Create or update the current user's structured profile."""
+    user_id = _require_user_id(auth)
+    stmt = select(UserProfile).where(UserProfile.user_id == user_id).limit(1)
+    result = await db.execute(stmt)
+    profile = result.scalar_one_or_none()
+
+    if not profile:
+        profile = UserProfile(user_id=user_id)
+        db.add(profile)
+
+    if payload.linkedin_url is not None:
+        profile.linkedin_url = payload.linkedin_url or None
+    if payload.skills is not None:
+        profile.skills = [item for item in payload.skills if item]
+    if payload.education is not None:
+        profile.education = [item for item in payload.education if item]
+    if payload.experience_years is not None:
+        profile.experience_years = payload.experience_years
+    if payload.tools is not None:
+        profile.tools = [item for item in payload.tools if item]
+    if payload.certifications is not None:
+        profile.certifications = [item for item in payload.certifications if item]
+    if payload.resume_text is not None:
+        profile.raw_text = payload.resume_text or None
+
+    profile.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(profile)
+
+    return {
+        "id": str(profile.id),
+        "linkedin_url": profile.linkedin_url,
+        "skills": profile.skills or [],
+        "education": profile.education or [],
+        "experience_years": profile.experience_years,
+        "tools": profile.tools or [],
+        "certifications": profile.certifications or [],
+        "resume_text": profile.raw_text,
+        "updated_at": profile.updated_at.isoformat() if profile.updated_at else None,
+    }
+
+
+@app.delete("/api/profile")
+async def clear_profile(db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    """Delete the current user's saved profile fields."""
+    user_id = _require_user_id(auth)
+    stmt = select(UserProfile).where(UserProfile.user_id == user_id).limit(1)
+    result = await db.execute(stmt)
+    profile = result.scalar_one_or_none()
+    if profile:
+        await db.delete(profile)
+        await db.commit()
+    return {"status": "ok"}
 
 
 @app.get("/api/jobs/{job_id}/match")

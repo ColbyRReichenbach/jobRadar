@@ -26,9 +26,14 @@ def _run_async(coro):
 
 async def _check_followups_async():
     from backend.database import async_session_factory
-    from backend.models import Alert, Application
+    from backend.models import Alert, Application, User
 
     async with async_session_factory() as db:
+        enabled_users_result = await db.execute(
+            select(User.id).where(User.notifications_started_at.isnot(None))
+        )
+        enabled_user_ids = {row[0] for row in enabled_users_result.all()}
+
         cutoff = datetime.now(timezone.utc) - timedelta(days=7)
         stmt = select(Application).where(
             and_(
@@ -45,7 +50,7 @@ async def _check_followups_async():
         for app in apps:
             if not app.follow_up_due:
                 app.follow_up_due = True
-                if app.user_id:
+                if app.user_id and app.user_id in enabled_user_ids:
                     db.add(
                         Alert(
                             user_id=app.user_id,

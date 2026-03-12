@@ -155,7 +155,7 @@ async def test_followup_flagging(db_session):
 
 @pytest.mark.asyncio
 async def test_followup_task_creates_pipeline_alert(db_session):
-    from backend.models import Alert, Application
+    from backend.models import Alert, Application, User
     from backend.tasks.check_followups import _check_followups_async
 
     class _SessionCtx:
@@ -176,6 +176,9 @@ async def test_followup_task_creates_pipeline_alert(db_session):
         applied_at=datetime.now(timezone.utc) - timedelta(days=8),
     )
     db_session.add(app)
+    user_result = await db_session.execute(select(User).where(User.id == TEST_USER_ID))
+    user = user_result.scalar_one()
+    user.notifications_started_at = datetime.now(timezone.utc)
     await db_session.commit()
 
     with patch("backend.database.async_session_factory", return_value=_SessionCtx(db_session)):

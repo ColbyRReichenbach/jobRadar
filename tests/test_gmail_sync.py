@@ -187,7 +187,7 @@ async def test_gmail_sync_does_not_hard_block_real_employer_domains(client, db_s
 
 @pytest.mark.asyncio
 async def test_gmail_sync_creates_actionable_alerts_for_new_conversation(client, db_session):
-    from backend.models import Alert, EmailEvent, GmailToken
+    from backend.models import Alert, EmailEvent, GmailToken, User
 
     token = GmailToken(
         user_id=TEST_USER_ID,
@@ -196,6 +196,11 @@ async def test_gmail_sync_creates_actionable_alerts_for_new_conversation(client,
         expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
     )
     db_session.add(token)
+    await db_session.commit()
+
+    user_result = await db_session.execute(select(User).where(User.id == TEST_USER_ID))
+    user = user_result.scalar_one()
+    user.notifications_started_at = datetime.now(timezone.utc)
     await db_session.commit()
 
     gmail_service = Mock()
@@ -261,3 +266,64 @@ async def test_gmail_sync_creates_actionable_alerts_for_new_conversation(client,
     network_alert = next(alert for alert in alerts if alert.alert_type == "network_contact")
     assert network_alert.action_url == "/network?email=jamie.recruiter%40matchco.com"
     assert "Added Jamie Recruiter" in network_alert.title
+
+
+@pytest.mark.asyncio
+async def test_first_gmail_sync_enables_notifications_without_backfilling_alerts(client, db_session):
+    from backend.models import Alert, GmailToken, User
+
+    token = GmailToken(
+        user_id=TEST_USER_ID,
+        access_token=encrypt_gmail_token("access-token"),
+        refresh_token=encrypt_gmail_token("refresh-token"),
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+    )
+    db_session.add(token)
+    await db_session.commit()
+
+    gmail_service = Mock()
+    gmail_service.users.return_value.messages.return_value.list.return_value.execute.return_value = {
+        "messages": [{"id": "sync-msg-first-1"}]
+    }
+    gmail_service.users.return_value.messages.return_value.get.return_value.execute.return_value = {
+        "threadId": "thread-first-1",
+        "snippet": "Application update",
+        "payload": {
+            "headers": [
+                {"name": "From", "value": "Recruiting Team <jobs@matchco.com>"},
+                {"name": "Subject", "value": "Application update"},
+                {"name": "Date", "value": "Wed, 11 Mar 2026 10:00:00 +0000"},
+            ],
+            "body": {"data": ""},
+        },
+    }
+
+    with patch("googleapiclient.discovery.build", return_value=gmail_service):
+        with patch(
+            "backend.services.email_parser.parse_email_body",
+            return_value="We received your application and will be in touch soon.",
+        ):
+            with patch(
+                "backend.services.email_classifier.classify_email",
+                new=AsyncMock(return_value={
+                    "classification": "job_update",
+                    "action_needed": False,
+                    "summary": "Application update",
+                    "confidence": 0.85,
+                }),
+            ):
+                with patch(
+                    "backend.services.company_identity.get_company_info",
+                    return_value={"company_name": "MatchCo", "logo_url": None},
+                ):
+                    resp = await client.post("/api/gmail/sync", headers=AUTH_HEADER)
+
+    assert resp.status_code == 200
+    assert resp.json()["new_emails"] == 1
+
+    alert_result = await db_session.execute(select(Alert).where(Alert.user_id == TEST_USER_ID))
+    assert alert_result.scalars().all() == []
+
+    user_result = await db_session.execute(select(User).where(User.id == TEST_USER_ID))
+    user = user_result.scalar_one()
+    assert user.notifications_started_at is not None

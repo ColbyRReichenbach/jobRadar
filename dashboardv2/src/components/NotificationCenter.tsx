@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Bell, Briefcase, Mail, MessageSquare, UserPlus, X } from 'lucide-react';
 import { formatDistanceToNow, isToday, isYesterday } from 'date-fns';
 import { cn } from '../lib/utils';
@@ -12,6 +12,14 @@ interface AlertGroup {
   id: string;
   primary: AlertItem;
   items: AlertItem[];
+}
+
+interface ToastAlert {
+  id: string;
+  title: string;
+  body: string | null;
+  actionUrl: string | null;
+  alertType: string;
 }
 
 function alertMeta(alertType: string) {
@@ -71,6 +79,12 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<ToastAlert[]>([]);
+  const [browserPermission, setBrowserPermission] = useState<string | null>(
+    typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : null
+  );
+  const seenAlertIdsRef = useRef<Set<string>>(new Set());
+  const hydratedRef = useRef(false);
 
   const loadAlerts = async () => {
     try {
@@ -93,6 +107,58 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
     }, 30000);
     return () => window.clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    const allIds = new Set(alerts.map((alert) => alert.id));
+    if (!hydratedRef.current) {
+      seenAlertIdsRef.current = allIds;
+      hydratedRef.current = true;
+      return;
+    }
+
+    const newUnread = alerts.filter((alert) => !seenAlertIdsRef.current.has(alert.id) && !alert.read);
+    if (newUnread.length === 0) {
+      seenAlertIdsRef.current = allIds;
+      return;
+    }
+
+    seenAlertIdsRef.current = allIds;
+
+    const nextToasts = newUnread.slice(0, 3).map((alert) => ({
+      id: alert.id,
+      title: alert.title,
+      body: alert.body,
+      actionUrl: alert.action_url,
+      alertType: alert.alert_type,
+    }));
+
+    if (document.visibilityState === 'visible') {
+      setToasts((prev) => [...nextToasts, ...prev].slice(0, 4));
+      return;
+    }
+
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      nextToasts.forEach((toast) => {
+        const notification = new Notification(toast.title, {
+          body: toast.body || 'Open AppTrail to review the latest update.',
+          tag: toast.id,
+        });
+        notification.onclick = () => {
+          window.focus();
+          onNavigate(toast.actionUrl);
+          notification.close();
+        };
+      });
+    }
+  }, [alerts, onNavigate]);
+
+  useEffect(() => {
+    if (toasts.length === 0) return;
+    const timers = toasts.map((toast) => window.setTimeout(() => {
+      setToasts((prev) => prev.filter((item) => item.id !== toast.id));
+    }, 5000));
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
+  }, [toasts]);
 
   const unreadAlerts = useMemo(() => alerts.filter((alert) => !alert.read).length, [alerts]);
 
@@ -161,6 +227,12 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
     }
   };
 
+  const handleEnableBrowserAlerts = async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return;
+    const permission = await Notification.requestPermission();
+    setBrowserPermission(permission);
+  };
+
   const handleSelectAlert = async (group: AlertGroup) => {
     const unreadItems = group.items.filter((item) => !item.read);
     if (unreadItems.length > 0) {
@@ -179,6 +251,40 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
 
   return (
     <div className="relative">
+      {toasts.length > 0 && (
+        <div className="fixed top-16 right-4 z-[70] flex w-[360px] max-w-[calc(100vw-2rem)] flex-col gap-2 md:top-20">
+          {toasts.map((toast) => {
+            const meta = alertMeta(toast.alertType);
+            const Icon = meta.icon;
+            return (
+              <button
+                key={toast.id}
+                type="button"
+                onClick={() => {
+                  setToasts((prev) => prev.filter((item) => item.id !== toast.id));
+                  onNavigate(toast.actionUrl);
+                }}
+                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left shadow-xl"
+              >
+                <div className="flex items-start gap-3">
+                  <div className={cn('mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border', meta.tone)}>
+                    <Icon className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-slate-900 truncate">{toast.title}</div>
+                    {toast.body && (
+                      <div className="mt-1 text-xs text-slate-500 line-clamp-2 [overflow-wrap:anywhere]">
+                        {toast.body}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       <button
         type="button"
         onClick={() => void handleOpen()}
@@ -201,6 +307,15 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
               <p className="text-xs text-slate-500">{unreadAlerts} unread</p>
             </div>
             <div className="flex items-center gap-1">
+              {browserPermission && browserPermission !== 'granted' && (
+                <button
+                  type="button"
+                  onClick={() => void handleEnableBrowserAlerts()}
+                  className="inline-flex h-8 items-center justify-center rounded-lg px-2 text-[11px] font-semibold text-slate-600 hover:bg-slate-200"
+                >
+                  Enable alerts
+                </button>
+              )}
               {unreadAlerts > 0 && (
                 <button
                   type="button"

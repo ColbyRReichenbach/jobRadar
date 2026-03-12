@@ -148,7 +148,18 @@ export function Sidebar({ activeTab, setActiveTab, onGmailSync }: SidebarProps) 
             )}
 
             {/* User profile */}
-            <div className="flex items-center gap-3 rounded-2xl bg-white px-3 py-3 border border-slate-200/60 shadow-sm">
+            <div
+              className="flex items-center gap-3 rounded-2xl bg-white px-3 py-3 border border-slate-200/60 shadow-sm cursor-pointer hover:border-slate-300 transition-colors"
+              onClick={() => setActiveTab('profile')}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  setActiveTab('profile');
+                }
+              }}
+              role="button"
+              tabIndex={0}
+            >
               {user.picture ? (
                 <img src={user.picture} alt={user.name || 'User'} className="w-8 h-8 rounded-full border border-slate-200" referrerPolicy="no-referrer" />
               ) : (
@@ -161,7 +172,10 @@ export function Sidebar({ activeTab, setActiveTab, onGmailSync }: SidebarProps) 
                 <span className="text-xs font-serif italic text-slate-500 truncate">{user.email}</span>
               </div>
               <button
-                onClick={signOut}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  signOut();
+                }}
                 aria-label="Sign out"
                 className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 rounded-lg transition-colors shrink-0"
                 title="Sign out"

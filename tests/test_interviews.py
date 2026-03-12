@@ -228,6 +228,7 @@ async def test_calendar_sync_creates_and_updates_interview(client, db_session):
     user_result = await db_session.execute(select(User).where(User.id == TEST_USER_ID))
     user = user_result.scalar_one()
     user.calendar_connected = True
+    user.notifications_started_at = datetime.now(timezone.utc)
     await db_session.commit()
 
     calendar_service = MagicMock()

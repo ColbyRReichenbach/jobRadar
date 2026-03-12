@@ -56,6 +56,8 @@ async def test_get_profile(client):
     data = resp.json()
     assert data is not None
     assert "skills" in data
+    assert "linkedin_url" in data
+    assert "resume_text" in data
 
 
 @pytest.mark.asyncio
@@ -79,6 +81,36 @@ async def test_profile_upsert(client):
 
     # Same profile, updated
     assert id1 == id2
+
+
+@pytest.mark.asyncio
+async def test_update_and_clear_profile(client):
+    update_resp = await client.patch(
+        "/api/profile",
+        json={
+            "linkedin_url": "https://linkedin.com/in/test-user",
+            "skills": ["Python", "FastAPI"],
+            "tools": ["Docker"],
+            "certifications": ["AWS CCP"],
+            "education": ["BS Computer Science — Test University — 2020"],
+            "experience_years": 4,
+            "resume_text": "Test resume text",
+        },
+        headers=AUTH_HEADER,
+    )
+    assert update_resp.status_code == 200
+    data = update_resp.json()
+    assert data["linkedin_url"] == "https://linkedin.com/in/test-user"
+    assert data["experience_years"] == 4
+    assert data["skills"] == ["Python", "FastAPI"]
+    assert data["resume_text"] == "Test resume text"
+
+    clear_resp = await client.delete("/api/profile", headers=AUTH_HEADER)
+    assert clear_resp.status_code == 200
+
+    get_resp = await client.get("/api/profile", headers=AUTH_HEADER)
+    assert get_resp.status_code == 200
+    assert get_resp.json() is None
 
 
 @pytest.mark.asyncio

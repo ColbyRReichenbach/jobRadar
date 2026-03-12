@@ -157,6 +157,18 @@ export interface AlertItem {
   created_at: string | null;
 }
 
+export interface StructuredProfile {
+  id: string;
+  linkedin_url: string | null;
+  skills: string[];
+  education: Array<string | Record<string, unknown>>;
+  experience_years: number | null;
+  tools: string[];
+  certifications: string[];
+  resume_text: string | null;
+  updated_at: string | null;
+}
+
 export function buildGoogleAuthStartUrl(options: GoogleAuthOptions = {}): string {
   const params = new URLSearchParams();
   if (options.connectGmail) params.set('connect_gmail', 'true');
@@ -480,20 +492,46 @@ export async function searchJobs(query: string, location: string = ''): Promise<
 
 // --- Resume / Match API ---
 
-export async function parseResume(text: string): Promise<any> {
+export async function parseResume(text: string): Promise<StructuredProfile> {
   const res = await apiFetch(`${API_BASE}/api/resume/parse`, {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify({ text }),
   });
-  if (!res.ok) throw new Error(`Failed to parse resume: ${res.status}`);
+  if (!res.ok) throw new Error(await readErrorDetail(res, `Failed to parse resume: ${res.status}`));
   return await res.json();
 }
 
-export async function getProfile(): Promise<any | null> {
+export async function getProfile(): Promise<StructuredProfile | null> {
   const res = await apiFetch(`${API_BASE}/api/profile`, { headers: authHeaders() });
   if (!res.ok) return null;
   return await res.json();
+}
+
+export async function updateProfile(payload: {
+  linkedin_url?: string | null;
+  skills?: string[];
+  education?: Array<string | Record<string, unknown>>;
+  experience_years?: number | null;
+  tools?: string[];
+  certifications?: string[];
+  resume_text?: string | null;
+}): Promise<StructuredProfile> {
+  const res = await apiFetch(`${API_BASE}/api/profile`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to save profile'));
+  return await res.json();
+}
+
+export async function clearProfile(): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/api/profile`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to clear profile'));
 }
 
 export async function getJobMatch(jobId: string): Promise<any> {
