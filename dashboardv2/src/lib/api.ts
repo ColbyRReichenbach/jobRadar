@@ -534,6 +534,16 @@ export async function markAlertRead(id: string): Promise<void> {
   });
 }
 
+export async function markAllAlertsRead(): Promise<number> {
+  const res = await apiFetch(`${API_BASE}/api/alerts/read-all`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(`Failed to mark alerts read: ${res.status}`);
+  const data = await res.json();
+  return data.updated || 0;
+}
+
 export async function getUnreadAlertCount(): Promise<number> {
   const res = await apiFetch(`${API_BASE}/api/alerts/count`, { headers: authHeaders() });
   if (!res.ok) return 0;

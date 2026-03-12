@@ -1,11 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Bell, Briefcase, Mail, MessageSquare, UserPlus, X } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow, isToday, isYesterday } from 'date-fns';
 import { cn } from '../lib/utils';
-import { AlertItem, fetchAlerts, getUnreadAlertCount, markAlertRead } from '../lib/api';
+import { AlertItem, fetchAlerts, getUnreadAlertCount, markAlertRead, markAllAlertsRead } from '../lib/api';
 
 interface NotificationCenterProps {
   onNavigate: (actionUrl: string | null) => void;
+}
+
+interface AlertGroup {
+  id: string;
+  primary: AlertItem;
+  items: AlertItem[];
 }
 
 function alertMeta(alertType: string) {
@@ -90,6 +96,52 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
 
   const unreadAlerts = useMemo(() => alerts.filter((alert) => !alert.read).length, [alerts]);
 
+  const groupedAlerts = useMemo(() => {
+    const buckets = new Map<string, AlertGroup[]>();
+
+    const getSection = (createdAt: string | null) => {
+      if (!createdAt) return 'Earlier';
+      const date = new Date(createdAt);
+      if (isToday(date)) return 'Today';
+      if (isYesterday(date)) return 'Yesterday';
+      return 'Earlier';
+    };
+
+    const groupsByKey = new Map<string, AlertGroup>();
+    for (const alert of alerts) {
+      const section = getSection(alert.created_at);
+      const key = [
+        section,
+        alert.alert_type,
+        alert.action_url || '',
+        alert.title.trim().toLowerCase(),
+      ].join('::');
+
+      const existing = groupsByKey.get(key);
+      if (existing) {
+        existing.items.push(alert);
+        const existingDate = existing.primary.created_at ? new Date(existing.primary.created_at).getTime() : 0;
+        const currentDate = alert.created_at ? new Date(alert.created_at).getTime() : 0;
+        if (currentDate > existingDate) {
+          existing.primary = alert;
+        }
+        continue;
+      }
+
+      const group: AlertGroup = {
+        id: key,
+        primary: alert,
+        items: [alert],
+      };
+      groupsByKey.set(key, group);
+      buckets.set(section, [...(buckets.get(section) || []), group]);
+    }
+
+    return ['Today', 'Yesterday', 'Earlier']
+      .map((section) => ({ section, groups: buckets.get(section) || [] }))
+      .filter((entry) => entry.groups.length > 0);
+  }, [alerts]);
+
   const handleOpen = async () => {
     setIsOpen((prev) => !prev);
     if (!isOpen) {
@@ -97,18 +149,32 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
     }
   };
 
-  const handleSelectAlert = async (alert: AlertItem) => {
-    if (!alert.read) {
+  const handleMarkAllRead = async () => {
+    try {
+      const updated = await markAllAlertsRead();
+      if (updated > 0) {
+        setAlerts((prev) => prev.map((item) => ({ ...item, read: true })));
+        setUnreadCount(0);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to mark notifications as read.');
+    }
+  };
+
+  const handleSelectAlert = async (group: AlertGroup) => {
+    const unreadItems = group.items.filter((item) => !item.read);
+    if (unreadItems.length > 0) {
       try {
-        await markAlertRead(alert.id);
-        setAlerts((prev) => prev.map((item) => (item.id === alert.id ? { ...item, read: true } : item)));
-        setUnreadCount((prev) => Math.max(0, prev - 1));
+        await Promise.all(unreadItems.map((item) => markAlertRead(item.id)));
+        const unreadIds = new Set(unreadItems.map((item) => item.id));
+        setAlerts((prev) => prev.map((item) => (unreadIds.has(item.id) ? { ...item, read: true } : item)));
+        setUnreadCount((prev) => Math.max(0, prev - unreadItems.length));
       } catch {
         // Navigation still matters more than marking read.
       }
     }
     setIsOpen(false);
-    onNavigate(alert.action_url);
+    onNavigate(group.primary.action_url);
   };
 
   return (
@@ -134,14 +200,25 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
               <h3 className="text-base font-semibold text-slate-900">Notifications</h3>
               <p className="text-xs text-slate-500">{unreadAlerts} unread</p>
             </div>
-            <button
-              type="button"
-              onClick={() => setIsOpen(false)}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-200"
-              aria-label="Close notifications"
-            >
-              <X className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-1">
+              {unreadAlerts > 0 && (
+                <button
+                  type="button"
+                  onClick={() => void handleMarkAllRead()}
+                  className="inline-flex h-8 items-center justify-center rounded-lg px-2 text-[11px] font-semibold text-slate-600 hover:bg-slate-200"
+                >
+                  Mark all read
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setIsOpen(false)}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-200"
+                aria-label="Close notifications"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
           <div className="max-h-[70vh] overflow-y-auto">
@@ -158,51 +235,66 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
                 <p className="text-xs text-slate-500 mt-1">New alerts will show up here across the app.</p>
               </div>
             ) : (
-              <div className="p-3 space-y-2">
-                {alerts.map((alert) => {
-                  const meta = alertMeta(alert.alert_type);
-                  const Icon = meta.icon;
-                  return (
-                    <button
-                      key={alert.id}
-                      type="button"
-                      onClick={() => void handleSelectAlert(alert)}
-                      className={cn(
-                        'w-full text-left rounded-2xl border px-4 py-3 transition-colors',
-                        alert.read ? 'bg-slate-50 border-slate-100 opacity-80' : 'bg-white border-slate-200 hover:bg-slate-50',
-                      )}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-start gap-3 min-w-0">
-                          <div className={cn('mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border', meta.tone)}>
-                            <Icon className="w-4 h-4" />
-                          </div>
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-semibold text-slate-900 truncate">{alert.title}</span>
-                              {!alert.read && <span className="h-2 w-2 rounded-full bg-red-500 shrink-0" />}
+              <div className="p-3 space-y-4">
+                {groupedAlerts.map(({ section, groups }) => (
+                  <div key={section} className="space-y-2">
+                    <div className="px-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                      {section}
+                    </div>
+                    {groups.map((group) => {
+                      const alert = group.primary;
+                      const meta = alertMeta(alert.alert_type);
+                      const unreadInGroup = group.items.some((item) => !item.read);
+                      const count = group.items.length;
+                      const Icon = meta.icon;
+                      return (
+                        <button
+                          key={group.id}
+                          type="button"
+                          onClick={() => void handleSelectAlert(group)}
+                          className={cn(
+                            'w-full text-left rounded-2xl border px-4 py-3 transition-colors',
+                            unreadInGroup ? 'bg-white border-slate-200 hover:bg-slate-50' : 'bg-slate-50 border-slate-100 opacity-80',
+                          )}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-start gap-3 min-w-0">
+                              <div className={cn('mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border', meta.tone)}>
+                                <Icon className="w-4 h-4" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-semibold text-slate-900 truncate">{alert.title}</span>
+                                  {count > 1 && (
+                                    <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-slate-200 px-1.5 text-[10px] font-semibold text-slate-600">
+                                      {count}
+                                    </span>
+                                  )}
+                                  {unreadInGroup && <span className="h-2 w-2 rounded-full bg-red-500 shrink-0" />}
+                                </div>
+                                {alert.body && (
+                                  <p className="mt-1 text-xs text-slate-500 line-clamp-2 [overflow-wrap:anywhere]">
+                                    {alert.body}
+                                  </p>
+                                )}
+                                <div className="mt-2 flex items-center gap-2">
+                                  <span className={cn('inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider', meta.tone)}>
+                                    {meta.label}
+                                  </span>
+                                  {alert.created_at && (
+                                    <span className="text-[11px] text-slate-400">
+                                      {formatDistanceToNow(new Date(alert.created_at), { addSuffix: true })}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
                             </div>
-                            {alert.body && (
-                              <p className="mt-1 text-xs text-slate-500 line-clamp-2 [overflow-wrap:anywhere]">
-                                {alert.body}
-                              </p>
-                            )}
-                            <div className="mt-2 flex items-center gap-2">
-                              <span className={cn('inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider', meta.tone)}>
-                                {meta.label}
-                              </span>
-                              {alert.created_at && (
-                                <span className="text-[11px] text-slate-400">
-                                  {formatDistanceToNow(new Date(alert.created_at), { addSuffix: true })}
-                                </span>
-                              )}
-                            </div>
                           </div>
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
               </div>
             )}
           </div>

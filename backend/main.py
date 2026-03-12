@@ -2745,6 +2745,23 @@ async def list_alerts(
     ]
 
 
+@app.patch("/api/alerts/read-all")
+async def mark_all_alerts_read(db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    """Mark all alerts as read for the current user."""
+    user_id = _require_user_id(auth)
+    stmt = select(Alert).where(
+        Alert.user_id == user_id,
+        Alert.read.is_(False),
+    )
+    result = await db.execute(stmt)
+    alerts = result.scalars().all()
+    for alert in alerts:
+        alert.read = True
+    if alerts:
+        await db.commit()
+    return {"status": "ok", "updated": len(alerts)}
+
+
 @app.patch("/api/alerts/{alert_id}")
 async def update_alert(alert_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
     """Mark an alert as read."""

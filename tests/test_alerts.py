@@ -67,6 +67,25 @@ async def test_unread_count(client, db_session):
 
 
 @pytest.mark.asyncio
+async def test_mark_all_alerts_read(client, db_session):
+    """PATCH /api/alerts/read-all marks all unread alerts as read."""
+    from backend.models import Alert
+
+    db_session.add(Alert(alert_type="test", title="Alert 1"))
+    db_session.add(Alert(alert_type="test", title="Alert 2"))
+    db_session.add(Alert(alert_type="test", title="Alert 3", read=True))
+    await db_session.commit()
+
+    resp = await client.patch("/api/alerts/read-all", headers=AUTH_HEADER)
+    assert resp.status_code == 200
+    assert resp.json()["updated"] == 2
+
+    count_resp = await client.get("/api/alerts/count", headers=AUTH_HEADER)
+    assert count_resp.status_code == 200
+    assert count_resp.json()["unread"] == 0
+
+
+@pytest.mark.asyncio
 async def test_first_response_days_field(client):
     """Application serializes first_response_days."""
     resp = await client.post(
