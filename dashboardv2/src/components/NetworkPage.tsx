@@ -76,6 +76,10 @@ interface ContactDetailPayload {
 interface NetworkPageProps {
   onOpenEmail?: (email: any) => void;
   onRefreshData?: () => Promise<void> | void;
+  focusRequest?: {
+    email: string;
+    token: number;
+  } | null;
 }
 
 interface ContactFormState {
@@ -108,7 +112,7 @@ const EMPTY_COMPOSE: ComposeState = {
   body: '',
 };
 
-export function NetworkPage({ onOpenEmail, onRefreshData }: NetworkPageProps) {
+export function NetworkPage({ onOpenEmail, onRefreshData, focusRequest }: NetworkPageProps) {
   const contactDialogTitleId = useId();
   const contactFormTitleId = useId();
   const composeDialogTitleId = useId();
@@ -136,6 +140,38 @@ export function NetworkPage({ onOpenEmail, onRefreshData }: NetworkPageProps) {
   useEffect(() => {
     loadContacts();
   }, []);
+
+  useEffect(() => {
+    if (!focusRequest?.email) return;
+    const emailValue = focusRequest.email.toLowerCase();
+    const existing = contacts.find((contact) => (contact.email || '').toLowerCase() === emailValue);
+    if (existing) {
+      void openDetail(existing);
+      return;
+    }
+
+    void (async () => {
+      try {
+        const detail = await fetchNetworkContact(focusRequest.email);
+        setContactDetail(detail);
+        setSelectedContact({
+          id: detail.contact.id || focusRequest.email,
+          name: detail.contact.name || focusRequest.email,
+          email: detail.contact.email || focusRequest.email,
+          title: detail.contact.title || null,
+          company: detail.contact.company || null,
+          company_id: detail.contact.company_id || null,
+          source: detail.contact.source || 'email',
+          reached_out: false,
+          response_received: false,
+          linkedin_url: detail.contact.linkedin_url || null,
+          phone_number: detail.contact.phone_number || null,
+        });
+      } catch (err) {
+        setErrorMessage(err instanceof Error ? err.message : 'Failed to load contact detail.');
+      }
+    })();
+  }, [contacts, focusRequest]);
 
   const loadContacts = async (query?: string) => {
     setLoading(true);

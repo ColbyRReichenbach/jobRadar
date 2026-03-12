@@ -11,6 +11,7 @@ import { Calendar } from './components/Calendar';
 import { Settings } from './components/Settings';
 import { LoginPage } from './components/LoginPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { NotificationCenter } from './components/NotificationCenter';
 import { initialJobs, initialEmails } from './data/mockData';
 import { Job, Email } from './types';
 import { Menu, X } from 'lucide-react';
@@ -36,6 +37,10 @@ function AppContent() {
     emailId: string;
     threadId?: string;
     tab: 'emails' | 'conversations';
+    token: number;
+  } | null>(null);
+  const [networkFocusRequest, setNetworkFocusRequest] = useState<{
+    email: string;
     token: number;
   } | null>(null);
 
@@ -86,6 +91,47 @@ function AppContent() {
     });
   }, []);
 
+  const handleNotificationNavigate = useCallback((actionUrl: string | null) => {
+    if (!actionUrl) return;
+    const resolved = new URL(actionUrl, window.location.origin);
+    const emailId = resolved.searchParams.get('email_id');
+    const threadId = resolved.searchParams.get('thread_id') || undefined;
+    const tab = resolved.searchParams.get('tab');
+    const email = resolved.searchParams.get('email');
+
+    if (resolved.pathname === '/network' && email) {
+      setActiveTab('network');
+      setNetworkFocusRequest({
+        email,
+        token: Date.now(),
+      });
+      return;
+    }
+
+    if (resolved.pathname === '/conversations' || tab === 'conversations') {
+      if (!emailId) return;
+      setActiveTab('conversations');
+      setEmailFocusRequest({
+        emailId,
+        threadId,
+        tab: 'conversations',
+        token: Date.now(),
+      });
+      return;
+    }
+
+    if ((resolved.pathname === '/emails' || tab === 'emails') && emailId) {
+      setActiveTab('emails');
+      setEmailFocusRequest({
+        emailId,
+        threadId,
+        tab: 'emails',
+        token: Date.now(),
+      });
+      return;
+    }
+  }, []);
+
   const handleOpenAddJob = useCallback((draft?: Partial<Job>) => {
     setPendingJobDraft(draft || null);
     setShowAddJobModal(true);
@@ -130,12 +176,15 @@ function AppContent() {
             AppTrail
           </span>
         </div>
-        <button
-          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-          className="p-2 -mr-2 text-slate-600 hover:text-slate-900 hover:bg-slate-200/50 rounded-lg transition-colors"
-        >
-          {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-        </button>
+        <div className="flex items-center gap-2">
+          <NotificationCenter onNavigate={handleNotificationNavigate} />
+          <button
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            className="p-2 -mr-2 text-slate-600 hover:text-slate-900 hover:bg-slate-200/50 rounded-lg transition-colors"
+          >
+            {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+          </button>
+        </div>
       </div>
 
       {/* Desktop Sidebar */}
@@ -168,6 +217,9 @@ function AppContent() {
       </AnimatePresence>
 
       <main className="flex-1 flex overflow-hidden pt-16 md:pt-0">
+        <div className="hidden md:block fixed top-4 right-4 z-40">
+          <NotificationCenter onNavigate={handleNotificationNavigate} />
+        </div>
         <div className="flex-1 flex flex-col overflow-hidden">
           {loadError && (
             <div className="px-4 md:px-6 pt-4 md:pt-5">
@@ -191,7 +243,7 @@ function AppContent() {
             {activeTab === 'analytics' && <Analytics jobs={jobs} />}
             {activeTab === 'export' && <ExportData />}
             {activeTab === 'conversations' && <Conversations emails={emails} jobs={jobs} focusRequest={emailFocusRequest?.tab === 'conversations' ? emailFocusRequest : null} />}
-            {activeTab === 'network' && <NetworkPage onOpenEmail={handleOpenEmail} onRefreshData={loadData} />}
+            {activeTab === 'network' && <NetworkPage onOpenEmail={handleOpenEmail} onRefreshData={loadData} focusRequest={networkFocusRequest} />}
             {activeTab === 'calendar' && <Calendar />}
             {activeTab === 'settings' && <Settings />}
             {activeTab === 'emails' && (

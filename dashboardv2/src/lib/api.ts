@@ -147,6 +147,16 @@ export interface GoogleAuthOptions {
   connectCalendar?: boolean;
 }
 
+export interface AlertItem {
+  id: string;
+  alert_type: string;
+  title: string;
+  body: string | null;
+  action_url: string | null;
+  read: boolean;
+  created_at: string | null;
+}
+
 export function buildGoogleAuthStartUrl(options: GoogleAuthOptions = {}): string {
   const params = new URLSearchParams();
   if (options.connectGmail) params.set('connect_gmail', 'true');
@@ -510,7 +520,7 @@ export async function getWarmPaths(jobId: string): Promise<any> {
 
 // --- Alerts API ---
 
-export async function fetchAlerts(unread = false): Promise<any[]> {
+export async function fetchAlerts(unread = false): Promise<AlertItem[]> {
   const params = unread ? '?unread=true' : '';
   const res = await apiFetch(`${API_BASE}/api/alerts${params}`, { headers: authHeaders() });
   if (!res.ok) throw new Error(`Failed to fetch alerts: ${res.status}`);

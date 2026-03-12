@@ -549,6 +549,20 @@ def _serialize_email_event(event: EmailEvent) -> dict:
     }
 
 
+def _alert_action_url(path: str, **params: str | None) -> str:
+    from urllib.parse import urlencode
+
+    clean_params = {key: value for key, value in params.items() if value}
+    query = urlencode(clean_params)
+    return f"{path}?{query}" if query else path
+
+
+def _email_alert_type(email_type: str | None, classification: str | None) -> str:
+    if email_type == "conversation":
+        return "conversation_message"
+    return classification or "email_update"
+
+
 def _serialize_contact(contact_row: Contact) -> dict:
     state = sa_inspect(contact_row)
     application = None
@@ -1630,6 +1644,7 @@ async def sync_gmail(
         CLASSIFICATION_TO_COLOR,
         CLASSIFICATION_TO_EMAIL_TYPE,
         is_likely_person_sender,
+        should_create_network_contact,
     )
     from backend.services.company_identity import extract_domain, get_company_info
     from backend.services.email_filter import is_obvious_noise_email
@@ -1783,6 +1798,20 @@ async def sync_gmail(
                 if matched_contact.application_id and not app_id:
                     app_id = matched_contact.application_id
 
+        should_alert_network_contact = False
+        if (
+            sender_email_addr
+            and CLASSIFICATION_TO_EMAIL_TYPE.get(cls) == "conversation"
+            and should_create_network_contact(sender_name, sender_email_addr, cls)
+            and not contact_id
+        ):
+            prior_sender_stmt = select(EmailEvent.id).where(
+                EmailEvent.user_id == user_id,
+                EmailEvent.sender_email == sender_email_addr,
+            ).limit(1)
+            prior_sender_result = await db.execute(prior_sender_stmt)
+            should_alert_network_contact = prior_sender_result.scalar_one_or_none() is None
+
         email_event = EmailEvent(
             user_id=user_id,
             application_id=app_id,
@@ -1810,6 +1839,35 @@ async def sync_gmail(
             confidence=classification.get("confidence"),
         )
         db.add(email_event)
+        await db.flush()
+
+        action_path = "/conversations" if email_event.email_type == "conversation" else "/emails"
+        action_tab = "conversations" if email_event.email_type == "conversation" else "emails"
+        email_alert = Alert(
+            user_id=user_id,
+            alert_type=_email_alert_type(email_event.email_type, cls),
+            title=f"{sender_name or sender_email_addr or 'New update'}: {subject or '(no subject)'}",
+            body=(classification.get("summary") or snippet or body_text[:160] if body_text else snippet),
+            action_url=_alert_action_url(
+                action_path,
+                tab=action_tab,
+                email_id=str(email_event.id),
+                thread_id=email_event.thread_id or None,
+            ),
+        )
+        db.add(email_alert)
+
+        if should_alert_network_contact:
+            db.add(
+                Alert(
+                    user_id=user_id,
+                    alert_type="network_contact",
+                    title=f"Added {sender_name or sender_email_addr} to your network",
+                    body="Open their card to review contact details from this conversation.",
+                    action_url=_alert_action_url("/network", email=sender_email_addr),
+                )
+            )
+
         new_count += 1
         emails_synced.append({
             "subject": subject,
