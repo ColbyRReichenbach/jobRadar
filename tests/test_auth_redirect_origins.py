@@ -86,3 +86,21 @@ def test_google_authorization_response_uses_configured_callback_origin():
     )
 
     assert _build_google_authorization_response(request) == f"{GOOGLE_REDIRECT_URI}?code=abc&state=xyz"
+
+
+def test_google_authorization_response_can_replace_wrapped_state():
+    from backend.main import GOOGLE_REDIRECT_URI, _build_google_authorization_response
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/api/auth/google/callback",
+            "query_string": b"code=abc&state=wrapped-state&scope=email",
+            "headers": [],
+        }
+    )
+
+    assert _build_google_authorization_response(request, "google-state") == (
+        f"{GOOGLE_REDIRECT_URI}?code=abc&state=google-state&scope=email"
+    )
