@@ -17,7 +17,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from backend.database import async_session_factory
 from backend.models import EmailEvent, User
-from backend.services.email_classifier import classify_email
+from backend.services.email_classifier import classify_email, should_create_network_contact
 
 
 def _decision_bucket(classification: str | None, email_type: str | None) -> str:
@@ -98,9 +98,15 @@ async def _audit_email(email: EmailEvent, rerun_llm: bool) -> dict[str, str]:
         "predicted_sender_role": "",
         "predicted_is_automated": "",
         "predicted_action_needed": str(bool(email.action_needed)),
+        "predicted_network_contact": str(
+            should_create_network_contact(email.sender or "", email.sender_email or "", email.classification)
+        ),
         "predicted_summary": email.summary or "",
         "predicted_key_sentence": email.key_sentence or "",
         "review_correct": "",
+        "review_expected_decision": "",
+        "review_expected_classification": "",
+        "review_expected_network_contact": "",
         "review_reason": "",
     }
 
@@ -125,6 +131,9 @@ async def _audit_email(email: EmailEvent, rerun_llm: bool) -> dict[str, str]:
         predicted_sender_role=prediction.get("sender_role", "") or "",
         predicted_is_automated=str(bool(prediction.get("is_automated", False))),
         predicted_action_needed=str(bool(prediction.get("action_needed", False))),
+        predicted_network_contact=str(
+            should_create_network_contact(email.sender or "", email.sender_email or "", predicted_classification)
+        ),
         predicted_summary=prediction.get("summary", "") or "",
         predicted_key_sentence=prediction.get("key_sentence", "") or "",
     )
@@ -182,9 +191,13 @@ async def main() -> None:
         "predicted_sender_role",
         "predicted_is_automated",
         "predicted_action_needed",
+        "predicted_network_contact",
         "predicted_summary",
         "predicted_key_sentence",
         "review_correct",
+        "review_expected_decision",
+        "review_expected_classification",
+        "review_expected_network_contact",
         "review_reason",
     ]
 
