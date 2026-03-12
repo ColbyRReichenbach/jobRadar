@@ -111,6 +111,22 @@ def _build_frontend_callback_url(frontend_url: str, access_token: str) -> str:
     return f"{frontend_url}/auth/callback#access_token={quote(access_token, safe='')}"
 
 
+def _encode_oauth_state(payload: dict) -> str:
+    import base64
+    import json
+
+    encoded = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode()
+    return encoded.rstrip("=")
+
+
+def _decode_oauth_state(state: str) -> dict:
+    import base64
+    import json
+
+    normalized = state + ("=" * (-len(state) % 4))
+    return json.loads(base64.urlsafe_b64decode(normalized).decode())
+
+
 _rate_limit_storage_uri = os.getenv("RATE_LIMIT_STORAGE_URI") or os.getenv("REDIS_URL")
 limiter = Limiter(
     key_func=_get_request_ip,
@@ -1253,7 +1269,6 @@ async def google_auth_redirect(
 ):
     """Redirect to Google OAuth for sign-in and optional Gmail/Calendar access."""
     from google_auth_oauthlib.flow import Flow
-    import json, base64
 
     flow = Flow.from_client_config(
         {
@@ -1285,7 +1300,7 @@ async def google_auth_redirect(
         "code_verifier": flow.code_verifier,
         "frontend_origin": resolved_frontend_origin,
     }
-    state_str = base64.urlsafe_b64encode(json.dumps(state_data).encode()).decode()
+    state_str = _encode_oauth_state(state_data)
 
     # Replace the auto-generated state param with our custom one
     from urllib.parse import urlencode, urlparse, parse_qs, urlunparse
@@ -1313,11 +1328,10 @@ async def google_auth_callback(
     """Handle Google OAuth callback. Creates/updates user and stores service scopes."""
     from google_auth_oauthlib.flow import Flow
     from fastapi.responses import RedirectResponse
-    import json, base64
 
     # Decode state to get intent and PKCE code_verifier
     try:
-        state_data = json.loads(base64.urlsafe_b64decode(state).decode())
+        state_data = _decode_oauth_state(state)
         connect_gmail = bool(state_data.get("connect_gmail", False))
         connect_calendar = bool(state_data.get("connect_calendar", False))
         code_verifier = state_data.get("code_verifier")

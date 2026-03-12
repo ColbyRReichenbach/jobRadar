@@ -54,3 +54,18 @@ def test_frontend_callback_url_embeds_access_token_in_fragment():
     )
 
     assert callback_url == "https://apptrail1.vercel.app/auth/callback#access_token=header.payload.signature"
+
+
+def test_oauth_state_roundtrip_survives_missing_padding():
+    from backend.main import _decode_oauth_state, _encode_oauth_state
+
+    payload = {
+        "connect_gmail": True,
+        "connect_calendar": False,
+        "code_verifier": "abc123verifier",
+        "frontend_origin": "https://apptrail1.vercel.app",
+    }
+
+    encoded = _encode_oauth_state(payload)
+    assert "=" not in encoded
+    assert _decode_oauth_state(encoded) == payload
