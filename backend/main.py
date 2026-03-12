@@ -3,7 +3,7 @@ import re
 import time
 from datetime import datetime, timezone
 from typing import Optional
-from urllib.parse import quote, urlparse
+from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
 from uuid import uuid4
 
 from dotenv import load_dotenv
@@ -34,6 +34,7 @@ from backend.metrics import (
     observe_request,
 )
 from backend.models import Application, Contact, EmailEvent, EmailFeedback, User, GmailToken, Company, RoleUmbrella, CompanyTechProfile, UserProfile, UserRoleInterest, AtsBehavior, WarmConnection, Alert, Interview, CompanyVisit, InterviewNote, NotificationPreference, ResumeDraft, IgnoredNetworkContact
+from backend.services.alerts import create_user_alert
 from backend.monitoring import configure_sentry
 from backend.services.hunter import find_contacts, generate_linkedin_search_url
 from backend.services.notification_preferences import is_alert_enabled, serialize_notification_preferences
@@ -390,6 +391,78 @@ def _require_user_id(auth: dict) -> _uuid.UUID:
 
 def _normalize_match_text(value: str | None) -> str:
     return re.sub(r"\s+", " ", (value or "").strip().lower())
+
+
+_TRACKING_QUERY_PREFIXES = ("utm_",)
+_TRACKING_QUERY_PARAMS = {
+    "gh_src",
+    "gh_jid",
+    "gh_src_id",
+    "li_fat_id",
+    "li_medium",
+    "li_source",
+    "mc_cid",
+    "mc_eid",
+    "ref",
+    "referrer",
+    "source",
+}
+
+
+def _normalize_job_url(url: str | None) -> str | None:
+    if not url:
+        return None
+
+    trimmed = url.strip()
+    if not trimmed:
+        return None
+
+    parsed = urlparse(trimmed)
+    if not parsed.scheme or not parsed.netloc:
+        return trimmed
+
+    scheme = parsed.scheme.lower()
+    netloc = parsed.netloc.lower()
+    if scheme == "https" and netloc.endswith(":443"):
+        netloc = netloc[:-4]
+    if scheme == "http" and netloc.endswith(":80"):
+        netloc = netloc[:-3]
+
+    path = parsed.path or "/"
+    if path != "/":
+        path = path.rstrip("/") or "/"
+
+    filtered_query = [
+        (key, value)
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if not key.lower().startswith(_TRACKING_QUERY_PREFIXES) and key.lower() not in _TRACKING_QUERY_PARAMS
+    ]
+
+    return urlunparse((
+        scheme,
+        netloc,
+        path,
+        "",
+        urlencode(filtered_query, doseq=True),
+        "",
+    ))
+
+
+async def _find_job_url_duplicate_for_user(db: AsyncSession, user_id: str, job_url: str | None) -> tuple[Application | None, str | None]:
+    normalized_url = _normalize_job_url(job_url)
+    if not normalized_url:
+        return None, None
+
+    stmt = select(Application).where(
+        Application.user_id == user_id,
+        Application.job_url.is_not(None),
+    )
+    result = await db.execute(stmt)
+    for app_row in result.scalars().all():
+        if _normalize_job_url(app_row.job_url) == normalized_url:
+            return app_row, normalized_url
+
+    return None, normalized_url
 
 
 def _parse_salary_numbers(value: str | None) -> tuple[int | None, int | None]:
@@ -758,23 +831,17 @@ async def parse_job(request: Request, req: JobParseRequest):
 @app.post("/api/jobs", status_code=201)
 async def create_application(payload: ApplicationCreate, auth: dict = Depends(verify_api_key), db: AsyncSession = Depends(get_db)):
     user_id = _require_user_id(auth)
+    existing_job, normalized_job_url = await _find_job_url_duplicate_for_user(db, user_id, payload.job_url)
 
     # Check for duplicate job_url
-    if payload.job_url:
-        stmt = select(Application).where(
-            Application.job_url == payload.job_url,
-            Application.user_id == user_id,
-        )
-        result = await db.execute(stmt)
-        existing = result.scalar_one_or_none()
-        if existing:
-            raise HTTPException(status_code=409, detail={"message": "Already tracked", "existing": _serialize_app(existing)})
+    if existing_job:
+        raise HTTPException(status_code=409, detail={"message": "Already tracked", "existing": _serialize_app(existing_job)})
 
     new_app = Application(
         user_id=user_id,
         company=payload.company,
         role_title=payload.role_title,
-        job_url=payload.job_url,
+        job_url=normalized_job_url,
         source=payload.source,
         department=payload.department,
         description_text=payload.description_text,
@@ -787,10 +854,9 @@ async def create_application(payload: ApplicationCreate, auth: dict = Depends(ve
         new_app.status = payload.status
 
     # Sprint 2: Company upsert from job URL domain
-    if payload.job_url:
-        from urllib.parse import urlparse
+    if normalized_job_url:
         from backend.services.company_service import upsert_company
-        parsed_url = urlparse(payload.job_url)
+        parsed_url = urlparse(normalized_job_url)
         domain = parsed_url.netloc.lower().replace("www.", "")
         if domain:
             company_entity = await upsert_company(db, domain)
@@ -816,12 +882,7 @@ async def create_application(payload: ApplicationCreate, auth: dict = Depends(ve
     except IntegrityError:
         await db.rollback()
         # Race condition: another request for the same user inserted between our check and insert.
-        stmt = select(Application).where(
-            Application.job_url == payload.job_url,
-            Application.user_id == user_id,
-        )
-        result = await db.execute(stmt)
-        existing = result.scalar_one_or_none()
+        existing, _ = await _find_job_url_duplicate_for_user(db, user_id, normalized_job_url)
         if existing:
             raise HTTPException(status_code=409, detail={"message": "Already tracked", "existing": _serialize_app(existing)})
         raise HTTPException(status_code=409, detail={"message": "Unable to create application for this job URL"})
@@ -859,19 +920,13 @@ async def check_job_duplicates(
 ):
     user_id = _require_user_id(auth)
 
-    if payload.job_url:
-        stmt = select(Application).where(
-            Application.user_id == user_id,
-            Application.job_url == payload.job_url,
-        )
-        result = await db.execute(stmt)
-        exact = result.scalar_one_or_none()
-        if exact:
-            return {
-                "duplicate_type": "hard",
-                "message": "This job URL is already in your pipeline.",
-                "matches": [_serialize_app(exact)],
-            }
+    exact, normalized_job_url = await _find_job_url_duplicate_for_user(db, user_id, payload.job_url)
+    if exact:
+        return {
+            "duplicate_type": "hard",
+            "message": "This job URL is already in your pipeline.",
+            "matches": [_serialize_app(exact)],
+        }
 
     company_key = _normalize_match_text(payload.company)
     role_key = _normalize_match_text(payload.role_title)
@@ -881,6 +936,10 @@ async def check_job_duplicates(
     result = await db.execute(stmt)
     matches = []
     for app_row in result.scalars().all():
+        if exact is not None and app_row.id == exact.id:
+            continue
+        if normalized_job_url and _normalize_job_url(app_row.job_url) == normalized_job_url:
+            continue
         if _normalize_match_text(app_row.company) != company_key:
             continue
         if _normalize_match_text(app_row.role_title) != role_key:
@@ -973,7 +1032,7 @@ async def update_application(
     if payload.source is not None:
         app_row.source = payload.source
     if payload.job_url is not None:
-        app_row.job_url = payload.job_url
+        app_row.job_url = _normalize_job_url(payload.job_url)
 
     await db.commit()
     await db.refresh(app_row)
@@ -2047,8 +2106,9 @@ async def sync_gmail(
 
         action_path = "/conversations" if email_event.email_type == "conversation" else "/emails"
         action_tab = "conversations" if email_event.email_type == "conversation" else "emails"
-        if notifications_enabled and is_alert_enabled(notification_pref, _email_alert_type(email_event.email_type, cls)):
-            email_alert = Alert(
+        if notifications_enabled:
+            await create_user_alert(
+                db,
                 user_id=user_id,
                 alert_type=_email_alert_type(email_event.email_type, cls),
                 title=f"{sender_name or sender_email_addr or 'New update'}: {subject or '(no subject)'}",
@@ -2059,18 +2119,18 @@ async def sync_gmail(
                     email_id=str(email_event.id),
                     thread_id=email_event.thread_id or None,
                 ),
+                notification_pref=notification_pref,
             )
-            db.add(email_alert)
 
-            if should_alert_network_contact and is_alert_enabled(notification_pref, "network_contact"):
-                db.add(
-                    Alert(
-                        user_id=user_id,
-                        alert_type="network_contact",
-                        title=f"Added {sender_name or sender_email_addr} to your network",
-                        body="Open their card to review contact details from this conversation.",
-                        action_url=_alert_action_url("/network", email=sender_email_addr),
-                    )
+            if should_alert_network_contact:
+                await create_user_alert(
+                    db,
+                    user_id=user_id,
+                    alert_type="network_contact",
+                    title=f"Added {sender_name or sender_email_addr} to your network",
+                    body="Open their card to review contact details from this conversation.",
+                    action_url=_alert_action_url("/network", email=sender_email_addr),
+                    notification_pref=notification_pref,
                 )
 
         new_count += 1
@@ -2131,20 +2191,18 @@ async def sync_calendar(
             for item in result.get("synced", []):
                 if item.get("status") not in {"created", "updated"}:
                     continue
-                if not is_alert_enabled(notification_pref, "interview_request"):
-                    continue
                 status_label = "added to your calendar" if item.get("status") == "created" else "updated on your calendar"
-                db.add(
-                    Alert(
-                        user_id=current_user.id,
-                        alert_type="interview_request",
-                        title=f"Interview {status_label}",
-                        body=item.get("summary") or "Open your calendar to review the interview details.",
-                        action_url=_alert_action_url(
-                            "/calendar",
-                            interview_id=item.get("interview_id"),
-                        ),
-                    )
+                await create_user_alert(
+                    db,
+                    user_id=current_user.id,
+                    alert_type="interview_request",
+                    title=f"Interview {status_label}",
+                    body=item.get("summary") or "Open your calendar to review the interview details.",
+                    action_url=_alert_action_url(
+                        "/calendar",
+                        interview_id=item.get("interview_id"),
+                    ),
+                    notification_pref=notification_pref,
                 )
         if result.get("synced") and current_user.notifications_started_at is not None:
             await db.commit()
@@ -4291,15 +4349,18 @@ async def create_alert(
 ):
     """Create an alert and optionally send SMS for urgent types."""
     user_id = _require_user_id(auth)
-    alert = Alert(
+    alert = await create_user_alert(
+        db,
         user_id=user_id,
         alert_type=payload.alert_type,
         title=payload.title,
         body=payload.body,
         action_url=payload.action_url,
+        respect_preferences=False,
     )
-    db.add(alert)
     await db.commit()
+    if alert is None:
+        raise HTTPException(status_code=500, detail="Failed to create alert")
     await db.refresh(alert)
 
     # Try to send SMS for urgent alerts

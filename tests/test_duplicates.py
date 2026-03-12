@@ -32,6 +32,35 @@ async def test_job_duplicate_check_by_url(client):
 
 
 @pytest.mark.asyncio
+async def test_job_duplicate_check_normalizes_tracking_params(client):
+    create_resp = await client.post(
+        "/api/jobs",
+        json={
+            "company": "Acme",
+            "role_title": "Backend Engineer",
+            "job_url": "https://jobs.example.com/acme/backend/?utm_source=linkedin&gh_jid=123",
+        },
+        headers=AUTH_HEADER,
+    )
+    assert create_resp.status_code == 201
+    assert create_resp.json()["job_url"] == "https://jobs.example.com/acme/backend"
+
+    resp = await client.post(
+        "/api/jobs/duplicates/check",
+        json={
+            "company": "Acme",
+            "role_title": "Backend Engineer",
+            "job_url": "https://jobs.example.com/acme/backend?utm_medium=email",
+        },
+        headers=AUTH_HEADER,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["duplicate_type"] == "hard"
+    assert len(data["matches"]) == 1
+
+
+@pytest.mark.asyncio
 async def test_job_duplicate_check_by_company_and_role(client):
     create_resp = await client.post(
         "/api/jobs",

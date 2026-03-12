@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Bell, Briefcase, Filter, Mail, MessageSquare, UserPlus, X } from 'lucide-react';
 import { formatDistanceToNow, isToday, isYesterday } from 'date-fns';
 import { cn } from '../lib/utils';
-import { AlertItem, NotificationPrefs, fetchAlerts, fetchNotificationPreferences, getUnreadAlertCount, markAlertRead, markAllAlertsRead } from '../lib/api';
+import { AlertItem, fetchAlerts, getUnreadAlertCount, markAlertRead, markAllAlertsRead } from '../lib/api';
+import { DEFAULT_LOCAL_NOTIFICATION_PREFS, LOCAL_NOTIFICATION_PREFS_EVENT, LocalNotificationPrefs, isWithinLocalQuietHours, loadLocalNotificationPrefs, saveLocalNotificationPrefs } from '../lib/localNotificationPrefs';
 
 interface NotificationCenterProps {
   onNavigate: (actionUrl: string | null) => void;
@@ -79,7 +80,7 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [prefs, setPrefs] = useState<NotificationPrefs | null>(null);
+  const [localPrefs, setLocalPrefs] = useState<LocalNotificationPrefs>(DEFAULT_LOCAL_NOTIFICATION_PREFS);
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [toasts, setToasts] = useState<ToastAlert[]>([]);
   const [browserPermission, setBrowserPermission] = useState<string | null>(
@@ -90,29 +91,17 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
 
   const loadAlerts = async () => {
     try {
-      const [items, unread, prefData] = await Promise.all([
+      const [items, unread] = await Promise.all([
         fetchAlerts(),
         getUnreadAlertCount(),
-        fetchNotificationPreferences(),
       ]);
       setAlerts(items);
       setUnreadCount(unread);
-      setPrefs(prefData);
+      setLocalPrefs(loadLocalNotificationPrefs());
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load notifications.');
     }
-  };
-
-  const isWithinQuietHours = (preferences: NotificationPrefs | null) => {
-    if (!preferences?.quiet_hours_enabled) return false;
-    if (preferences.quiet_hours_start == null || preferences.quiet_hours_end == null) return false;
-    const hour = new Date().getHours();
-    if (preferences.quiet_hours_start === preferences.quiet_hours_end) return true;
-    if (preferences.quiet_hours_start < preferences.quiet_hours_end) {
-      return hour >= preferences.quiet_hours_start && hour < preferences.quiet_hours_end;
-    }
-    return hour >= preferences.quiet_hours_start || hour < preferences.quiet_hours_end;
   };
 
   useEffect(() => {
@@ -121,6 +110,14 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
       void loadAlerts();
     }, 30000);
     return () => window.clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const syncLocalPrefs = () => {
+      setLocalPrefs(loadLocalNotificationPrefs());
+    };
+    window.addEventListener(LOCAL_NOTIFICATION_PREFS_EVENT, syncLocalPrefs);
+    return () => window.removeEventListener(LOCAL_NOTIFICATION_PREFS_EVENT, syncLocalPrefs);
   }, []);
 
   useEffect(() => {
@@ -147,12 +144,16 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
       alertType: alert.alert_type,
     }));
 
-    if (!prefs?.browser_notifications_enabled || isWithinQuietHours(prefs)) {
+    if (isWithinLocalQuietHours(localPrefs)) {
       return;
     }
 
     if (document.visibilityState === 'visible') {
       setToasts((prev) => [...nextToasts, ...prev].slice(0, 4));
+      return;
+    }
+
+    if (!localPrefs.browser_notifications_enabled) {
       return;
     }
 
@@ -169,7 +170,7 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
         };
       });
     }
-  }, [alerts, onNavigate, prefs]);
+  }, [alerts, localPrefs, onNavigate]);
 
   useEffect(() => {
     if (toasts.length === 0) return;
@@ -251,6 +252,14 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
     if (typeof window === 'undefined' || !('Notification' in window)) return;
     const permission = await Notification.requestPermission();
     setBrowserPermission(permission);
+    if (permission === 'granted') {
+      const nextPrefs = {
+        ...localPrefs,
+        browser_notifications_enabled: true,
+      };
+      setLocalPrefs(nextPrefs);
+      saveLocalNotificationPrefs(nextPrefs);
+    }
   };
 
   const handleSelectAlert = async (group: AlertGroup) => {

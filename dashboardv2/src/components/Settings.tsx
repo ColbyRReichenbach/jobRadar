@@ -9,23 +9,25 @@ import {
   generateApiKey,
   updateNotificationPreferences,
 } from '../lib/api';
+import { DEFAULT_LOCAL_NOTIFICATION_PREFS, LocalNotificationPrefs, loadLocalNotificationPrefs, saveLocalNotificationPrefs } from '../lib/localNotificationPrefs';
 
 export function Settings() {
   const [prefs, setPrefs] = useState<NotificationPrefs>({
     sms_enabled: false,
     sms_phone: null,
     weekly_digest_enabled: false,
-    browser_notifications_enabled: false,
     inbox_updates_enabled: true,
     conversations_enabled: true,
     network_enabled: true,
     interviews_enabled: true,
     followups_enabled: true,
     listings_enabled: true,
+    browser_notifications_enabled: false,
     quiet_hours_enabled: false,
     quiet_hours_start: null,
     quiet_hours_end: null,
   });
+  const [localPrefs, setLocalPrefs] = useState<LocalNotificationPrefs>(DEFAULT_LOCAL_NOTIFICATION_PREFS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -49,6 +51,7 @@ export function Settings() {
         fetchApiKeyStatus(),
       ]);
       setPrefs(prefsData);
+      setLocalPrefs(loadLocalNotificationPrefs());
       setPhone(prefsData.sms_phone || '');
       setApiKeyStatus(keyStatus);
     } catch (err) {
@@ -64,9 +67,9 @@ export function Settings() {
     setErrorMessage(null);
     setStatusMessage(null);
     try {
-      let browserNotificationsEnabled = prefs.browser_notifications_enabled;
+      let browserNotificationsEnabled = localPrefs.browser_notifications_enabled;
       if (
-        prefs.browser_notifications_enabled &&
+        localPrefs.browser_notifications_enabled &&
         typeof window !== 'undefined' &&
         'Notification' in window &&
         Notification.permission !== 'granted'
@@ -81,18 +84,26 @@ export function Settings() {
         sms_enabled: prefs.sms_enabled,
         sms_phone: phone || null,
         weekly_digest_enabled: prefs.weekly_digest_enabled,
-        browser_notifications_enabled: browserNotificationsEnabled,
         inbox_updates_enabled: prefs.inbox_updates_enabled,
         conversations_enabled: prefs.conversations_enabled,
         network_enabled: prefs.network_enabled,
         interviews_enabled: prefs.interviews_enabled,
         followups_enabled: prefs.followups_enabled,
         listings_enabled: prefs.listings_enabled,
-        quiet_hours_enabled: prefs.quiet_hours_enabled,
-        quiet_hours_start: prefs.quiet_hours_enabled ? prefs.quiet_hours_start : null,
-        quiet_hours_end: prefs.quiet_hours_enabled ? prefs.quiet_hours_end : null,
       });
-      setPrefs(data);
+      const nextLocalPrefs = {
+        ...localPrefs,
+        browser_notifications_enabled: browserNotificationsEnabled,
+      };
+      saveLocalNotificationPrefs(nextLocalPrefs);
+      setLocalPrefs(nextLocalPrefs);
+      setPrefs((current) => ({
+        ...data,
+        browser_notifications_enabled: nextLocalPrefs.browser_notifications_enabled,
+        quiet_hours_enabled: nextLocalPrefs.quiet_hours_enabled,
+        quiet_hours_start: nextLocalPrefs.quiet_hours_start,
+        quiet_hours_end: nextLocalPrefs.quiet_hours_end,
+      }));
       setSaved(true);
       setStatusMessage((current) => current || 'Preferences saved.');
       setTimeout(() => setSaved(false), 3000);
@@ -105,16 +116,20 @@ export function Settings() {
 
   const togglePref = (
     key:
-      | 'browser_notifications_enabled'
       | 'inbox_updates_enabled'
       | 'conversations_enabled'
       | 'network_enabled'
       | 'interviews_enabled'
       | 'followups_enabled'
       | 'listings_enabled'
-      | 'quiet_hours_enabled'
   ) => {
     setPrefs((current) => ({ ...current, [key]: !current[key] }));
+  };
+
+  const toggleLocalPref = (
+    key: 'browser_notifications_enabled' | 'quiet_hours_enabled'
+  ) => {
+    setLocalPrefs((current) => ({ ...current, [key]: !current[key] }));
   };
 
   const createNewApiKey = async () => {
@@ -194,13 +209,13 @@ export function Settings() {
               <label className="flex items-start gap-3 cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={prefs.browser_notifications_enabled}
-                  onChange={() => togglePref('browser_notifications_enabled')}
+                  checked={localPrefs.browser_notifications_enabled}
+                  onChange={() => toggleLocalPref('browser_notifications_enabled')}
                   className="mt-0.5 w-4 h-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
                 />
                 <span className="text-sm text-slate-700">
                   <span className="block font-medium text-slate-900">Browser banner notifications</span>
-                  Show system-style notifications when AppTrail is open in a background tab or installed web app.
+                  Show system-style notifications on this device when AppTrail is open in a background tab or installed web app.
                 </span>
               </label>
 
@@ -232,22 +247,22 @@ export function Settings() {
                 <label className="flex items-start gap-3 cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={prefs.quiet_hours_enabled}
-                    onChange={() => togglePref('quiet_hours_enabled')}
+                    checked={localPrefs.quiet_hours_enabled}
+                    onChange={() => toggleLocalPref('quiet_hours_enabled')}
                     className="mt-0.5 w-4 h-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
                   />
                   <span className="text-sm text-slate-700">
                     <span className="block font-medium text-slate-900">Quiet hours</span>
-                    Suppress toast/browser banners during the hours below while still storing alerts in AppTrail.
+                    Suppress toast/browser banners on this device during the hours below while still storing alerts in AppTrail.
                   </span>
                 </label>
-                {prefs.quiet_hours_enabled && (
+                {localPrefs.quiet_hours_enabled && (
                   <div className="mt-4 grid gap-3 md:grid-cols-2">
                     <label className="space-y-1">
                       <span className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">Start</span>
                       <select
-                        value={prefs.quiet_hours_start ?? 22}
-                        onChange={(event) => setPrefs((current) => ({ ...current, quiet_hours_start: Number(event.target.value) }))}
+                        value={localPrefs.quiet_hours_start ?? 22}
+                        onChange={(event) => setLocalPrefs((current) => ({ ...current, quiet_hours_start: Number(event.target.value) }))}
                         className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
                       >
                         {Array.from({ length: 24 }, (_, hour) => (
@@ -258,8 +273,8 @@ export function Settings() {
                     <label className="space-y-1">
                       <span className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">End</span>
                       <select
-                        value={prefs.quiet_hours_end ?? 7}
-                        onChange={(event) => setPrefs((current) => ({ ...current, quiet_hours_end: Number(event.target.value) }))}
+                        value={localPrefs.quiet_hours_end ?? 7}
+                        onChange={(event) => setLocalPrefs((current) => ({ ...current, quiet_hours_end: Number(event.target.value) }))}
                         className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
                       >
                         {Array.from({ length: 24 }, (_, hour) => (

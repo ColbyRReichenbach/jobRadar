@@ -84,8 +84,8 @@ async def _check_url(url: str) -> dict:
 async def _run_check():
     """Check up to 50 active applications for dead listings."""
     from backend.database import async_session_factory
-    from backend.models import Alert, Application, NotificationPreference, User
-    from backend.services.notification_preferences import is_alert_enabled
+    from backend.models import Application, NotificationPreference, User
+    from backend.services.alerts import create_user_alert
 
     async with async_session_factory() as db:
         enabled_users_result = await db.execute(
@@ -118,15 +118,15 @@ async def _run_check():
             if not result["alive"]:
                 app.listing_alive = False
                 app.listing_died_at = datetime.now(timezone.utc)
-                if app.user_id and app.user_id in enabled_user_ids and is_alert_enabled(prefs_by_user.get(app.user_id), "dead_listing"):
-                    db.add(
-                        Alert(
-                            user_id=app.user_id,
-                            alert_type="dead_listing",
-                            title=f"Posting may be closed at {app.company}",
-                            body=f"{app.role_title} looks inactive. Open Pipeline to review this application.",
-                            action_url=_alert_action_url("/dashboard", job_id=str(app.id)),
-                        )
+                if app.user_id and app.user_id in enabled_user_ids:
+                    await create_user_alert(
+                        db,
+                        user_id=app.user_id,
+                        alert_type="dead_listing",
+                        title=f"Posting may be closed at {app.company}",
+                        body=f"{app.role_title} looks inactive. Open Pipeline to review this application.",
+                        action_url=_alert_action_url("/dashboard", job_id=str(app.id)),
+                        notification_pref=prefs_by_user.get(app.user_id),
                     )
                 dead += 1
             checked += 1

@@ -117,8 +117,13 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
         return;
       }
       if (duplicateCheck.duplicate_type === 'soft') {
-        setStatusMessage(duplicateCheck.message || 'A similar job already exists in your pipeline.');
-        return;
+        const shouldContinue = window.confirm(
+          duplicateCheck.message || 'A similar job already exists in your pipeline. Save this one anyway?'
+        );
+        if (!shouldContinue) {
+          setStatusMessage('Skipped saving duplicate job.');
+          return;
+        }
       }
     } catch {
       // Keep save flow resilient if the warning check fails.

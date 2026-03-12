@@ -271,7 +271,7 @@ export async function fetchNotificationPreferences(): Promise<NotificationPrefs>
   return await res.json();
 }
 
-export async function updateNotificationPreferences(payload: NotificationPrefs): Promise<NotificationPrefs> {
+export async function updateNotificationPreferences(payload: Partial<NotificationPrefs>): Promise<NotificationPrefs> {
   const res = await apiFetch(`${API_BASE}/api/notifications/preferences`, {
     method: 'PUT',
     headers: authHeaders(),

@@ -26,8 +26,8 @@ def _run_async(coro):
 
 async def _check_followups_async():
     from backend.database import async_session_factory
-    from backend.models import Alert, Application, NotificationPreference, User
-    from backend.services.notification_preferences import is_alert_enabled
+    from backend.models import Application, NotificationPreference, User
+    from backend.services.alerts import create_user_alert
 
     async with async_session_factory() as db:
         enabled_users_result = await db.execute(
@@ -55,15 +55,15 @@ async def _check_followups_async():
         for app in apps:
             if not app.follow_up_due:
                 app.follow_up_due = True
-                if app.user_id and app.user_id in enabled_user_ids and is_alert_enabled(prefs_by_user.get(app.user_id), "follow_up"):
-                    db.add(
-                        Alert(
-                            user_id=app.user_id,
-                            alert_type="follow_up",
-                            title=f"Follow up with {app.company}",
-                            body=f"{app.role_title} has been quiet for over a week. Open Pipeline to review your next step.",
-                            action_url=_alert_action_url("/dashboard", job_id=str(app.id)),
-                        )
+                if app.user_id and app.user_id in enabled_user_ids:
+                    await create_user_alert(
+                        db,
+                        user_id=app.user_id,
+                        alert_type="follow_up",
+                        title=f"Follow up with {app.company}",
+                        body=f"{app.role_title} has been quiet for over a week. Open Pipeline to review your next step.",
+                        action_url=_alert_action_url("/dashboard", job_id=str(app.id)),
+                        notification_pref=prefs_by_user.get(app.user_id),
                     )
                 count += 1
 
