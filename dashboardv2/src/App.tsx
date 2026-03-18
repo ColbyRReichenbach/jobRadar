@@ -9,6 +9,8 @@ import { Conversations } from './components/Conversations';
 import { NetworkPage } from './components/NetworkPage';
 import { Calendar } from './components/Calendar';
 import { Settings } from './components/Settings';
+import { ClassifierAudit } from './components/ClassifierAudit';
+import { ExtractionReports } from './components/ExtractionReports';
 import { ProfilePage } from './components/ProfilePage';
 import { LoginPage } from './components/LoginPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -284,6 +286,8 @@ function AppContent() {
             {activeTab === 'calendar' && <Calendar focusRequest={calendarFocusRequest} />}
             {activeTab === 'profile' && <ProfilePage />}
             {activeTab === 'settings' && <Settings />}
+            {activeTab === 'audit' && <ClassifierAudit />}
+            {activeTab === 'extraction-reports' && <ExtractionReports />}
             {activeTab === 'emails' && (
               <div className="flex-1 flex overflow-hidden">
                 <EmailFeed

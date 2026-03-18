@@ -7,13 +7,16 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-# Set test env vars before importing app
+# Set test env vars before importing app.
+# DATABASE_URL must be force-set (not setdefault) because it may already exist
+# as a shell env var pointing to the real Supabase database. If that leaks
+# through, asyncpg tries to connect at import time and hangs the test suite.
 os.environ["TESTING"] = "1"
+os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
 os.environ.setdefault("APPTRAIL_API_KEY", "test-api-key-for-testing")
 os.environ.setdefault("APPTRAIL_GMAIL_TOKEN_ENCRYPTION_KEY", "9gesi-IgHlO6wRffB63j5cbQhIXnGGCKuxr0IFnAcaM=")
 os.environ.setdefault("JWT_SECRET", "test-jwt-secret-for-testing")
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-key")
-os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 
 from backend.database import get_db
 from backend.dependencies import create_jwt

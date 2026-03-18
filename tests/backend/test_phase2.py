@@ -233,11 +233,16 @@ async def test_contact_update(client):
 
 @pytest.mark.asyncio
 async def test_linkedin_search_url_format():
-    """URL contains UNC Chapel Hill + company + data."""
+    """URL contains company name, and school if provided."""
     from backend.services.hunter import generate_linkedin_search_url
 
+    # Without school — just company
     url = generate_linkedin_search_url("Stripe")
-    assert "UNC+Chapel+Hill" in url or "UNC Chapel Hill" in url
     assert "Stripe" in url
-    assert "data" in url
     assert "linkedin.com/search/results/people" in url
+
+    # With school — includes both
+    url_with_school = generate_linkedin_search_url("Stripe", school="UNC Chapel Hill")
+    assert "UNC+Chapel+Hill" in url_with_school or "UNC Chapel Hill" in url_with_school
+    assert "Stripe" in url_with_school
+    assert "linkedin.com/search/results/people" in url_with_school

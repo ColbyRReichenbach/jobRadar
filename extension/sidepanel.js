@@ -1,7 +1,26 @@
 import { buildApiUrl, getApiBase, getApiKey } from "./config.js";
+import { detectPlatform } from "./detector.js";
 
 let currentJobData = null;
 let currentUrl = null;
+let currentDetection = null;
+
+// Settings defaults
+const SETTINGS_KEY = "apptrail_settings";
+const DEFAULT_SETTINGS = {
+  linkedinAutoExtract: true,
+};
+
+async function getSettings() {
+  const data = await chrome.storage.local.get(SETTINGS_KEY);
+  return { ...DEFAULT_SETTINGS, ...(data[SETTINGS_KEY] || {}) };
+}
+
+async function saveSetting(key, value) {
+  const settings = await getSettings();
+  settings[key] = value;
+  await chrome.storage.local.set({ [SETTINGS_KEY]: settings });
+}
 
 // --- Helpers ---
 
@@ -102,7 +121,7 @@ function renderLinkedinLink(container, url, company) {
   link.style.display = "block";
   link.style.marginTop = "8px";
   link.style.fontSize = "12px";
-  link.textContent = `Search UNC alumni at ${company} on LinkedIn`;
+  link.textContent = `Search alumni at ${company} on LinkedIn`;
   container.appendChild(link);
 }
 
@@ -151,50 +170,99 @@ function extractDomain(url) {
 
 // --- Init ---
 
+let setupOpened = false;
+
 async function init() {
   const apiKey = await getApiKey();
   if (!apiKey) {
-    chrome.tabs.create({ url: "setup.html" });
-    return;
-  }
-
-  const data = await chrome.storage.session.get("detection");
-  if (!data.detection) {
+    if (!setupOpened) {
+      setupOpened = true;
+      chrome.tabs.create({ url: "setup.html" });
+    }
     show("no-job");
     hide("loading");
     hide("job-data");
     return;
   }
 
-  const detection = data.detection;
+  // Try session storage first, then detect from active tab URL directly
+  let detection = null;
+  const data = await chrome.storage.session.get("detection");
+  if (data.detection) {
+    detection = data.detection;
+  } else {
+    // Detect from the current tab URL (handles pages loaded before extension refresh)
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab?.url) {
+      const result = detectPlatform(tab.url);
+      if (result) {
+        detection = { platform: result.platform, params: result.params, url: tab.url };
+        await chrome.storage.session.set({ detection });
+      }
+    }
+  }
+
+  if (!detection) {
+    show("no-job");
+    hide("loading");
+    hide("job-data");
+    return;
+  }
+
   currentUrl = detection.url;
+  currentDetection = detection;
 
   hide("no-job");
   show("loading");
 
+  const settings = await getSettings();
+  const isLinkedIn = detection.platform === "linkedin";
+
+  // LinkedIn with auto-extract disabled → show manual form with disclaimer
+  if (isLinkedIn && !settings.linkedinAutoExtract) {
+    displayJobData({
+      title: null,
+      company: null,
+      location: null,
+      description: null,
+      source: "manual",
+      _linkedinManual: true,
+    });
+    return;
+  }
+
   try {
-    if (detection.platform === "linkedin") {
-      // Message content script
-      const [tab] = await chrome.tabs.query({
-        active: true,
-        currentWindow: true,
-      });
-      if (tab) {
-        chrome.tabs.sendMessage(
-          tab.id,
-          { type: "EXTRACT_LINKEDIN_JOB" },
-          (response) => {
-            if (response) {
-              displayJobData(response);
-            } else {
-              fallbackParse(currentUrl);
-            }
-          }
-        );
-      } else {
-        await fallbackParse(currentUrl);
+    let extracted = false;
+
+    // Try content script extraction for ALL platforms (not just LinkedIn)
+    const [tab] = await chrome.tabs.query({
+      active: true,
+      currentWindow: true,
+    });
+    if (tab) {
+      try {
+        const response = await chrome.tabs.sendMessage(tab.id, {
+          type: "EXTRACT_JOB",
+        });
+        if (response && (response.title || response.company)) {
+          displayJobData(response);
+          extracted = true;
+        }
+      } catch {
+        // Content script not injected — fall through to backend parse
       }
-    } else {
+    }
+
+    // Also try session storage for extraction from MutationObserver
+    if (!extracted) {
+      const stored = await chrome.storage.session.get("extractedJob");
+      if (stored.extractedJob && (stored.extractedJob.title || stored.extractedJob.company)) {
+        displayJobData(stored.extractedJob);
+        extracted = true;
+      }
+    }
+
+    if (!extracted) {
       await fallbackParse(currentUrl);
     }
   } catch (e) {
@@ -227,16 +295,17 @@ async function fallbackParse(url) {
     }
 
     const result = await resp.json();
-    if (result.status === "ok" && result.data) {
+    if (result.status === "ok" && result.data && (result.data.title || result.data.company)) {
       displayJobData(result.data);
     } else {
-      hide("loading");
-      show("no-job");
-      renderAlert(
-        document.getElementById("no-job"),
-        "warning",
-        "This page could not be parsed. Try again from a supported job posting."
-      );
+      // Backend couldn't parse — show editable form with URL-derived defaults
+      displayJobData({
+        title: null,
+        company: null,
+        location: null,
+        description: null,
+        source: "manual",
+      });
     }
   } catch (error) {
     hide("loading");
@@ -251,18 +320,97 @@ async function fallbackParse(url) {
   }
 }
 
+function setFieldValue(id, value, placeholder) {
+  const el = document.getElementById(id);
+  if (value) {
+    el.textContent = value;
+    el.classList.remove("placeholder");
+  } else {
+    el.textContent = placeholder;
+    el.classList.add("placeholder");
+  }
+  // Clear placeholder on focus
+  el.addEventListener("focus", () => {
+    if (el.classList.contains("placeholder")) {
+      el.textContent = "";
+      el.classList.remove("placeholder");
+    }
+  });
+  // Restore placeholder on blur if empty
+  el.addEventListener("blur", () => {
+    if (!el.textContent.trim()) {
+      el.textContent = placeholder;
+      el.classList.add("placeholder");
+    }
+  });
+}
+
 function displayJobData(data) {
   currentJobData = data;
   hide("loading");
   hide("no-job");
   show("job-data");
 
-  document.getElementById("job-company").textContent =
-    data.company || "Unknown";
-  document.getElementById("job-title").textContent = data.title || "Unknown";
-  document.getElementById("job-location").textContent =
-    data.location || "Not specified";
+  // Show platform badge
+  const badgeContainer = document.getElementById("platform-badge-container");
+  clearElement(badgeContainer);
+  const detection = currentDetection;
+  if (detection && detection.platform && detection.platform !== "generic") {
+    const badge = document.createElement("span");
+    badge.className = "platform-badge";
+    badge.textContent = detection.platform.replace("_", " ");
+    badgeContainer.appendChild(badge);
+  }
+
+  // Show extraction method badge
+  if (data._method) {
+    const methodBadge = document.createElement("span");
+    methodBadge.className = "method-badge";
+    methodBadge.textContent = data._method === "json-ld" ? "structured data" : data._method;
+    badgeContainer.appendChild(methodBadge);
+  }
+
+  setFieldValue("job-company", data.company, "Enter company name");
+  setFieldValue("job-title", data.title, "Enter job title");
+  setFieldValue("job-location", data.location, "Enter location");
+  setFieldValue("job-salary", data.salary, "Not listed");
+
+  // Description — editable textarea with auto-resize
+  const descEl = document.getElementById("job-description");
+  const descCount = document.getElementById("desc-char-count");
+  const descExpand = document.getElementById("desc-expand-btn");
+  descEl.value = data.description || "";
+  autoResizeTextarea(descEl);
+  updateDescMeta(descEl, descCount, descExpand);
+
+  // Show LinkedIn disclaimer if applicable
+  const disclaimerEl = document.getElementById("linkedin-disclaimer");
+  if (detection && detection.platform === "linkedin") {
+    disclaimerEl.classList.remove("hidden");
+    // Show the right variant
+    if (data._linkedinManual) {
+      document.getElementById("linkedin-manual-msg").classList.remove("hidden");
+      document.getElementById("linkedin-auto-msg").classList.add("hidden");
+    } else {
+      document.getElementById("linkedin-manual-msg").classList.add("hidden");
+      document.getElementById("linkedin-auto-msg").classList.remove("hidden");
+    }
+  } else {
+    disclaimerEl.classList.add("hidden");
+  }
 }
+
+// --- Status picker ---
+
+let selectedStatus = "saved";
+
+document.querySelectorAll(".status-option").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".status-option").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    selectedStatus = btn.dataset.status;
+  });
+});
 
 // --- Track Job ---
 
@@ -273,14 +421,29 @@ document.getElementById("track-btn").addEventListener("click", async () => {
   btn.textContent = "Tracking...";
   clearElement(statusEl);
 
+  // Read from editable fields (user may have edited them)
+  const companyEl = document.getElementById("job-company");
+  const titleEl = document.getElementById("job-title");
+  const locationEl = document.getElementById("job-location");
+  const salaryEl = document.getElementById("job-salary");
+  const companyText = companyEl.classList.contains("placeholder") ? null : companyEl.textContent.trim();
+  const titleText = titleEl.classList.contains("placeholder") ? null : titleEl.textContent.trim();
+  const locationText = locationEl.classList.contains("placeholder") ? null : locationEl.textContent.trim();
+  const salaryText = salaryEl.classList.contains("placeholder") ? null : salaryEl.textContent.trim();
+
+  const descriptionEl = document.getElementById("job-description");
+  const descriptionText = descriptionEl?.value?.trim() || null;
+
   const payload = {
-    company: currentJobData.company || "Unknown",
-    role_title: currentJobData.title || "Unknown Role",
+    company: companyText || currentJobData.company || "Unknown",
+    role_title: titleText || currentJobData.title || "Unknown Role",
     job_url: currentUrl,
     source: currentJobData.source || "manual",
+    status: selectedStatus,
     department: currentJobData.department || null,
-    description_text: currentJobData.description || null,
-    salary: currentJobData.salary || null,
+    description_text: descriptionText || currentJobData.description || null,
+    salary: salaryText || currentJobData.salary || null,
+    location: locationText || currentJobData.location || null,
   };
 
   try {
@@ -430,6 +593,298 @@ async function checkBrowsingNudge() {
   });
 }
 
+// --- Report issue ---
+
+document.getElementById("report-issue-btn")?.addEventListener("click", () => {
+  const panel = document.getElementById("report-panel");
+  panel.classList.toggle("hidden");
+});
+
+// Toggle field checkboxes
+document.querySelectorAll(".report-field-check").forEach((label) => {
+  label.addEventListener("click", () => {
+    label.classList.toggle("selected");
+    const cb = label.querySelector("input[type='checkbox']");
+    if (cb) cb.checked = !cb.checked;
+  });
+});
+
+document.getElementById("submit-report-btn")?.addEventListener("click", async () => {
+  const btn = document.getElementById("submit-report-btn");
+  const statusEl = document.getElementById("report-status");
+  btn.disabled = true;
+  btn.textContent = "Submitting...";
+  clearElement(statusEl);
+
+  // Gather flagged fields
+  const flagged = [];
+  document.querySelectorAll(".report-field-check.selected").forEach((label) => {
+    flagged.push(label.dataset.field);
+  });
+
+  // Read current editable fields as corrected data
+  const companyEl = document.getElementById("job-company");
+  const titleEl = document.getElementById("job-title");
+  const locationEl = document.getElementById("job-location");
+  const salaryEl = document.getElementById("job-salary");
+  const descEl = document.getElementById("job-description");
+
+  const corrected = {
+    company: companyEl?.classList.contains("placeholder") ? null : companyEl?.textContent?.trim(),
+    title: titleEl?.classList.contains("placeholder") ? null : titleEl?.textContent?.trim(),
+    location: locationEl?.classList.contains("placeholder") ? null : locationEl?.textContent?.trim(),
+    salary: salaryEl?.classList.contains("placeholder") ? null : salaryEl?.textContent?.trim(),
+    description: descEl?.value?.trim() || null,
+  };
+
+  const notes = document.getElementById("report-notes")?.value?.trim() || null;
+
+  const payload = {
+    report_type: flagged.length > 0 ? "wrong_data" : "missing_data",
+    url: currentUrl || window.location.href,
+    domain: extractDomain(currentUrl || ""),
+    platform_detected: currentDetection?.platform || null,
+    extraction_method: currentJobData?._method || null,
+    extracted_data: currentJobData
+      ? { title: currentJobData.title, company: currentJobData.company, location: currentJobData.location, salary: currentJobData.salary, description: currentJobData.description ? currentJobData.description.substring(0, 200) : null }
+      : null,
+    corrected_data: corrected,
+    fields_flagged: flagged.length > 0 ? flagged : null,
+    user_agent: navigator.userAgent,
+    extension_version: chrome.runtime.getManifest().version,
+    extractor_version: currentJobData?._extractor_version || null,
+    notes,
+  };
+
+  try {
+    const resp = await apiFetch("/api/extraction-reports", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    if (resp.ok) {
+      renderAlert(statusEl, "success", "Thanks! Report submitted.");
+      btn.textContent = "Submitted";
+      // Clear selections
+      document.querySelectorAll(".report-field-check.selected").forEach((l) => {
+        l.classList.remove("selected");
+        const cb = l.querySelector("input");
+        if (cb) cb.checked = false;
+      });
+      document.getElementById("report-notes").value = "";
+    } else {
+      renderAlert(statusEl, "error", "Failed to submit report.");
+      btn.disabled = false;
+      btn.textContent = "Submit Report";
+    }
+  } catch {
+    renderAlert(statusEl, "error", "Failed to connect to backend.");
+    btn.disabled = false;
+    btn.textContent = "Submit Report";
+  }
+});
+
+// --- "Report a job page" (undetected site) in empty state ---
+
+document.getElementById("report-undetected-btn")?.addEventListener("click", async () => {
+  const form = document.getElementById("undetected-form");
+  form.classList.toggle("hidden");
+
+  // Set up editable field placeholder behavior for manual fields
+  ["manual-company", "manual-title", "manual-location", "manual-salary"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const placeholder = el.textContent;
+    el.addEventListener("focus", () => {
+      if (el.style.fontStyle === "italic") {
+        el.textContent = "";
+        el.style.color = "#1e293b";
+        el.style.fontStyle = "normal";
+      }
+    });
+    el.addEventListener("blur", () => {
+      if (!el.textContent.trim()) {
+        el.textContent = placeholder;
+        el.style.color = "#94a3b8";
+        el.style.fontStyle = "italic";
+      }
+    });
+  });
+});
+
+// Status picker in the undetected form
+let manualSelectedStatus = "saved";
+document.querySelectorAll("#undetected-form .status-option").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("#undetected-form .status-option").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    manualSelectedStatus = btn.dataset.status;
+  });
+});
+
+document.getElementById("manual-track-btn")?.addEventListener("click", async () => {
+  const btn = document.getElementById("manual-track-btn");
+  const statusEl = document.getElementById("manual-track-status");
+  btn.disabled = true;
+  btn.textContent = "Tracking...";
+  clearElement(statusEl);
+
+  const getManualVal = (id) => {
+    const el = document.getElementById(id);
+    return (el && el.style.fontStyle !== "italic") ? el.textContent.trim() : null;
+  };
+
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const url = tab?.url || "";
+
+  const jobPayload = {
+    company: getManualVal("manual-company") || "Unknown",
+    role_title: getManualVal("manual-title") || "Unknown Role",
+    job_url: url,
+    source: "manual",
+    status: manualSelectedStatus,
+    location: getManualVal("manual-location") || null,
+    salary: getManualVal("manual-salary") || null,
+  };
+
+  try {
+    // Track the job
+    const trackResp = await apiFetch("/api/jobs", {
+      method: "POST",
+      body: JSON.stringify(jobPayload),
+    });
+
+    if (trackResp.status === 201 || trackResp.status === 409) {
+      // Also submit undetected site report
+      await apiFetch("/api/extraction-reports", {
+        method: "POST",
+        body: JSON.stringify({
+          report_type: "undetected_site",
+          url,
+          domain: extractDomain(url),
+          user_agent: navigator.userAgent,
+          extension_version: chrome.runtime.getManifest().version,
+        }),
+      }).catch(() => {}); // Report is best-effort
+
+      if (trackResp.status === 201) {
+        renderAlert(statusEl, "success", "Job tracked & site reported. Thanks!");
+        btn.textContent = "Tracked";
+      } else {
+        renderAlert(statusEl, "warning", "Already tracked. Site reported.");
+        btn.textContent = "Already Tracked";
+      }
+    } else {
+      renderAlert(statusEl, "error", "Failed to track job.");
+      btn.disabled = false;
+      btn.textContent = "Track & Report";
+    }
+  } catch {
+    renderAlert(statusEl, "error", "Failed to connect.");
+    btn.disabled = false;
+    btn.textContent = "Track & Report";
+  }
+});
+
+// --- Settings panel ---
+
+async function initSettings() {
+  const settings = await getSettings();
+  const toggle = document.getElementById("linkedin-extract-toggle");
+  if (toggle) {
+    toggle.checked = settings.linkedinAutoExtract;
+    toggle.addEventListener("change", async (e) => {
+      await saveSetting("linkedinAutoExtract", e.target.checked);
+    });
+  }
+}
+
+// Toggle settings panel visibility
+document.getElementById("settings-btn")?.addEventListener("click", () => {
+  const panel = document.getElementById("settings-panel");
+  panel.classList.toggle("hidden");
+});
+
+// Textarea auto-resize helper
+function autoResizeTextarea(el) {
+  el.style.height = "auto";
+  el.style.height = Math.min(el.scrollHeight, 300) + "px";
+}
+
+function updateDescMeta(el, countEl, expandBtn) {
+  const len = el.value.length;
+  countEl.textContent = len > 0 ? `${len.toLocaleString()} chars` : "";
+  if (el.scrollHeight > 300) {
+    expandBtn.classList.remove("hidden");
+  } else {
+    expandBtn.classList.add("hidden");
+  }
+}
+
+// Wire up description textarea events
+const _descEl = document.getElementById("job-description");
+const _descCount = document.getElementById("desc-char-count");
+const _descExpand = document.getElementById("desc-expand-btn");
+
+_descEl?.addEventListener("input", () => {
+  autoResizeTextarea(_descEl);
+  updateDescMeta(_descEl, _descCount, _descExpand);
+});
+
+_descExpand?.addEventListener("click", () => {
+  const isExpanded = _descEl.style.maxHeight === "none";
+  if (isExpanded) {
+    _descEl.style.maxHeight = "300px";
+    _descExpand.textContent = "Expand";
+  } else {
+    _descEl.style.maxHeight = "none";
+    _descExpand.textContent = "Collapse";
+  }
+});
+
+// Reset UI to initial state before re-detecting
+function resetUI() {
+  currentJobData = null;
+  currentUrl = null;
+  currentDetection = null;
+  hide("job-data");
+  hide("loading");
+  hide("contacts-section");
+  hide("browsing-nudge");
+  const statusEl = document.getElementById("track-status");
+  clearElement(statusEl);
+  const btn = document.getElementById("track-btn");
+  btn.disabled = false;
+  btn.textContent = "Track This Job";
+  clearElement(document.getElementById("contacts-list"));
+  clearElement(document.getElementById("linkedin-link"));
+  // Reset status picker
+  selectedStatus = "saved";
+  document.querySelectorAll(".status-option").forEach((b) => {
+    b.classList.toggle("active", b.dataset.status === "saved");
+  });
+  // Clear stored detection so init() re-reads from active tab
+  chrome.storage.session.remove("detection");
+}
+
+// Re-init when user switches tabs or navigates within a tab
+chrome.tabs.onActivated.addListener(() => {
+  resetUI();
+  init();
+  checkBrowsingNudge();
+});
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.status === "complete") {
+    chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
+      if (tab && tab.id === tabId) {
+        resetUI();
+        init();
+        checkBrowsingNudge();
+      }
+    });
+  }
+});
+
 // Run on load
 init();
+initSettings();
 checkBrowsingNudge();

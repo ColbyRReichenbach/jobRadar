@@ -99,9 +99,10 @@ def detect_platform(url: str) -> str | None:
         ("greenhouse", r"boards\.greenhouse\.io/([^/]+)/jobs/(\d+)"),
         ("greenhouse", r"[?&]gh_jid=(\d+)"),
         ("lever", r"jobs\.lever\.co/([^/]+)/([a-f0-9-]{36})"),
-        ("workday", r"(?:wd\d+\.)?myworkdayjobs\.com/([^/]+)/job/"),
+        ("workday", r"(?:[\w-]+\.)?wd\d+\.myworkday(?:jobs)?\.com/"),
         ("ashby", r"jobs\.ashbyhq\.com/([^/]+)/([a-f0-9-]{36})"),
         ("indeed", r"indeed\.com/viewjob\?jk=([a-z0-9]+)"),
+        ("linkedin", r"linkedin\.com/jobs/"),
     ]
     for platform, pattern in patterns:
         if re.search(pattern, url, re.IGNORECASE):

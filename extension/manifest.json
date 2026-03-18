@@ -8,7 +8,9 @@
   "permissions": [
     "sidePanel",
     "activeTab",
-    "storage"
+    "tabs",
+    "storage",
+    "scripting"
   ],
   "host_permissions": [
     "https://api.apptrail.com/*",
@@ -22,9 +24,21 @@
     "https://jobs.lever.co/*",
     "https://api.lever.co/*",
     "https://*.myworkdayjobs.com/*",
+    "https://*.myworkday.com/*",
     "https://jobs.ashbyhq.com/*",
     "https://www.indeed.com/*",
-    "https://www.linkedin.com/*"
+    "https://*.indeed.com/*",
+    "https://www.linkedin.com/*",
+    "https://www.glassdoor.com/*",
+    "https://www.ziprecruiter.com/*",
+    "https://wellfound.com/*",
+    "https://jobs.smartrecruiters.com/*",
+    "https://*.icims.com/*",
+    "https://jobs.jobvite.com/*",
+    "https://app.jobvite.com/*",
+    "https://talent.jobvite.com/*",
+    "https://*.bamboohr.com/*",
+    "https://ats.rippling.com/*"
   ],
   "background": {
     "service_worker": "background.js",
@@ -38,8 +52,32 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://www.linkedin.com/jobs/view/*"],
-      "js": ["content.js"]
+      "matches": [
+        "https://www.linkedin.com/jobs/*",
+        "https://boards.greenhouse.io/*/jobs/*",
+        "https://job-boards.greenhouse.io/*/jobs/*",
+        "https://jobs.lever.co/*/*",
+        "https://*.myworkdayjobs.com/*",
+        "https://*.myworkday.com/*",
+        "https://jobs.ashbyhq.com/*/*",
+        "https://www.indeed.com/viewjob*",
+        "https://www.indeed.com/rc/clk*",
+        "https://www.indeed.com/jobs*",
+        "https://*.indeed.com/viewjob*",
+        "https://*.indeed.com/jobs*",
+        "https://www.glassdoor.com/job-listing/*",
+        "https://www.glassdoor.com/Job/*",
+        "https://www.glassdoor.com/Jobs/*",
+        "https://www.ziprecruiter.com/c/*/Job/*",
+        "https://wellfound.com/company/*/jobs/*",
+        "https://jobs.smartrecruiters.com/*/*",
+        "https://*.icims.com/jobs/*/job",
+        "https://jobs.jobvite.com/*/*",
+        "https://*.bamboohr.com/careers/*",
+        "https://ats.rippling.com/*/jobs/*"
+      ],
+      "js": ["content.js", "banner.js"],
+      "run_at": "document_idle"
     },
     {
       "matches": [

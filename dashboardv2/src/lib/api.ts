@@ -927,3 +927,233 @@ export async function exportCsv(): Promise<void> {
   a.click();
   URL.revokeObjectURL(url);
 }
+
+// ── Classifier Audit API ─────────────────────────────────────────────
+
+export interface AuditClassMetrics {
+  precision: number;
+  recall: number;
+  f1: number;
+  support: number;
+}
+
+export interface AuditMetrics {
+  decision: { accuracy: number; precision: number; recall: number; f1: number; support: Record<string, number> };
+  classification: { accuracy: number; per_class: Record<string, AuditClassMetrics>; macro_recall: number; weighted_recall: number };
+  network_contact: { accuracy: number; precision: number; recall: number; f1: number };
+  confusion_matrix: { labels: string[]; matrix: number[][] };
+  classification_confusion: { labels: string[]; matrix: number[][] };
+  status_change: { accuracy: number; total: number };
+}
+
+export interface AuditRunSummary {
+  id: string;
+  name: string;
+  created_at: string;
+  classifier_engine: string;
+  model: string;
+  prompt_version: string;
+  notes: string;
+  total_emails: number;
+  reviewed_emails: number;
+  metrics: AuditMetrics;
+}
+
+export interface AuditEmailRow {
+  [key: string]: string;
+}
+
+export interface AuditRunDetail {
+  meta: AuditRunSummary;
+  emails: AuditEmailRow[];
+}
+
+export interface AuditComparisonPoint {
+  id: string;
+  name: string;
+  created_at: string;
+  classifier_engine: string;
+  model: string;
+  prompt_version: string;
+  total_emails: number;
+  reviewed_emails: number;
+  decision_recall: number;
+  decision_precision: number;
+  decision_f1: number;
+  decision_accuracy: number;
+  classification_macro_recall: number;
+  classification_weighted_recall: number;
+  classification_accuracy: number;
+  network_recall: number;
+  network_precision: number;
+}
+
+export async function fetchAuditRuns(): Promise<AuditRunSummary[]> {
+  const res = await apiFetch(`${API_BASE}/api/audit/runs`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to fetch audit runs'));
+  return res.json();
+}
+
+export async function fetchAuditRun(runId: string): Promise<AuditRunDetail> {
+  const res = await apiFetch(`${API_BASE}/api/audit/runs/${runId}`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to fetch audit run'));
+  return res.json();
+}
+
+export async function uploadAuditRun(formData: FormData): Promise<AuditRunSummary> {
+  const hdrs = authHeaders();
+  delete (hdrs as Record<string, string>)['Content-Type']; // let browser set multipart boundary
+  const res = await apiFetch(`${API_BASE}/api/audit/runs`, {
+    method: 'POST',
+    headers: hdrs,
+    body: formData,
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to upload audit run'));
+  return res.json();
+}
+
+export async function fetchAuditComparison(runIds?: string[]): Promise<AuditComparisonPoint[]> {
+  const params = runIds ? `?run_ids=${runIds.join(',')}` : '';
+  const res = await apiFetch(`${API_BASE}/api/audit/compare${params}`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to fetch audit comparison'));
+  return res.json();
+}
+
+export async function deleteAuditRun(runId: string): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/api/audit/runs/${runId}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to delete audit run'));
+}
+
+export async function updateAuditEmailReview(
+  runId: string,
+  emailIdx: number,
+  review: Record<string, string>,
+): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/api/audit/runs/${runId}/emails/${emailIdx}`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify(review),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to update review'));
+}
+
+// ── Extraction Reports ────────────────────────────────────────────
+
+export interface ExtractionReportItem {
+  id: string;
+  report_type: string;
+  url: string;
+  domain: string | null;
+  platform_detected: string | null;
+  extraction_method: string | null;
+  extracted_data: Record<string, unknown> | null;
+  corrected_data: Record<string, unknown> | null;
+  fields_flagged: string[] | null;
+  extension_version: string | null;
+  extractor_version: string | null;
+  notes: string | null;
+  resolved: boolean;
+  created_at: string;
+}
+
+export interface ExtractionReportStats {
+  total: number;
+  unresolved: number;
+  by_type: Record<string, number>;
+  by_platform: Record<string, number>;
+  by_field: Record<string, number>;
+}
+
+export async function fetchExtractionReports(params?: {
+  report_type?: string;
+  platform?: string;
+  resolved?: boolean;
+  limit?: number;
+  offset?: number;
+}): Promise<ExtractionReportItem[]> {
+  const qs = new URLSearchParams();
+  if (params?.report_type) qs.set('report_type', params.report_type);
+  if (params?.platform) qs.set('platform', params.platform);
+  if (params?.resolved !== undefined) qs.set('resolved', String(params.resolved));
+  if (params?.limit) qs.set('limit', String(params.limit));
+  if (params?.offset) qs.set('offset', String(params.offset));
+  const q = qs.toString() ? `?${qs}` : '';
+  const res = await apiFetch(`${API_BASE}/api/extraction-reports${q}`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to load extraction reports'));
+  return res.json();
+}
+
+export async function fetchExtractionReportStats(): Promise<ExtractionReportStats> {
+  const res = await apiFetch(`${API_BASE}/api/extraction-reports/stats`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to load report stats'));
+  return res.json();
+}
+
+export async function resolveExtractionReport(reportId: string, resolved: boolean): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/api/extraction-reports/${reportId}`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify({ resolved }),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to update report'));
+}
+
+// ── Extraction Changelog ──────────────────────────────────────────────
+
+export interface ChangelogEntry {
+  id: string;
+  version: string;
+  description: string;
+  platforms_affected: string[] | null;
+  fields_affected: string[] | null;
+  change_type: string;
+  created_at: string;
+}
+
+export interface VersionStats {
+  version: string;
+  total_reports: number;
+  wrong_data_reports: number;
+  false_positive_reports: number;
+  undetected_site_reports: number;
+  accuracy_rate: number | null;
+  field_accuracy: Record<string, number>;
+  first_report: string | null;
+  last_report: string | null;
+}
+
+export interface VersionStatsResponse {
+  versions: VersionStats[];
+  changelog: ChangelogEntry[];
+}
+
+export async function fetchChangelog(): Promise<ChangelogEntry[]> {
+  const res = await apiFetch(`${API_BASE}/api/extraction-changelog`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to load changelog'));
+  return res.json();
+}
+
+export async function createChangelogEntry(entry: {
+  version: string;
+  description: string;
+  change_type?: string;
+  platforms_affected?: string[];
+  fields_affected?: string[];
+}): Promise<ChangelogEntry> {
+  const res = await apiFetch(`${API_BASE}/api/extraction-changelog`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(entry),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to create changelog entry'));
+  return res.json();
+}
+
+export async function fetchVersionStats(): Promise<VersionStatsResponse> {
+  const res = await apiFetch(`${API_BASE}/api/extraction-reports/version-stats`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to load version stats'));
+  return res.json();
+}

@@ -1,5 +1,5 @@
 import { motion } from 'motion/react';
-import { LayoutDashboard, Mail, Search, Download, BarChart2, MessageSquare, LogOut, RefreshCw, Users, CalendarDays, Settings } from 'lucide-react';
+import { LayoutDashboard, Mail, Search, Download, BarChart2, MessageSquare, LogOut, RefreshCw, Users, CalendarDays, Settings, FlaskConical, Bug } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Logo } from './Logo';
 import { useAuth } from '../lib/AuthContext';
@@ -27,6 +27,8 @@ export function Sidebar({ activeTab, setActiveTab, onGmailSync }: SidebarProps) 
     { id: 'search', label: 'Job Search', icon: Search },
     { id: 'analytics', label: 'Analytics', icon: BarChart2 },
     { id: 'export', label: 'Export Data', icon: Download },
+    { id: 'audit', label: 'Classifier Audit', icon: FlaskConical },
+    { id: 'extraction-reports', label: 'Extraction Reports', icon: Bug },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 

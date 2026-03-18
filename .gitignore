@@ -121,6 +121,13 @@ playwright-report/
 test-results/
 .playwright/
 
+# ─── Audit ───────────────────────────────────────────────────────────────────
+audit/.gmail_token.json
+audit/real_email_audit.csv
+audit/raw_emails_batch1.json
+audit/__pycache__/
+audit/runs/
+
 # ─── Misc ─────────────────────────────────────────────────────────────────────
 *.bak
 *.tmp

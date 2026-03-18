@@ -93,6 +93,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
+  if (message.type === "OPEN_SIDE_PANEL") {
+    // Open side panel from toast click
+    const tabId = sender.tab?.id;
+    if (tabId) {
+      chrome.sidePanel.open({ tabId }).catch(() => {});
+    } else {
+      chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
+        if (tab) {
+          chrome.sidePanel.open({ tabId: tab.id }).catch(() => {});
+        }
+      });
+    }
+    sendResponse({ ok: true });
+    return false;
+  }
+  if (message.type === "REPORT_FALSE_POSITIVE") {
+    handleFalsePositiveReport(message).then(() => sendResponse({ ok: true }));
+    return true;
+  }
   if (message.type === "CAREER_PAGE_VISIT") {
     // Store visit data for nudge display in side panel
     handleCareerPageVisit(message).then(() => sendResponse({ ok: true }));
@@ -170,6 +189,53 @@ async function handleApplicationSubmitted({ platform, url, domain, enrichment })
   }
 }
 
+async function handleFalsePositiveReport({ url, domain }) {
+  const [apiKey, apiBase] = await Promise.all([getApiKey(), getApiBase()]);
+  if (!apiKey) return;
+
+  const payload = {
+    report_type: "false_positive",
+    url,
+    domain,
+    user_agent: "extension-background",
+    extension_version: chrome.runtime.getManifest().version,
+  };
+
+  try {
+    await postToBackend("/api/extraction-reports", payload, apiKey, apiBase);
+  } catch {
+    await enqueueSyncRequest({ path: "/api/extraction-reports", payload });
+  }
+}
+
+// --- Programmatic content script injection ---
+// Manifest content_scripts only inject on full page loads. For SPAs like LinkedIn,
+// Workday, etc., the URL changes via pushState without a full reload.
+// We programmatically inject on:
+//   1. tabs.onUpdated (catches SPA navigation + full loads)
+//   2. tabs.onActivated (catches switching to an already-loaded job tab)
+// content.js and banner.js both have their own duplicate-injection guards.
+
+async function injectScripts(tabId) {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["content.js"],
+    });
+  } catch {
+    // Tab may not be injectable (chrome://, about:, etc.)
+  }
+
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["banner.js"],
+    });
+  } catch {
+    // Same — swallow injection errors
+  }
+}
+
 // Detect job URLs on every tab update
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   if (changeInfo.status !== "complete" || !tab.url) return;
@@ -189,9 +255,37 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
         url: tab.url,
       },
     });
+
+    // Inject content + toast scripts (guards inside handle duplicates)
+    await injectScripts(tabId);
   } else {
     // Clear badge
     chrome.action.setBadgeText({ text: "", tabId });
     await chrome.storage.session.remove("detection");
+  }
+});
+
+// Also inject when user switches to an already-loaded tab with a job URL
+chrome.tabs.onActivated.addListener(async ({ tabId }) => {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (!tab.url) return;
+    const detection = detectPlatform(tab.url);
+    if (detection) {
+      chrome.action.setBadgeText({ text: "\u25CF", tabId });
+      chrome.action.setBadgeBackgroundColor({ color: "#22c55e", tabId });
+      await chrome.storage.session.set({
+        detection: {
+          platform: detection.platform,
+          params: detection.params,
+          url: tab.url,
+        },
+      });
+      // Inject — guards inside will prevent duplicate listeners/observers
+      // Banner cooldown will prevent toast spam on tab switching
+      await injectScripts(tabId);
+    }
+  } catch {
+    // Tab may have been closed between activation and get()
   }
 });

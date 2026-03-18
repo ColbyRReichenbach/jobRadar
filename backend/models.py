@@ -451,3 +451,45 @@ class Alert(Base):
     action_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     read: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class ExtractionReport(Base):
+    __tablename__ = "extraction_reports"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    # "missing_data" | "undetected_site" | "false_positive" | "wrong_data"
+    report_type: Mapped[str] = mapped_column(Text, nullable=False)
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    domain: Mapped[str | None] = mapped_column(Text, nullable=True)
+    platform_detected: Mapped[str | None] = mapped_column(Text, nullable=True)
+    extraction_method: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # What our extractor returned (JSON)
+    extracted_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # What the user corrected it to (JSON)
+    corrected_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Which fields were flagged as wrong/missing
+    fields_flagged: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
+    extension_version: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Granular extractor logic version (bumped with each extraction logic change)
+    extractor_version: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    resolved: Mapped[bool] = mapped_column(Boolean, default=False)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class ExtractionChangelog(Base):
+    __tablename__ = "extraction_changelog"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    version: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    # Which platforms were affected by this change
+    platforms_affected: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Which fields were affected (salary, description, company, etc.)
+    fields_affected: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # "extraction" | "classifier" | "both"
+    change_type: Mapped[str] = mapped_column(Text, default="extraction")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

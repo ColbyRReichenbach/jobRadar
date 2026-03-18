@@ -1,3 +1,5 @@
+import csv
+import json
 import os
 import re
 import time
@@ -7,7 +9,7 @@ from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
 from uuid import uuid4
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, EmailStr, Field
@@ -33,7 +35,7 @@ from backend.metrics import (
     metrics_payload,
     observe_request,
 )
-from backend.models import Application, Contact, ContactDistinctDecision, EmailEvent, EmailFeedback, User, GmailToken, Company, RoleUmbrella, CompanyTechProfile, UserProfile, UserRoleInterest, AtsBehavior, WarmConnection, Alert, Interview, CompanyVisit, InterviewNote, NotificationPreference, ResumeDraft, IgnoredNetworkContact
+from backend.models import Application, Contact, ContactDistinctDecision, EmailEvent, EmailFeedback, User, GmailToken, Company, RoleUmbrella, CompanyTechProfile, UserProfile, UserRoleInterest, AtsBehavior, WarmConnection, Alert, Interview, CompanyVisit, InterviewNote, NotificationPreference, ResumeDraft, IgnoredNetworkContact, ExtractionReport, ExtractionChangelog
 from backend.services.alerts import create_user_alert
 from backend.monitoring import configure_sentry
 from backend.services.hunter import find_contacts, generate_linkedin_search_url
@@ -808,7 +810,7 @@ def _serialize_contact(contact_row: Contact) -> dict:
 # --- Routes ---
 
 @app.get("/api/health")
-async def health():
+async def health(db: AsyncSession = Depends(get_db)):
     component_status = {
         "api": {"status": "ok"},
         "database": {"status": "ok"},
@@ -817,8 +819,7 @@ async def health():
     overall_status = "ok"
 
     try:
-        async with async_session_factory() as session:
-            await session.execute(text("SELECT 1"))
+        await db.execute(text("SELECT 1"))
     except Exception as exc:
         component_status["database"] = {"status": "error", "detail": str(exc)}
         overall_status = "degraded"
@@ -1097,6 +1098,19 @@ async def find_contacts_endpoint(
     if not app:
         raise HTTPException(status_code=404, detail="Application not found")
 
+    # Look up user's school for LinkedIn alumni search
+    profile_stmt = select(UserProfile).where(UserProfile.user_id == user_id)
+    profile_result = await db.execute(profile_stmt)
+    user_profile = profile_result.scalar_one_or_none()
+    user_school = None
+    if user_profile and user_profile.education:
+        # education is a JSON list — use the first school name
+        for edu in user_profile.education:
+            school_name = edu if isinstance(edu, str) else edu.get("school") or edu.get("name")
+            if school_name:
+                user_school = school_name
+                break
+
     # Check cache: existing contacts for this application fetched within 30 days
     stmt = select(Contact).where(
         Contact.application_id == app_id,
@@ -1105,7 +1119,7 @@ async def find_contacts_endpoint(
     result = await db.execute(stmt)
     existing_contacts = result.scalars().all()
     if existing_contacts:
-        linkedin_url = generate_linkedin_search_url(req.company)
+        linkedin_url = generate_linkedin_search_url(req.company, school=user_school)
         return {
             "contacts": [_serialize_contact(c) for c in existing_contacts],
             "linkedin_search_url": linkedin_url,
@@ -1135,7 +1149,7 @@ async def find_contacts_endpoint(
     for c in saved_contacts:
         await db.refresh(c)
 
-    linkedin_url = generate_linkedin_search_url(req.company)
+    linkedin_url = generate_linkedin_search_url(req.company, school=user_school)
     return {
         "contacts": [_serialize_contact(c) for c in saved_contacts],
         "linkedin_search_url": linkedin_url,
@@ -4767,3 +4781,588 @@ async def delete_resume_draft(
     await db.delete(draft)
     await db.commit()
     return {"status": "deleted"}
+
+
+# ── Classifier Audit Dashboard ───────────────────────────────────────
+
+AUDIT_RUNS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "audit", "runs")
+
+
+def _ensure_audit_dir():
+    os.makedirs(AUDIT_RUNS_DIR, exist_ok=True)
+
+
+@app.get("/api/audit/runs")
+async def list_audit_runs(auth: dict = Depends(verify_api_key)):
+    """List all audit runs with summary metrics."""
+    _ensure_audit_dir()
+    runs = []
+    for fname in sorted(os.listdir(AUDIT_RUNS_DIR), reverse=True):
+        if fname.endswith("_meta.json"):
+            path = os.path.join(AUDIT_RUNS_DIR, fname)
+            with open(path) as f:
+                runs.append(json.load(f))
+    return runs
+
+
+@app.get("/api/audit/runs/{run_id}")
+async def get_audit_run(run_id: str, auth: dict = Depends(verify_api_key)):
+    """Get run details including all email rows."""
+    meta_path = os.path.join(AUDIT_RUNS_DIR, f"{run_id}_meta.json")
+    data_path = os.path.join(AUDIT_RUNS_DIR, f"{run_id}_data.csv")
+
+    if not os.path.exists(meta_path):
+        raise HTTPException(404, "Run not found")
+
+    with open(meta_path) as f:
+        meta = json.load(f)
+
+    emails = []
+    if os.path.exists(data_path):
+        with open(data_path, encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                emails.append(row)
+
+    return {"meta": meta, "emails": emails}
+
+
+@app.post("/api/audit/runs", status_code=201)
+async def create_audit_run(
+    file: UploadFile = File(...),
+    name: str = Form(...),
+    classifier_engine: str = Form("unknown"),
+    model: str = Form("unknown"),
+    prompt_version: str = Form("v1"),
+    notes: str = Form(""),
+    auth: dict = Depends(verify_api_key),
+):
+    """Upload a reviewed CSV and create a new audit run."""
+    from backend.services.audit_metrics import compute_run_metrics, parse_audit_csv
+
+    _ensure_audit_dir()
+
+    file_bytes = await file.read()
+    rows = parse_audit_csv(file_bytes)
+
+    if not rows:
+        raise HTTPException(400, "CSV is empty or has no valid rows")
+
+    # Generate run ID from timestamp
+    from datetime import datetime as _dt, timezone as _tz
+    now = _dt.now(_tz.utc)
+    run_id = f"run_{now.strftime('%Y%m%d_%H%M%S')}"
+
+    # Compute metrics
+    metrics = compute_run_metrics(rows)
+    reviewed_count = sum(1 for r in rows if (r.get("review_correct") or "").strip())
+
+    meta = {
+        "id": run_id,
+        "name": name,
+        "created_at": now.isoformat(),
+        "classifier_engine": classifier_engine,
+        "model": model,
+        "prompt_version": prompt_version,
+        "notes": notes,
+        "total_emails": len(rows),
+        "reviewed_emails": reviewed_count,
+        "metrics": metrics,
+    }
+
+    # Write files
+    meta_path = os.path.join(AUDIT_RUNS_DIR, f"{run_id}_meta.json")
+    data_path = os.path.join(AUDIT_RUNS_DIR, f"{run_id}_data.csv")
+
+    with open(meta_path, "w") as f:
+        json.dump(meta, f, indent=2)
+
+    with open(data_path, "wb") as f:
+        f.write(file_bytes)
+
+    return meta
+
+
+@app.get("/api/audit/compare")
+async def compare_audit_runs(
+    run_ids: Optional[str] = Query(None),
+    auth: dict = Depends(verify_api_key),
+):
+    """Compare metrics across runs. Pass comma-separated run_ids or omit for all."""
+    from backend.services.audit_metrics import compare_runs
+
+    _ensure_audit_dir()
+
+    metas = []
+    for fname in os.listdir(AUDIT_RUNS_DIR):
+        if fname.endswith("_meta.json"):
+            rid = fname.replace("_meta.json", "")
+            if run_ids and rid not in run_ids.split(","):
+                continue
+            with open(os.path.join(AUDIT_RUNS_DIR, fname)) as f:
+                metas.append(json.load(f))
+
+    return compare_runs(metas)
+
+
+@app.delete("/api/audit/runs/{run_id}")
+async def delete_audit_run(run_id: str, auth: dict = Depends(verify_api_key)):
+    """Delete a run and its data."""
+    meta_path = os.path.join(AUDIT_RUNS_DIR, f"{run_id}_meta.json")
+    data_path = os.path.join(AUDIT_RUNS_DIR, f"{run_id}_data.csv")
+
+    if not os.path.exists(meta_path):
+        raise HTTPException(404, "Run not found")
+
+    os.remove(meta_path)
+    if os.path.exists(data_path):
+        os.remove(data_path)
+
+    return {"status": "deleted"}
+
+
+@app.patch("/api/audit/runs/{run_id}/emails/{email_idx}")
+async def update_audit_email_review(
+    run_id: str,
+    email_idx: int,
+    body: dict,
+    auth: dict = Depends(verify_api_key),
+):
+    """Update review columns for a single email row, recompute metrics."""
+    from backend.services.audit_metrics import compute_run_metrics
+
+    data_path = os.path.join(AUDIT_RUNS_DIR, f"{run_id}_data.csv")
+    meta_path = os.path.join(AUDIT_RUNS_DIR, f"{run_id}_meta.json")
+
+    if not os.path.exists(data_path) or not os.path.exists(meta_path):
+        raise HTTPException(404, "Run not found")
+
+    # Read CSV
+    with open(data_path, encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        fieldnames = reader.fieldnames
+        rows = list(reader)
+
+    if email_idx < 0 or email_idx >= len(rows):
+        raise HTTPException(400, f"Invalid email index {email_idx}")
+
+    # Update review columns
+    review_fields = {
+        "review_correct", "review_expected_decision",
+        "review_expected_classification", "review_expected_network_contact",
+        "review_expected_status_change", "review_reason",
+    }
+    for key, value in body.items():
+        if key in review_fields:
+            rows[email_idx][key] = value
+
+    # Rewrite CSV
+    import io as _io
+    output = _io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=fieldnames)
+    writer.writeheader()
+    writer.writerows(rows)
+    with open(data_path, "w", encoding="utf-8") as f:
+        f.write(output.getvalue())
+
+    # Recompute metrics
+    metrics = compute_run_metrics(rows)
+    reviewed_count = sum(1 for r in rows if (r.get("review_correct") or "").strip())
+
+    with open(meta_path) as f:
+        meta = json.load(f)
+    meta["metrics"] = metrics
+    meta["reviewed_emails"] = reviewed_count
+    with open(meta_path, "w") as f:
+        json.dump(meta, f, indent=2)
+
+    return {"status": "updated", "metrics": metrics}
+
+
+# ── Extraction Reports ────────────────────────────────────────────────
+
+class ExtractionReportCreate(BaseModel):
+    report_type: str  # missing_data | undetected_site | false_positive | wrong_data
+    url: str
+    domain: str | None = None
+    platform_detected: str | None = None
+    extraction_method: str | None = None
+    extracted_data: dict | None = None
+    corrected_data: dict | None = None
+    fields_flagged: list[str] | None = None
+    user_agent: str | None = None
+    extension_version: str | None = None
+    extractor_version: str | None = None
+    notes: str | None = None
+
+
+@app.post("/api/extraction-reports", status_code=201)
+async def create_extraction_report(
+    body: ExtractionReportCreate,
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(verify_api_key),
+):
+    """Submit an extraction report from the extension."""
+    valid_types = {"missing_data", "undetected_site", "false_positive", "wrong_data"}
+    if body.report_type not in valid_types:
+        raise HTTPException(400, f"report_type must be one of {valid_types}")
+
+    user_id = None
+    if hasattr(_user, "id"):
+        user_id = _user.id
+
+    report = ExtractionReport(
+        user_id=user_id,
+        report_type=body.report_type,
+        url=body.url,
+        domain=body.domain,
+        platform_detected=body.platform_detected,
+        extraction_method=body.extraction_method,
+        extracted_data=body.extracted_data,
+        corrected_data=body.corrected_data,
+        fields_flagged=body.fields_flagged,
+        user_agent=body.user_agent,
+        extension_version=body.extension_version,
+        extractor_version=body.extractor_version,
+        notes=body.notes,
+    )
+    db.add(report)
+    await db.commit()
+    await db.refresh(report)
+
+    return {
+        "id": str(report.id),
+        "report_type": report.report_type,
+        "url": report.url,
+        "created_at": report.created_at.isoformat() if report.created_at else None,
+    }
+
+
+@app.get("/api/extraction-reports")
+async def list_extraction_reports(
+    report_type: str | None = None,
+    platform: str | None = None,
+    domain: str | None = None,
+    resolved: bool | None = None,
+    limit: int = Query(default=100, le=500),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(verify_api_key),
+):
+    """List extraction reports with filters (admin view)."""
+    q = select(ExtractionReport).order_by(ExtractionReport.created_at.desc())
+    if report_type:
+        q = q.where(ExtractionReport.report_type == report_type)
+    if platform:
+        q = q.where(ExtractionReport.platform_detected == platform)
+    if domain:
+        q = q.where(ExtractionReport.domain == domain)
+    if resolved is not None:
+        q = q.where(ExtractionReport.resolved == resolved)
+    q = q.offset(offset).limit(limit)
+
+    result = await db.execute(q)
+    reports = result.scalars().all()
+
+    return [
+        {
+            "id": str(r.id),
+            "report_type": r.report_type,
+            "url": r.url,
+            "domain": r.domain,
+            "platform_detected": r.platform_detected,
+            "extraction_method": r.extraction_method,
+            "extracted_data": r.extracted_data,
+            "corrected_data": r.corrected_data,
+            "fields_flagged": r.fields_flagged,
+            "extension_version": r.extension_version,
+            "extractor_version": r.extractor_version,
+            "notes": r.notes,
+            "resolved": r.resolved,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in reports
+    ]
+
+
+@app.get("/api/extraction-reports/stats")
+async def extraction_report_stats(
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(verify_api_key),
+):
+    """Aggregate stats for the admin dashboard."""
+    from sqlalchemy import func
+
+    # Total counts by type
+    type_q = await db.execute(
+        select(ExtractionReport.report_type, func.count())
+        .group_by(ExtractionReport.report_type)
+    )
+    by_type = {row[0]: row[1] for row in type_q.all()}
+
+    # Counts by platform
+    platform_q = await db.execute(
+        select(ExtractionReport.platform_detected, func.count())
+        .where(ExtractionReport.platform_detected.is_not(None))
+        .group_by(ExtractionReport.platform_detected)
+    )
+    by_platform = {row[0]: row[1] for row in platform_q.all()}
+
+    # Most-reported fields (flatten fields_flagged arrays)
+    fields_q = await db.execute(
+        select(ExtractionReport.fields_flagged)
+        .where(ExtractionReport.fields_flagged.is_not(None))
+    )
+    field_counts: dict[str, int] = {}
+    for (fields,) in fields_q.all():
+        if isinstance(fields, list):
+            for f in fields:
+                field_counts[f] = field_counts.get(f, 0) + 1
+
+    # Unresolved count
+    unresolved_q = await db.execute(
+        select(func.count()).where(ExtractionReport.resolved == False)  # noqa: E712
+    )
+    unresolved = unresolved_q.scalar() or 0
+
+    # Total
+    total_q = await db.execute(select(func.count()).select_from(ExtractionReport))
+    total = total_q.scalar() or 0
+
+    return {
+        "total": total,
+        "unresolved": unresolved,
+        "by_type": by_type,
+        "by_platform": by_platform,
+        "by_field": field_counts,
+    }
+
+
+@app.patch("/api/extraction-reports/{report_id}")
+async def update_extraction_report(
+    report_id: str,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(verify_api_key),
+):
+    """Mark a report as resolved or add admin notes."""
+    import uuid as _uuid
+    report_uuid = _uuid.UUID(report_id)
+    result = await db.execute(
+        select(ExtractionReport).where(ExtractionReport.id == report_uuid)
+    )
+    report = result.scalar_one_or_none()
+    if not report:
+        raise HTTPException(404, "Report not found")
+
+    if "resolved" in body:
+        report.resolved = body["resolved"]
+        if body["resolved"]:
+            report.resolved_at = datetime.now(timezone.utc)
+        else:
+            report.resolved_at = None
+    if "notes" in body:
+        report.notes = body["notes"]
+
+    await db.commit()
+    return {"status": "updated", "id": str(report.id), "resolved": report.resolved}
+
+
+# ── Extraction Changelog CRUD ─────────────────────────────────────────
+
+
+@app.post("/api/extraction-changelog")
+async def create_changelog_entry(
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(verify_api_key),
+):
+    """Create a new extraction/classifier changelog entry."""
+    version = body.get("version")
+    description = body.get("description")
+    if not version or not description:
+        raise HTTPException(400, "version and description are required")
+
+    change_type = body.get("change_type", "extraction")
+    if change_type not in ("extraction", "classifier", "both"):
+        raise HTTPException(400, "change_type must be extraction, classifier, or both")
+
+    entry = ExtractionChangelog(
+        version=version,
+        description=description,
+        platforms_affected=body.get("platforms_affected"),
+        fields_affected=body.get("fields_affected"),
+        change_type=change_type,
+    )
+    db.add(entry)
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(409, f"Changelog version '{version}' already exists")
+    await db.refresh(entry)
+    return {
+        "id": str(entry.id),
+        "version": entry.version,
+        "description": entry.description,
+        "platforms_affected": entry.platforms_affected,
+        "fields_affected": entry.fields_affected,
+        "change_type": entry.change_type,
+        "created_at": entry.created_at.isoformat() if entry.created_at else None,
+    }
+
+
+@app.get("/api/extraction-changelog")
+async def list_changelog_entries(
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(verify_api_key),
+):
+    """List all changelog entries ordered by creation date desc."""
+    result = await db.execute(
+        select(ExtractionChangelog).order_by(ExtractionChangelog.created_at.desc())
+    )
+    entries = result.scalars().all()
+    return [
+        {
+            "id": str(e.id),
+            "version": e.version,
+            "description": e.description,
+            "platforms_affected": e.platforms_affected,
+            "fields_affected": e.fields_affected,
+            "change_type": e.change_type,
+            "created_at": e.created_at.isoformat() if e.created_at else None,
+        }
+        for e in entries
+    ]
+
+
+@app.patch("/api/extraction-changelog/{entry_id}")
+async def update_changelog_entry(
+    entry_id: str,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(verify_api_key),
+):
+    """Update a changelog entry."""
+    import uuid as _uuid
+    entry_uuid = _uuid.UUID(entry_id)
+    result = await db.execute(
+        select(ExtractionChangelog).where(ExtractionChangelog.id == entry_uuid)
+    )
+    entry = result.scalar_one_or_none()
+    if not entry:
+        raise HTTPException(404, "Changelog entry not found")
+
+    for field in ("description", "platforms_affected", "fields_affected", "change_type"):
+        if field in body:
+            setattr(entry, field, body[field])
+
+    await db.commit()
+    return {
+        "id": str(entry.id),
+        "version": entry.version,
+        "description": entry.description,
+        "platforms_affected": entry.platforms_affected,
+        "fields_affected": entry.fields_affected,
+        "change_type": entry.change_type,
+        "created_at": entry.created_at.isoformat() if entry.created_at else None,
+    }
+
+
+# ── Version Accuracy Stats ────────────────────────────────────────────
+
+
+@app.get("/api/extraction-reports/version-stats")
+async def extraction_version_stats(
+    db: AsyncSession = Depends(get_db),
+    _user=Depends(verify_api_key),
+):
+    """Group extraction reports by extractor_version and compute per-field accuracy.
+
+    For each version, counts total reports, reports with corrections (wrong_data),
+    and per-field accuracy rates based on fields_flagged.
+    """
+    from sqlalchemy import func
+
+    # Get all reports with an extractor_version
+    result = await db.execute(
+        select(ExtractionReport).where(
+            ExtractionReport.extractor_version.is_not(None)
+        ).order_by(ExtractionReport.created_at)
+    )
+    reports = result.scalars().all()
+
+    versions: dict = {}
+    for r in reports:
+        v = r.extractor_version
+        if v not in versions:
+            versions[v] = {
+                "version": v,
+                "total_reports": 0,
+                "wrong_data_reports": 0,
+                "false_positive_reports": 0,
+                "undetected_site_reports": 0,
+                "fields_flagged_counts": {},
+                "fields_total": 0,
+                "first_report": r.created_at.isoformat() if r.created_at else None,
+                "last_report": None,
+            }
+
+        versions[v]["total_reports"] += 1
+        versions[v]["last_report"] = r.created_at.isoformat() if r.created_at else None
+
+        if r.report_type == "wrong_data":
+            versions[v]["wrong_data_reports"] += 1
+            if isinstance(r.fields_flagged, list):
+                for f in r.fields_flagged:
+                    versions[v]["fields_flagged_counts"][f] = (
+                        versions[v]["fields_flagged_counts"].get(f, 0) + 1
+                    )
+                    versions[v]["fields_total"] += 1
+        elif r.report_type == "false_positive":
+            versions[v]["false_positive_reports"] += 1
+        elif r.report_type == "undetected_site":
+            versions[v]["undetected_site_reports"] += 1
+
+    # Compute per-field accuracy for each version
+    version_list = []
+    for v, data in versions.items():
+        total = data["total_reports"]
+        wrong = data["wrong_data_reports"]
+        field_accuracy = {}
+        for field, flagged_count in data["fields_flagged_counts"].items():
+            # Accuracy = 1 - (flagged / total reports for this version)
+            field_accuracy[field] = round(1 - (flagged_count / total), 3) if total > 0 else None
+
+        version_list.append({
+            "version": data["version"],
+            "total_reports": total,
+            "wrong_data_reports": wrong,
+            "false_positive_reports": data["false_positive_reports"],
+            "undetected_site_reports": data["undetected_site_reports"],
+            "accuracy_rate": round(1 - (wrong / total), 3) if total > 0 else None,
+            "field_accuracy": field_accuracy,
+            "first_report": data["first_report"],
+            "last_report": data["last_report"],
+        })
+
+    # Also pull changelog entries to correlate versions with changes
+    changelog_result = await db.execute(
+        select(ExtractionChangelog).order_by(ExtractionChangelog.created_at)
+    )
+    changelog = [
+        {
+            "version": e.version,
+            "description": e.description,
+            "platforms_affected": e.platforms_affected,
+            "fields_affected": e.fields_affected,
+            "change_type": e.change_type,
+            "created_at": e.created_at.isoformat() if e.created_at else None,
+        }
+        for e in changelog_result.scalars().all()
+    ]
+
+    return {
+        "versions": version_list,
+        "changelog": changelog,
+    }
