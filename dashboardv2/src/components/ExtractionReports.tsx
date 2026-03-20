@@ -8,10 +8,10 @@ import {
   AlertTriangle, CheckCircle2, XCircle, Bug, Globe, Crosshair,
   ChevronDown, ChevronUp, ExternalLink, Eye, GitCommitHorizontal, TrendingUp, Plus,
 } from 'lucide-react';
-import type { ExtractionReportItem, ExtractionReportStats, ChangelogEntry, VersionStatsResponse } from '../lib/api';
+import type { ExtractionReportItem, ExtractionReportStats, ChangelogEntry, VersionStatsResponse, FeedbackStats } from '../lib/api';
 import {
   fetchExtractionReports, fetchExtractionReportStats, resolveExtractionReport,
-  fetchVersionStats, fetchChangelog, createChangelogEntry,
+  fetchVersionStats, fetchChangelog, createChangelogEntry, fetchFeedbackStats,
 } from '../lib/api';
 
 const TYPE_LABELS: Record<string, string> = {
@@ -52,6 +52,7 @@ const PLATFORM_COLORS: Record<string, string> = {
 function VersionTimeline() {
   const [data, setData] = useState<VersionStatsResponse | null>(null);
   const [changelog, setChangelog] = useState<ChangelogEntry[]>([]);
+  const [feedback, setFeedback] = useState<FeedbackStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showAddForm, setShowAddForm] = useState(false);
@@ -60,9 +61,14 @@ function VersionTimeline() {
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const [vs, cl] = await Promise.all([fetchVersionStats(), fetchChangelog()]);
+      const [vs, cl, fb] = await Promise.all([
+        fetchVersionStats(),
+        fetchChangelog(),
+        fetchFeedbackStats().catch(() => null),
+      ]);
       setData(vs);
       setChangelog(cl);
+      setFeedback(fb);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load');
     } finally {
@@ -119,6 +125,25 @@ function VersionTimeline() {
           <AlertTriangle className="w-4 h-4" />
           {error}
           <button onClick={() => setError('')} className="ml-auto text-red-400 hover:text-red-600">&times;</button>
+        </div>
+      )}
+
+      {/* Classifier false-positive signal */}
+      {feedback && feedback.not_job_related > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
+          <h3 className="text-sm font-semibold text-red-700 mb-2 flex items-center gap-2">
+            <XCircle className="w-4 h-4" />
+            Classifier False Positives — {feedback.not_job_related} emails marked "Not Job Related" by user
+          </h3>
+          <div className="flex gap-4 text-xs text-red-600">
+            <span>Top domains: {feedback.top_blocked_domains.slice(0, 5).map(d => d.domain).join(', ') || 'none'}</span>
+            {feedback.daily_trend.length > 0 && (
+              <span>Latest: {feedback.daily_trend[feedback.daily_trend.length - 1].date}</span>
+            )}
+          </div>
+          <p className="text-[10px] text-red-500 mt-1">
+            These are emails the classifier let through that the user manually flagged. See Classifier Audit for full breakdown.
+          </p>
         </div>
       )}
 

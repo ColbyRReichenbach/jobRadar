@@ -1,4 +1,4 @@
-"""Sprint 14: AI-drafted communications using Claude Sonnet.
+"""Sprint 14: AI-drafted communications using GPT-4o.
 
 Generates context-aware email drafts for follow-ups, introductions, and replies.
 """
@@ -7,15 +7,15 @@ import json
 import logging
 import os
 
-import anthropic
+import openai
 
 from backend.utils.retry import with_retry
 
 logger = logging.getLogger(__name__)
 
-client = anthropic.AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-DRAFT_MODEL = "claude-sonnet-4-20250514"
+DRAFT_MODEL = "gpt-4o"
 
 SYSTEM_PROMPT = """You are an expert at writing professional job search emails.
 Generate a draft email based on the context provided.
@@ -89,14 +89,16 @@ async def generate_draft(
 
     try:
         response = await with_retry(
-            client.messages.create,
+            client.chat.completions.create,
             model=DRAFT_MODEL,
             max_tokens=500,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_message}],
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_message},
+            ],
         )
 
-        text = response.content[0].text.strip()
+        text = response.choices[0].message.content.strip()
         # Try to parse as JSON
         if text.startswith("{"):
             result = json.loads(text)

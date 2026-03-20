@@ -1652,6 +1652,70 @@ async def create_email_feedback(
     return {"status": "ok", "feedback_id": str(feedback.id)}
 
 
+@app.get("/api/emails/feedback/stats")
+async def email_feedback_stats(
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    """Aggregate stats on user email feedback — powers the classifier audit dashboard.
+
+    Returns: total feedback, not-job-related count, top blocked domains,
+    original classifications of false positives, and daily trend.
+    """
+    from sqlalchemy import func
+
+    user_id = _require_user_id(auth)
+
+    # All feedback for this user (join through EmailEvent for user scoping)
+    base = (
+        select(EmailFeedback, EmailEvent)
+        .join(EmailEvent, EmailFeedback.email_id == EmailEvent.id)
+        .where(EmailEvent.user_id == user_id)
+    )
+    result = await db.execute(base)
+    rows = result.all()
+
+    total = len(rows)
+    not_job_count = 0
+    domain_counts: dict[str, int] = {}
+    original_classifications: dict[str, int] = {}
+    daily_counts: dict[str, int] = {}
+
+    for fb, ev in rows:
+        if not fb.is_job_related:
+            not_job_count += 1
+
+            # Track blocked domains
+            if fb.sender_domain:
+                domain_counts[fb.sender_domain] = domain_counts.get(fb.sender_domain, 0) + 1
+
+            # Track what the classifier originally called these
+            # Before feedback, classification was set — but we just overwrote it to not_relevant.
+            # Use the email's pipeline field as a proxy for original classifier decision,
+            # or fall back to "unknown" since the classification was already overwritten.
+            orig_cls = ev.pipeline or "unknown"
+            original_classifications[orig_cls] = original_classifications.get(orig_cls, 0) + 1
+
+        # Daily trend
+        day = fb.created_at.strftime("%Y-%m-%d") if fb.created_at else "unknown"
+        daily_counts[day] = daily_counts.get(day, 0) + 1
+
+    # Sort domains by count desc, take top 20
+    top_domains = sorted(domain_counts.items(), key=lambda x: -x[1])[:20]
+
+    # Sort daily trend chronologically
+    daily_trend = [{"date": d, "count": c} for d, c in sorted(daily_counts.items())]
+
+    return {
+        "total_feedback": total,
+        "not_job_related": not_job_count,
+        "job_related": total - not_job_count,
+        "top_blocked_domains": [{"domain": d, "count": c} for d, c in top_domains],
+        "original_classifications": original_classifications,
+        "daily_trend": daily_trend,
+    }
+
+
 @app.get("/api/emails/{email_id}/pipeline-check")
 async def check_email_pipeline(
     email_id: str,

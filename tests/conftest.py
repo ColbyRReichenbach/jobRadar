@@ -17,6 +17,7 @@ os.environ.setdefault("APPTRAIL_API_KEY", "test-api-key-for-testing")
 os.environ.setdefault("APPTRAIL_GMAIL_TOKEN_ENCRYPTION_KEY", "9gesi-IgHlO6wRffB63j5cbQhIXnGGCKuxr0IFnAcaM=")
 os.environ.setdefault("JWT_SECRET", "test-jwt-secret-for-testing")
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-key")
+os.environ.setdefault("OPENAI_API_KEY", "test-key")
 
 from backend.database import get_db
 from backend.dependencies import create_jwt

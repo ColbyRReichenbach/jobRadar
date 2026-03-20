@@ -1,4 +1,4 @@
-"""Sprint 20: AI resume tailoring using Claude Sonnet.
+"""Sprint 20: AI resume tailoring using GPT-4o.
 
 Generates tailored resume versions per job application.
 Critical: never invents experience, only reframes existing content.
@@ -8,15 +8,15 @@ import json
 import logging
 import os
 
-import anthropic
+import openai
 
 from backend.utils.retry import with_retry
 
 logger = logging.getLogger(__name__)
 
-client = anthropic.AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-TAILOR_MODEL = "claude-sonnet-4-20250514"
+TAILOR_MODEL = "gpt-4o"
 
 SYSTEM_PROMPT = """You are an expert resume writer who tailors existing resumes for specific job applications.
 
@@ -77,14 +77,16 @@ Remember: DO NOT invent any new experience or skills. Only reframe and reorder e
 
     try:
         response = await with_retry(
-            client.messages.create,
+            client.chat.completions.create,
             model=TAILOR_MODEL,
             max_tokens=4000,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_message}],
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_message},
+            ],
         )
 
-        text = response.content[0].text.strip()
+        text = response.choices[0].message.content.strip()
 
         # Parse JSON response
         if text.startswith("{"):

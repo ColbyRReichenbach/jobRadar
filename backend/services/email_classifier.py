@@ -1,4 +1,4 @@
-"""Lightweight LLM email classifier using Claude Haiku.
+"""Lightweight LLM email classifier using GPT-4o-mini.
 
 Every email from Gmail sync passes through this classifier.
 Categories:
@@ -16,7 +16,7 @@ import json
 import logging
 import os
 
-import anthropic
+import openai
 
 from backend.services.email_filter import (
     ATS_DOMAINS,
@@ -32,9 +32,9 @@ from backend.utils.retry import with_retry
 
 logger = logging.getLogger(__name__)
 
-client = anthropic.AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-CLASSIFIER_MODEL = "claude-haiku-4-5-20251001"
+CLASSIFIER_MODEL = "gpt-4o-mini"
 
 SYSTEM_PROMPT = """You are an email classifier for a job search tracking application.
 Classify the email into exactly ONE category and extract key metadata.
@@ -75,7 +75,7 @@ async def classify_email(
     sender: str,
     sender_email: str = "",
 ) -> dict:
-    """Classify an email using Claude Haiku.
+    """Classify an email using GPT-4o-mini.
 
     Args:
         subject: Email subject line
@@ -97,13 +97,15 @@ Subject: {subject}
     for attempt in range(3):
         try:
             response = await with_retry(
-                client.messages.create,
+                client.chat.completions.create,
                 model=CLASSIFIER_MODEL,
                 max_tokens=300,
-                system=SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": user_prompt}],
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt},
+                ],
             )
-            result = json.loads(response.content[0].text)
+            result = json.loads(response.choices[0].message.content)
 
             # Validate classification is a known category
             valid_categories = {
@@ -115,10 +117,10 @@ Subject: {subject}
 
             return result
 
-        except anthropic.RateLimitError:
+        except openai.RateLimitError:
             logger.warning(f"Rate limited on attempt {attempt + 1}")
             await asyncio.sleep(30 * (attempt + 1))
-        except anthropic.APIStatusError as e:
+        except openai.APIStatusError as e:
             if e.status_code == 529:  # overloaded
                 await asyncio.sleep(2 ** attempt)
             elif attempt == 2:

@@ -1157,3 +1157,20 @@ export async function fetchVersionStats(): Promise<VersionStatsResponse> {
   if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to load version stats'));
   return res.json();
 }
+
+// ── Email Feedback Stats ──────────────────────────────────────────────
+
+export interface FeedbackStats {
+  total_feedback: number;
+  not_job_related: number;
+  job_related: number;
+  top_blocked_domains: { domain: string; count: number }[];
+  original_classifications: Record<string, number>;
+  daily_trend: { date: string; count: number }[];
+}
+
+export async function fetchFeedbackStats(): Promise<FeedbackStats> {
+  const res = await apiFetch(`${API_BASE}/api/emails/feedback/stats`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to load feedback stats'));
+  return res.json();
+}

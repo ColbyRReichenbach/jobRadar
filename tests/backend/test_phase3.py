@@ -107,18 +107,26 @@ async def test_email_matching_unmatched(db_session):
 # --- Classification tests (mocked) ---
 
 
+def _openai_response(json_str: str) -> MagicMock:
+    """Build a mock OpenAI ChatCompletion response."""
+    msg = MagicMock()
+    msg.content = json_str
+    choice = MagicMock()
+    choice.message = msg
+    resp = MagicMock()
+    resp.choices = [choice]
+    return resp
+
+
 @pytest.mark.asyncio
 async def test_classify_rejection():
-    """Mock Claude response -> rejected, red, low urgency."""
-    mock_response = MagicMock()
-    mock_response.content = [
-        MagicMock(
-            text='{"classification": "rejected", "color_code": "red", "urgency": "low", "key_sentence": "We regret to inform you", "summary": "Application rejected"}'
-        )
-    ]
+    """Mock OpenAI response -> rejected, red, low urgency."""
+    mock_response = _openai_response(
+        '{"classification": "rejected", "color_code": "red", "urgency": "low", "key_sentence": "We regret to inform you", "summary": "Application rejected"}'
+    )
 
     with patch("backend.services.claude_client.client") as mock_client:
-        mock_client.messages.create = AsyncMock(return_value=mock_response)
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
         from backend.services.claude_client import classify_email
 
         result = await classify_email("We regret to inform you that your application has been declined.")
@@ -129,16 +137,13 @@ async def test_classify_rejection():
 
 @pytest.mark.asyncio
 async def test_classify_interview():
-    """Mock Claude response -> interview_request, green, high urgency."""
-    mock_response = MagicMock()
-    mock_response.content = [
-        MagicMock(
-            text='{"classification": "interview_request", "color_code": "green", "urgency": "high", "key_sentence": "We would like to schedule an interview", "summary": "Interview scheduled"}'
-        )
-    ]
+    """Mock OpenAI response -> interview_request, green, high urgency."""
+    mock_response = _openai_response(
+        '{"classification": "interview_request", "color_code": "green", "urgency": "high", "key_sentence": "We would like to schedule an interview", "summary": "Interview scheduled"}'
+    )
 
     with patch("backend.services.claude_client.client") as mock_client:
-        mock_client.messages.create = AsyncMock(return_value=mock_response)
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
         from backend.services.claude_client import classify_email
 
         result = await classify_email("We would like to schedule an interview with you.")
@@ -150,15 +155,12 @@ async def test_classify_interview():
 @pytest.mark.asyncio
 async def test_classify_action_url():
     """Calendly link in body -> action_url extracted."""
-    mock_response = MagicMock()
-    mock_response.content = [
-        MagicMock(
-            text='{"classification": "action_required", "color_code": "yellow", "urgency": "high", "action_needed": true, "action_url": "https://calendly.com/recruiter/30min", "key_sentence": "Please schedule your interview", "summary": "Schedule interview"}'
-        )
-    ]
+    mock_response = _openai_response(
+        '{"classification": "action_required", "color_code": "yellow", "urgency": "high", "action_needed": true, "action_url": "https://calendly.com/recruiter/30min", "key_sentence": "Please schedule your interview", "summary": "Schedule interview"}'
+    )
 
     with patch("backend.services.claude_client.client") as mock_client:
-        mock_client.messages.create = AsyncMock(return_value=mock_response)
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
         from backend.services.claude_client import classify_email
 
         result = await classify_email("Please schedule your interview at https://calendly.com/recruiter/30min")

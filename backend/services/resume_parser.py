@@ -22,15 +22,15 @@ async def extract_text_from_pdf(pdf_bytes: bytes) -> str:
 
 
 async def parse_resume(text: str) -> dict[str, Any]:
-    """Parse resume text into structured profile using Haiku LLM."""
-    import anthropic
+    """Parse resume text into structured profile using GPT-4o-mini."""
+    import openai
 
-    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    api_key = os.getenv("OPENAI_API_KEY", "")
     if not api_key or api_key == "test-key":
         # Fallback: basic keyword extraction without LLM
         return _fallback_parse(text)
 
-    client = anthropic.AsyncAnthropic(api_key=api_key)
+    client = openai.AsyncOpenAI(api_key=api_key)
 
     prompt = f"""Extract structured information from this resume. Return ONLY valid JSON with these fields:
 - skills: list of technical skills (e.g. ["Python", "React", "SQL"])
@@ -44,12 +44,12 @@ Resume text:
 
     try:
         response = await with_retry(
-            client.messages.create,
-            model="claude-haiku-4-5-20251001",
+            client.chat.completions.create,
+            model="gpt-4o-mini",
             max_tokens=2000,
             messages=[{"role": "user", "content": prompt}],
         )
-        content = response.content[0].text
+        content = response.choices[0].message.content
         # Try to extract JSON from the response
         start = content.find("{")
         end = content.rfind("}") + 1

@@ -10,11 +10,11 @@ import {
 } from 'lucide-react';
 import type {
   AuditRunSummary, AuditRunDetail, AuditEmailRow, AuditComparisonPoint,
-  AuditMetrics,
+  AuditMetrics, FeedbackStats,
 } from '../lib/api';
 import {
   fetchAuditRuns, fetchAuditRun, uploadAuditRun, fetchAuditComparison,
-  deleteAuditRun, updateAuditEmailReview,
+  deleteAuditRun, updateAuditEmailReview, fetchFeedbackStats,
 } from '../lib/api';
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -174,6 +174,116 @@ export function ClassifierAudit() {
   );
 }
 
+// ── Feedback Panel (False Positives from real usage) ─────────────────
+
+function FeedbackPanel() {
+  const [stats, setStats] = useState<FeedbackStats | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchFeedbackStats()
+      .then(setStats)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <p className="text-sm text-slate-400 text-center py-4">Loading feedback data...</p>;
+  if (!stats || stats.total_feedback === 0) return null;
+
+  const domainData = stats.top_blocked_domains.slice(0, 10).map(d => ({
+    name: d.domain.length > 25 ? d.domain.slice(0, 22) + '...' : d.domain,
+    count: d.count,
+  }));
+
+  const clsData = Object.entries(stats.original_classifications)
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count);
+
+  return (
+    <div className="mb-8">
+      <h2 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+        <XCircle className="w-4 h-4 text-red-400" />
+        Got Through Screen (User Marked "Not Job Related")
+      </h2>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-3 gap-3 mb-4">
+        <div className="border rounded-lg p-3 bg-red-50 border-red-200">
+          <p className="text-xs text-slate-500 mb-1">Marked Not Job Related</p>
+          <p className="text-2xl font-bold text-red-600">{stats.not_job_related}</p>
+        </div>
+        <div className="border rounded-lg p-3 bg-slate-50 border-slate-200">
+          <p className="text-xs text-slate-500 mb-1">Total Feedback</p>
+          <p className="text-2xl font-bold text-slate-600">{stats.total_feedback}</p>
+        </div>
+        <div className="border rounded-lg p-3 bg-amber-50 border-amber-200">
+          <p className="text-xs text-slate-500 mb-1">Domains Blocked</p>
+          <p className="text-2xl font-bold text-amber-600">{stats.top_blocked_domains.length}</p>
+        </div>
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-4">
+        {/* Top blocked domains */}
+        {domainData.length > 0 && (
+          <div className="bg-white border rounded-xl p-5">
+            <h3 className="text-xs font-semibold text-slate-500 mb-3">Top Blocked Domains</h3>
+            <ResponsiveContainer width="100%" height={Math.max(120, domainData.length * 28)}>
+              <BarChart data={domainData} layout="vertical" margin={{ left: 100 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis type="number" />
+                <YAxis type="category" dataKey="name" width={100} tick={{ fontSize: 10 }} />
+                <Tooltip />
+                <Bar dataKey="count" fill="#ef4444" radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+
+        {/* What classifier originally thought */}
+        {clsData.length > 0 && (
+          <div className="bg-white border rounded-xl p-5">
+            <h3 className="text-xs font-semibold text-slate-500 mb-3">Original Classification (Before User Override)</h3>
+            <p className="text-[10px] text-slate-400 mb-2">What the classifier thought these non-job emails were</p>
+            <ResponsiveContainer width="100%" height={Math.max(120, clsData.length * 28)}>
+              <BarChart data={clsData} layout="vertical" margin={{ left: 80 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis type="number" />
+                <YAxis type="category" dataKey="name" width={80} tick={{ fontSize: 10 }} />
+                <Tooltip />
+                <Bar dataKey="count" radius={[0, 4, 4, 0]}>
+                  {clsData.map((entry) => (
+                    <Cell key={entry.name} fill={CLS_COLORS[entry.name] || '#94a3b8'} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </div>
+
+      {/* Daily trend */}
+      {stats.daily_trend.length > 1 && (
+        <div className="bg-white border rounded-xl p-5 mt-4">
+          <h3 className="text-xs font-semibold text-slate-500 mb-3">Feedback Trend (Daily)</h3>
+          <ResponsiveContainer width="100%" height={150}>
+            <LineChart data={stats.daily_trend} margin={{ left: 10, right: 10 }}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="date" tick={{ fontSize: 9 }} />
+              <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+              <Tooltip />
+              <Line type="monotone" dataKey="count" name="Feedback" stroke="#ef4444" strokeWidth={2} dot={{ r: 3 }} />
+            </LineChart>
+          </ResponsiveContainer>
+          <p className="text-[10px] text-slate-400 mt-1">
+            Trend should decrease over time as classifier improves. Spikes indicate new problem domains.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 // ── Run List ─────────────────────────────────────────────────────────
 
 function RunList({
@@ -211,6 +321,9 @@ function RunList({
           </button>
         </div>
       </div>
+
+      {/* Live false-positive feedback from real usage */}
+      <FeedbackPanel />
 
       {loading && runs.length === 0 && (
         <p className="text-slate-500 text-center py-12">Loading runs…</p>

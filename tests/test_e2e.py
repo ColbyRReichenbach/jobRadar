@@ -108,11 +108,13 @@ async def test_full_pipeline(client, db_session):
     }
 
     with patch("backend.services.claude_client.client") as mock_client:
+        mock_msg = MagicMock()
+        mock_msg.content = '{"classification": "rejected", "color_code": "red", "urgency": "low", "action_needed": false, "key_sentence": "We regret to inform you", "summary": "Application rejected for Data Analyst at E2ECorp"}'
+        mock_choice = MagicMock()
+        mock_choice.message = mock_msg
         mock_response = MagicMock()
-        mock_response.content = [
-            MagicMock(text='{"classification": "rejected", "color_code": "red", "urgency": "low", "action_needed": false, "key_sentence": "We regret to inform you", "summary": "Application rejected for Data Analyst at E2ECorp"}')
-        ]
-        mock_client.messages.create = AsyncMock(return_value=mock_response)
+        mock_response.choices = [mock_choice]
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
 
         from backend.services.claude_client import classify_email
 
