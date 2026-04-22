@@ -18,6 +18,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { fetchJobs, fetchEmails } from './lib/api';
 import { AuthProvider, useAuth } from './lib/AuthContext';
 import { AddJobModal } from './components/AddJobModal';
+import { Radar } from './components/Radar';
 
 const USE_API = true;
 
@@ -188,6 +189,7 @@ function AppContent() {
           <div className="flex-1 flex overflow-hidden">
             {activeTab === 'dashboard' && <KanbanBoard jobs={jobs} setJobs={setJobs} />}
             {activeTab === 'search' && <JobSearch jobs={jobs} setJobs={setJobs} />}
+            {activeTab === 'radar' && <Radar />}
             {activeTab === 'analytics' && <Analytics jobs={jobs} />}
             {activeTab === 'export' && <ExportData />}
             {activeTab === 'conversations' && <Conversations emails={emails} jobs={jobs} focusRequest={emailFocusRequest?.tab === 'conversations' ? emailFocusRequest : null} />}

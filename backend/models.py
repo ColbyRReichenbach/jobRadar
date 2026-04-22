@@ -425,3 +425,167 @@ class Alert(Base):
     action_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     read: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class ResearchProfile(Base):
+    __tablename__ = "research_profiles"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    objective: Mapped[str | None] = mapped_column(Text, nullable=True)
+    selected_domains: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    selected_roles: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    selected_companies: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    keywords: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    excluded_keywords: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    source_types: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    frequency: Mapped[str] = mapped_column(Text, default="daily")
+    notification_mode: Mapped[str] = mapped_column(Text, default="in_app")
+    minimum_score: Mapped[int] = mapped_column(Integer, default=70)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class ResearchRun(Base):
+    __tablename__ = "research_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    profile_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("research_profiles.id", ondelete="CASCADE"), nullable=False)
+    status: Mapped[str] = mapped_column(Text, default="queued")
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    source_counts: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    signal_counts: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cost_estimate_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class ResearchSourceItem(Base):
+    __tablename__ = "research_source_items"
+    __table_args__ = (
+        UniqueConstraint("user_id", "source_url", "content_hash", name="uq_research_source_user_url_hash"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("research_runs.id", ondelete="SET NULL"), nullable=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    profile_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("research_profiles.id", ondelete="CASCADE"), nullable=True)
+    company_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("companies.id", ondelete="SET NULL"), nullable=True)
+    source_type: Mapped[str] = mapped_column(Text, nullable=False)
+    source_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_url: Mapped[str] = mapped_column(Text, nullable=False)
+    external_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    author_name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    author_handle: Mapped[str | None] = mapped_column(Text, nullable=True)
+    raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    raw_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class OpportunitySignal(Base):
+    __tablename__ = "opportunity_signals"
+    __table_args__ = (
+        UniqueConstraint("user_id", "source_item_id", "event_type", name="uq_opportunity_signal_user_source_event"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    profile_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("research_profiles.id", ondelete="CASCADE"), nullable=True)
+    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("research_runs.id", ondelete="SET NULL"), nullable=True)
+    source_item_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("research_source_items.id", ondelete="SET NULL"), nullable=True)
+    company_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("companies.id", ondelete="SET NULL"), nullable=True)
+    application_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("applications.id", ondelete="SET NULL"), nullable=True)
+
+    event_type: Mapped[str] = mapped_column(Text, nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evidence: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    people: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    domains: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    roles: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    tech_stack: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    confidence: Mapped[float] = mapped_column(Float, default=0.0)
+    occurred_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class OpportunityScore(Base):
+    __tablename__ = "opportunity_scores"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    signal_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("opportunity_signals.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    profile_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("research_profiles.id", ondelete="CASCADE"), nullable=True)
+
+    total_score: Mapped[int] = mapped_column(Integer, nullable=False)
+    role_fit: Mapped[float] = mapped_column(Float, default=0.0)
+    domain_fit: Mapped[float] = mapped_column(Float, default=0.0)
+    company_interest: Mapped[float] = mapped_column(Float, default=0.0)
+    recency: Mapped[float] = mapped_column(Float, default=0.0)
+    public_data_buildability: Mapped[float] = mapped_column(Float, default=0.0)
+    outreach_path_strength: Mapped[float] = mapped_column(Float, default=0.0)
+    portfolio_gap_relevance: Mapped[float] = mapped_column(Float, default=0.0)
+    source_confidence: Mapped[float] = mapped_column(Float, default=0.0)
+
+    explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class OpportunityBrief(Base):
+    __tablename__ = "opportunity_briefs"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    profile_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("research_profiles.id", ondelete="CASCADE"), nullable=True)
+    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("research_runs.id", ondelete="SET NULL"), nullable=True)
+    signal_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("opportunity_signals.id", ondelete="SET NULL"), nullable=True)
+
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    brief_type: Mapped[str] = mapped_column(Text, nullable=False)
+    markdown: Mapped[str | None] = mapped_column(Text, nullable=True)
+    structured_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    confidence: Mapped[float] = mapped_column(Float, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class RecommendedAction(Base):
+    __tablename__ = "recommended_actions"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    profile_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("research_profiles.id", ondelete="CASCADE"), nullable=True)
+    signal_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("opportunity_signals.id", ondelete="SET NULL"), nullable=True)
+    brief_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("opportunity_briefs.id", ondelete="SET NULL"), nullable=True)
+    application_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("applications.id", ondelete="SET NULL"), nullable=True)
+    company_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("companies.id", ondelete="SET NULL"), nullable=True)
+
+    action_type: Mapped[str] = mapped_column(Text, nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    priority: Mapped[int] = mapped_column(Integer, default=50)
+    status: Mapped[str] = mapped_column(Text, default="open")
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ResearchFeedback(Base):
+    __tablename__ = "research_feedback"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    signal_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("opportunity_signals.id", ondelete="CASCADE"), nullable=True)
+    brief_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("opportunity_briefs.id", ondelete="CASCADE"), nullable=True)
+    action_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("recommended_actions.id", ondelete="CASCADE"), nullable=True)
+    rating: Mapped[str] = mapped_column(Text, nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

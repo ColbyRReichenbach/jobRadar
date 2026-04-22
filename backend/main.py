@@ -2,7 +2,7 @@ import os
 import re
 import time
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Literal, Optional
 from urllib.parse import quote, urlparse
 from uuid import uuid4
 
@@ -33,10 +33,11 @@ from backend.metrics import (
     metrics_payload,
     observe_request,
 )
-from backend.models import Application, Contact, EmailEvent, EmailFeedback, User, GmailToken, Company, RoleUmbrella, CompanyTechProfile, UserProfile, UserRoleInterest, AtsBehavior, WarmConnection, Alert, Interview, CompanyVisit, InterviewNote, NotificationPreference, ResumeDraft, IgnoredNetworkContact
+from backend.models import Application, Contact, EmailEvent, EmailFeedback, User, GmailToken, Company, RoleUmbrella, CompanyTechProfile, UserProfile, UserRoleInterest, AtsBehavior, WarmConnection, Alert, Interview, CompanyVisit, InterviewNote, NotificationPreference, ResumeDraft, IgnoredNetworkContact, ResearchProfile, ResearchRun, ResearchSourceItem, OpportunitySignal, OpportunityScore, OpportunityBrief, RecommendedAction, ResearchFeedback
 from backend.monitoring import configure_sentry
 from backend.services.hunter import find_contacts, generate_linkedin_search_url
 from backend.services.scraper import extract_job, validate_job_parse_url
+from backend.services.opportunity_radar import collect_internal_sources, extract_signals, score_signal, generate_briefs, generate_actions
 import structlog
 
 configure_logging()
@@ -337,6 +338,57 @@ class EmailUpdate(BaseModel):
     classification: Optional[str] = Field(None, max_length=MAX_SHORT_TEXT_LEN)
     resolved: Optional[bool] = None
     hidden: Optional[bool] = None
+
+
+
+class ResearchProfileCreate(BaseModel):
+    name: str = Field(..., max_length=MAX_NAME_LEN)
+    objective: Optional[str] = Field(None, max_length=MAX_LONG_TEXT_LEN)
+    selected_domains: list[str] = Field(default_factory=list)
+    selected_roles: list[str] = Field(default_factory=list)
+    selected_companies: list[str] = Field(default_factory=list)
+    keywords: list[str] = Field(default_factory=list)
+    excluded_keywords: list[str] = Field(default_factory=list)
+    source_types: list[str] = Field(default_factory=list)
+    frequency: str = Field(default="daily", max_length=MAX_STATUS_LEN)
+    notification_mode: str = Field(default="in_app", max_length=MAX_STATUS_LEN)
+    minimum_score: int = Field(default=70, ge=0, le=100)
+    active: bool = True
+
+
+class ResearchProfileUpdate(BaseModel):
+    name: Optional[str] = Field(None, max_length=MAX_NAME_LEN)
+    objective: Optional[str] = Field(None, max_length=MAX_LONG_TEXT_LEN)
+    selected_domains: Optional[list[str]] = None
+    selected_roles: Optional[list[str]] = None
+    selected_companies: Optional[list[str]] = None
+    keywords: Optional[list[str]] = None
+    excluded_keywords: Optional[list[str]] = None
+    source_types: Optional[list[str]] = None
+    frequency: Optional[str] = Field(None, max_length=MAX_STATUS_LEN)
+    notification_mode: Optional[str] = Field(None, max_length=MAX_STATUS_LEN)
+    minimum_score: Optional[int] = Field(None, ge=0, le=100)
+    active: Optional[bool] = None
+
+
+class RecommendedActionUpdate(BaseModel):
+    status: Literal["open", "accepted", "dismissed", "completed"]
+
+
+class ResearchFeedbackCreate(BaseModel):
+    signal_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
+    brief_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
+    action_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
+    rating: str = Field(..., max_length=MAX_STATUS_LEN)
+    notes: Optional[str] = Field(None, max_length=MAX_LONG_TEXT_LEN)
+
+
+_ACTION_STATUS_TRANSITIONS: dict[str, set[str]] = {
+    "open": {"accepted", "dismissed", "completed"},
+    "accepted": {"completed", "dismissed"},
+    "dismissed": set(),
+    "completed": set(),
+}
 
 
 # --- Helpers ---
@@ -4083,3 +4135,442 @@ async def delete_resume_draft(
     await db.delete(draft)
     await db.commit()
     return {"status": "deleted"}
+
+
+def _serialize_research_profile(profile: ResearchProfile) -> dict:
+    return {
+        "id": str(profile.id),
+        "name": profile.name,
+        "objective": profile.objective,
+        "selected_domains": profile.selected_domains or [],
+        "selected_roles": profile.selected_roles or [],
+        "selected_companies": profile.selected_companies or [],
+        "keywords": profile.keywords or [],
+        "excluded_keywords": profile.excluded_keywords or [],
+        "source_types": profile.source_types or [],
+        "frequency": profile.frequency,
+        "notification_mode": profile.notification_mode,
+        "minimum_score": profile.minimum_score,
+        "active": profile.active,
+        "last_run_at": profile.last_run_at.isoformat() if profile.last_run_at else None,
+        "created_at": profile.created_at.isoformat() if profile.created_at else None,
+    }
+
+
+def _serialize_run(run: ResearchRun) -> dict:
+    return {
+        "id": str(run.id),
+        "profile_id": str(run.profile_id),
+        "status": run.status,
+        "started_at": run.started_at.isoformat() if run.started_at else None,
+        "completed_at": run.completed_at.isoformat() if run.completed_at else None,
+        "source_counts": run.source_counts or {},
+        "signal_counts": run.signal_counts or {},
+        "error_message": run.error_message,
+        "created_at": run.created_at.isoformat() if run.created_at else None,
+    }
+
+
+def _serialize_signal(signal: OpportunitySignal, score: OpportunityScore | None = None) -> dict:
+    payload = {
+        "id": str(signal.id),
+        "profile_id": str(signal.profile_id) if signal.profile_id else None,
+        "company_id": str(signal.company_id) if signal.company_id else None,
+        "application_id": str(signal.application_id) if signal.application_id else None,
+        "event_type": signal.event_type,
+        "title": signal.title,
+        "summary": signal.summary,
+        "evidence": signal.evidence or [],
+        "domains": signal.domains or [],
+        "roles": signal.roles or [],
+        "tech_stack": signal.tech_stack or [],
+        "confidence": signal.confidence,
+        "occurred_at": signal.occurred_at.isoformat() if signal.occurred_at else None,
+        "created_at": signal.created_at.isoformat() if signal.created_at else None,
+    }
+    if score:
+        payload["score"] = {
+            "total_score": score.total_score,
+            "role_fit": score.role_fit,
+            "domain_fit": score.domain_fit,
+            "company_interest": score.company_interest,
+            "recency": score.recency,
+            "public_data_buildability": score.public_data_buildability,
+            "outreach_path_strength": score.outreach_path_strength,
+            "portfolio_gap_relevance": score.portfolio_gap_relevance,
+            "source_confidence": score.source_confidence,
+            "explanation": score.explanation,
+        }
+    return payload
+
+
+def _serialize_brief(brief: OpportunityBrief) -> dict:
+    return {
+        "id": str(brief.id),
+        "title": brief.title,
+        "brief_type": brief.brief_type,
+        "markdown": brief.markdown,
+        "structured_json": brief.structured_json,
+        "confidence": brief.confidence,
+        "created_at": brief.created_at.isoformat() if brief.created_at else None,
+    }
+
+
+def _serialize_action(action: RecommendedAction) -> dict:
+    return {
+        "id": str(action.id),
+        "action_type": action.action_type,
+        "title": action.title,
+        "body": action.body,
+        "payload": action.payload,
+        "priority": action.priority,
+        "status": action.status,
+        "due_at": action.due_at.isoformat() if action.due_at else None,
+        "created_at": action.created_at.isoformat() if action.created_at else None,
+        "completed_at": action.completed_at.isoformat() if action.completed_at else None,
+    }
+
+
+@app.post("/api/research/profiles", status_code=201)
+async def create_research_profile(
+    payload: ResearchProfileCreate,
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    user_id = _require_user_id(auth)
+    profile = ResearchProfile(user_id=user_id, **payload.model_dump())
+    db.add(profile)
+    await db.commit()
+    await db.refresh(profile)
+    return _serialize_research_profile(profile)
+
+
+@app.get("/api/research/profiles")
+async def list_research_profiles(
+    limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    user_id = _require_user_id(auth)
+    stmt = select(ResearchProfile).where(ResearchProfile.user_id == user_id).order_by(ResearchProfile.created_at.desc())
+    rows = (await db.execute(_paginate(stmt, limit, offset))).scalars().all()
+    return [_serialize_research_profile(row) for row in rows]
+
+
+@app.get("/api/research/profiles/{profile_id}")
+async def get_research_profile(profile_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    user_id = _require_user_id(auth)
+    try:
+        p_uuid = _uuid.UUID(profile_id)
+    except ValueError:
+        raise HTTPException(404, "Profile not found")
+    stmt = select(ResearchProfile).where(ResearchProfile.id == p_uuid, ResearchProfile.user_id == user_id)
+    profile = (await db.execute(stmt)).scalars().first()
+    if not profile:
+        raise HTTPException(404, "Profile not found")
+    return _serialize_research_profile(profile)
+
+
+@app.patch("/api/research/profiles/{profile_id}")
+async def update_research_profile(profile_id: str, payload: ResearchProfileUpdate, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    user_id = _require_user_id(auth)
+    try:
+        p_uuid = _uuid.UUID(profile_id)
+    except ValueError:
+        raise HTTPException(404, "Profile not found")
+    stmt = select(ResearchProfile).where(ResearchProfile.id == p_uuid, ResearchProfile.user_id == user_id)
+    profile = (await db.execute(stmt)).scalars().first()
+    if not profile:
+        raise HTTPException(404, "Profile not found")
+
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(profile, key, value)
+    profile.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(profile)
+    return _serialize_research_profile(profile)
+
+
+@app.delete("/api/research/profiles/{profile_id}")
+async def delete_research_profile(profile_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    user_id = _require_user_id(auth)
+    try:
+        p_uuid = _uuid.UUID(profile_id)
+    except ValueError:
+        raise HTTPException(404, "Profile not found")
+    stmt = select(ResearchProfile).where(ResearchProfile.id == p_uuid, ResearchProfile.user_id == user_id)
+    profile = (await db.execute(stmt)).scalars().first()
+    if not profile:
+        raise HTTPException(404, "Profile not found")
+    await db.delete(profile)
+    await db.commit()
+    return {"status": "deleted"}
+
+
+@app.post("/api/research/profiles/{profile_id}/run", status_code=201)
+async def run_research_profile(profile_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    user_id = _require_user_id(auth)
+    try:
+        p_uuid = _uuid.UUID(profile_id)
+    except ValueError:
+        raise HTTPException(404, "Profile not found")
+    profile = (await db.execute(select(ResearchProfile).where(ResearchProfile.id == p_uuid, ResearchProfile.user_id == user_id))).scalars().first()
+    if not profile:
+        raise HTTPException(404, "Profile not found")
+
+    run = ResearchRun(user_id=user_id, profile_id=profile.id, status="running", started_at=datetime.now(timezone.utc))
+    db.add(run)
+    await db.flush()
+
+    try:
+        candidates = await collect_internal_sources(db, profile, user_id)
+        source_items: list[ResearchSourceItem] = []
+        for candidate in candidates:
+            company_id = None
+            if candidate.company_domain:
+                company = (await db.execute(select(Company).where(Company.domain == candidate.company_domain))).scalars().first()
+                if company:
+                    company_id = company.id
+            existing_stmt = select(ResearchSourceItem).where(
+                ResearchSourceItem.user_id == user_id,
+                ResearchSourceItem.source_url == candidate.source_url,
+                ResearchSourceItem.content_hash == candidate.content_hash,
+            )
+            existing = (await db.execute(existing_stmt)).scalars().first()
+            if existing:
+                source_items.append(existing)
+                continue
+
+            item = ResearchSourceItem(
+                run_id=run.id,
+                user_id=user_id,
+                profile_id=profile.id,
+                company_id=company_id,
+                source_type=candidate.source_type,
+                source_name=candidate.source_name,
+                source_url=candidate.source_url,
+                external_id=candidate.external_id,
+                title=candidate.title,
+                raw_text=candidate.raw_text,
+                raw_json=candidate.raw_json,
+                published_at=candidate.published_at,
+                content_hash=candidate.content_hash,
+            )
+            db.add(item)
+            source_items.append(item)
+
+        await db.flush()
+
+        signal_counter: dict[str, int] = {}
+        for item in source_items:
+            generated = extract_signals(item, user_id=user_id, profile_id=profile.id, run_id=run.id, company_id=item.company_id)
+            for signal in generated:
+                duplicate_stmt = select(OpportunitySignal).where(
+                    OpportunitySignal.user_id == user_id,
+                    OpportunitySignal.source_item_id == item.id,
+                    OpportunitySignal.event_type == signal.event_type,
+                )
+                existing_signal = (await db.execute(duplicate_stmt)).scalars().first()
+                if existing_signal:
+                    continue
+
+                db.add(signal)
+                await db.flush()
+                scoring = score_signal(signal, profile=profile)
+                score_row = OpportunityScore(signal_id=signal.id, user_id=user_id, profile_id=profile.id, **scoring)
+                db.add(score_row)
+
+                brief_payload = generate_briefs(signal, scoring)
+                brief = OpportunityBrief(
+                    user_id=user_id,
+                    profile_id=profile.id,
+                    run_id=run.id,
+                    signal_id=signal.id,
+                    **brief_payload,
+                )
+                db.add(brief)
+                await db.flush()
+
+                for action_payload in generate_actions(signal, scoring):
+                    db.add(
+                        RecommendedAction(
+                            user_id=user_id,
+                            profile_id=profile.id,
+                            signal_id=signal.id,
+                            brief_id=brief.id,
+                            company_id=signal.company_id,
+                            action_type=action_payload["action_type"],
+                            title=action_payload["title"],
+                            body=action_payload.get("body"),
+                            payload=action_payload.get("payload"),
+                            priority=action_payload.get("priority", 50),
+                        )
+                    )
+
+                if scoring["total_score"] >= max(profile.minimum_score, 85):
+                    db.add(
+                        Alert(
+                            user_id=user_id,
+                            alert_type="opportunity_signal",
+                            title=f"Radar signal: {signal.title}",
+                            body=signal.summary,
+                            action_url="/radar",
+                        )
+                    )
+
+                signal_counter[signal.event_type] = signal_counter.get(signal.event_type, 0) + 1
+
+        run.source_counts = {"total": len(source_items)}
+        run.signal_counts = signal_counter
+        run.status = "succeeded"
+        run.completed_at = datetime.now(timezone.utc)
+        profile.last_run_at = run.completed_at
+        await db.commit()
+        await db.refresh(run)
+        return _serialize_run(run)
+    except Exception as exc:
+        await db.rollback()
+        run.status = "failed"
+        run.error_message = str(exc)[:2000]
+        run.completed_at = datetime.now(timezone.utc)
+        db.add(run)
+        await db.commit()
+        raise
+
+
+@app.get("/api/research/runs")
+async def list_research_runs(
+    profile_id: Optional[str] = Query(None),
+    limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    user_id = _require_user_id(auth)
+    stmt = select(ResearchRun).where(ResearchRun.user_id == user_id).order_by(ResearchRun.created_at.desc())
+    if profile_id:
+        try:
+            stmt = stmt.where(ResearchRun.profile_id == _uuid.UUID(profile_id))
+        except ValueError:
+            return []
+    runs = (await db.execute(_paginate(stmt, limit, offset))).scalars().all()
+    return [_serialize_run(r) for r in runs]
+
+
+@app.get("/api/research/signals")
+async def list_opportunity_signals(
+    profile_id: Optional[str] = Query(None),
+    limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    user_id = _require_user_id(auth)
+    stmt = select(OpportunitySignal).where(OpportunitySignal.user_id == user_id).order_by(OpportunitySignal.created_at.desc())
+    if profile_id:
+        try:
+            stmt = stmt.where(OpportunitySignal.profile_id == _uuid.UUID(profile_id))
+        except ValueError:
+            return []
+    signals = (await db.execute(_paginate(stmt, limit, offset))).scalars().all()
+
+    signal_ids = [s.id for s in signals]
+    scores = {}
+    if signal_ids:
+        score_rows = (await db.execute(select(OpportunityScore).where(OpportunityScore.signal_id.in_(signal_ids)))).scalars().all()
+        scores = {row.signal_id: row for row in score_rows}
+
+    return [_serialize_signal(sig, scores.get(sig.id)) for sig in signals]
+
+
+@app.get("/api/research/briefs")
+async def list_opportunity_briefs(
+    profile_id: Optional[str] = Query(None),
+    limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    user_id = _require_user_id(auth)
+    stmt = select(OpportunityBrief).where(OpportunityBrief.user_id == user_id).order_by(OpportunityBrief.created_at.desc())
+    if profile_id:
+        try:
+            stmt = stmt.where(OpportunityBrief.profile_id == _uuid.UUID(profile_id))
+        except ValueError:
+            return []
+    briefs = (await db.execute(_paginate(stmt, limit, offset))).scalars().all()
+    return [_serialize_brief(b) for b in briefs]
+
+
+@app.get("/api/research/actions")
+async def list_recommended_actions(
+    profile_id: Optional[str] = Query(None),
+    limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    user_id = _require_user_id(auth)
+    stmt = select(RecommendedAction).where(RecommendedAction.user_id == user_id).order_by(RecommendedAction.priority.desc(), RecommendedAction.created_at.desc())
+    if profile_id:
+        try:
+            stmt = stmt.where(RecommendedAction.profile_id == _uuid.UUID(profile_id))
+        except ValueError:
+            return []
+    actions = (await db.execute(_paginate(stmt, limit, offset))).scalars().all()
+    return [_serialize_action(a) for a in actions]
+
+
+@app.patch("/api/research/actions/{action_id}")
+async def update_recommended_action(action_id: str, payload: RecommendedActionUpdate, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    user_id = _require_user_id(auth)
+    try:
+        a_uuid = _uuid.UUID(action_id)
+    except ValueError:
+        raise HTTPException(404, "Action not found")
+    action = (await db.execute(select(RecommendedAction).where(RecommendedAction.id == a_uuid, RecommendedAction.user_id == user_id))).scalars().first()
+    if not action:
+        raise HTTPException(404, "Action not found")
+    current_status = action.status
+    next_status = payload.status
+    if next_status != current_status and next_status not in _ACTION_STATUS_TRANSITIONS.get(current_status, set()):
+        raise HTTPException(400, f"Invalid action transition: {current_status} -> {next_status}")
+
+    action.status = next_status
+    if next_status == "completed":
+        action.completed_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(action)
+    return _serialize_action(action)
+
+
+@app.post("/api/research/actions/{action_id}/accept")
+async def accept_recommended_action(action_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    return await update_recommended_action(action_id, RecommendedActionUpdate(status="accepted"), db, auth)
+
+
+@app.post("/api/research/feedback", status_code=201)
+async def create_research_feedback(payload: ResearchFeedbackCreate, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    user_id = _require_user_id(auth)
+
+    def _to_uuid(v: str | None):
+        if not v:
+            return None
+        try:
+            return _uuid.UUID(v)
+        except ValueError:
+            raise HTTPException(400, f"Invalid uuid: {v}")
+
+    feedback = ResearchFeedback(
+        user_id=user_id,
+        signal_id=_to_uuid(payload.signal_id),
+        brief_id=_to_uuid(payload.brief_id),
+        action_id=_to_uuid(payload.action_id),
+        rating=payload.rating,
+        notes=payload.notes,
+    )
+    db.add(feedback)
+    await db.commit()
+    await db.refresh(feedback)
+    return {"id": str(feedback.id), "rating": feedback.rating, "created_at": feedback.created_at.isoformat() if feedback.created_at else None}

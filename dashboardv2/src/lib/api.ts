@@ -1,4 +1,4 @@
-import { Job, Email, Contact } from '../types';
+import { Job, Email, Contact, ResearchProfile, OpportunitySignal, OpportunityBrief, RecommendedAction } from '../types';
 
 function normalizeApiBase(rawBase: string): string {
   return rawBase.replace(/\/+$/, '').replace(/\/api$/, '');
@@ -729,4 +729,105 @@ export async function exportCsv(): Promise<void> {
   a.download = 'apptrail_export.csv';
   a.click();
   URL.revokeObjectURL(url);
+}
+
+
+export async function fetchResearchProfiles(): Promise<ResearchProfile[]> {
+  const res = await apiFetch(`${API_BASE}/api/research/profiles`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to fetch research profiles'));
+  return await res.json();
+}
+
+export async function createResearchProfile(payload: Partial<ResearchProfile>): Promise<ResearchProfile> {
+  const res = await apiFetch(`${API_BASE}/api/research/profiles`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to create research profile'));
+  return await res.json();
+}
+
+export async function updateResearchProfile(id: string, payload: Partial<ResearchProfile>): Promise<ResearchProfile> {
+  const res = await apiFetch(`${API_BASE}/api/research/profiles/${id}`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to update research profile'));
+  return await res.json();
+}
+
+export async function deleteResearchProfile(id: string): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/api/research/profiles/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to delete research profile'));
+}
+
+export async function runResearchProfile(id: string): Promise<any> {
+  const res = await apiFetch(`${API_BASE}/api/research/profiles/${id}/run`, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to run research profile'));
+  return await res.json();
+}
+
+export async function fetchResearchRuns(profileId?: string): Promise<any[]> {
+  const query = profileId ? `?profile_id=${encodeURIComponent(profileId)}` : '';
+  const res = await apiFetch(`${API_BASE}/api/research/runs${query}`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to fetch research runs'));
+  return await res.json();
+}
+
+export async function fetchOpportunitySignals(profileId?: string): Promise<OpportunitySignal[]> {
+  const query = profileId ? `?profile_id=${encodeURIComponent(profileId)}` : '';
+  const res = await apiFetch(`${API_BASE}/api/research/signals${query}`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to fetch opportunity signals'));
+  return await res.json();
+}
+
+export async function fetchOpportunityBriefs(profileId?: string): Promise<OpportunityBrief[]> {
+  const query = profileId ? `?profile_id=${encodeURIComponent(profileId)}` : '';
+  const res = await apiFetch(`${API_BASE}/api/research/briefs${query}`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to fetch opportunity briefs'));
+  return await res.json();
+}
+
+export async function fetchRecommendedActions(profileId?: string): Promise<RecommendedAction[]> {
+  const query = profileId ? `?profile_id=${encodeURIComponent(profileId)}` : '';
+  const res = await apiFetch(`${API_BASE}/api/research/actions${query}`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to fetch recommended actions'));
+  return await res.json();
+}
+
+export async function updateRecommendedAction(id: string, payload: { status: string }): Promise<RecommendedAction> {
+  const res = await apiFetch(`${API_BASE}/api/research/actions/${id}`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to update recommended action'));
+  return await res.json();
+}
+
+export async function acceptRecommendedAction(id: string): Promise<RecommendedAction> {
+  const res = await apiFetch(`${API_BASE}/api/research/actions/${id}/accept`, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to accept recommended action'));
+  return await res.json();
+}
+
+export async function sendResearchFeedback(payload: { signal_id?: string; brief_id?: string; action_id?: string; rating: string; notes?: string }): Promise<any> {
+  const res = await apiFetch(`${API_BASE}/api/research/feedback`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to save research feedback'));
+  return await res.json();
 }

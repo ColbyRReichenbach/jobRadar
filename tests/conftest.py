@@ -43,6 +43,14 @@ _USER_SCOPED_MODELS = {
     "NotificationPreference",
     "ResumeDraft",
     "Alert",
+    "ResearchProfile",
+    "ResearchRun",
+    "ResearchSourceItem",
+    "OpportunitySignal",
+    "OpportunityScore",
+    "OpportunityBrief",
+    "RecommendedAction",
+    "ResearchFeedback",
 }
 
 
