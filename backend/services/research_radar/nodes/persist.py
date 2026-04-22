@@ -34,6 +34,12 @@ async def persist_report_node(state):
         new_findings_count=final_report.get("new_findings_count", 0),
         changed_findings_count=final_report.get("changed_findings_count", 0),
     )
+    report.structured_json = {
+        **(report.structured_json or {}),
+        "diff": state.get("diff_summary", {}),
+        "evidence_keys": state.get("diff_summary", {}).get("all_keys", []),
+        "evidence_index": state.get("diff_summary", {}).get("evidence_index", {}),
+    }
     db.add(report)
     await db.flush()
 

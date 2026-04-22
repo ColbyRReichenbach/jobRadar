@@ -5621,10 +5621,22 @@ async def get_research_report(report_id: str, db: AsyncSession = Depends(get_db)
             .order_by(ResearchEvidenceItem.created_at.asc())
         )
     ).scalars().all()
+    actions = (
+        await db.execute(
+            select(RecommendedAction)
+            .where(RecommendedAction.user_id == user_id, RecommendedAction.profile_id == report.profile_id)
+            .order_by(RecommendedAction.priority.desc(), RecommendedAction.created_at.desc())
+        )
+    ).scalars().all()
+    report_actions = [
+        action for action in actions
+        if isinstance(action.payload, dict) and action.payload.get("report_id") == str(report.id)
+    ]
     return {
         **_serialize_research_report(report),
         "sections": [_serialize_report_section(section) for section in sections],
         "evidence": [_serialize_evidence_item(item) for item in evidence],
+        "actions": [_serialize_action(action) for action in report_actions],
     }
 
 
@@ -5638,11 +5650,16 @@ async def get_research_report_diff(report_id: str, db: AsyncSession = Depends(ge
     report = (await db.execute(_report_lookup_query(report_uuid, user_id))).scalars().first()
     if not report:
         raise HTTPException(404, "Report not found")
+    diff_payload = (report.structured_json or {}).get("diff", {})
     return {
         "report_id": str(report.id),
         "profile_id": str(report.profile_id) if report.profile_id else None,
         "status": report.status,
         "diff_summary": report.diff_summary,
+        "new_findings": diff_payload.get("new_findings", []),
+        "changed_findings": diff_payload.get("changed_findings", []),
+        "dropped_findings": diff_payload.get("dropped_findings", []),
+        "unchanged_findings": diff_payload.get("unchanged_findings", []),
     }
 
 
@@ -5680,6 +5697,38 @@ async def create_research_report_feedback(
         "notes": feedback.notes,
         "created_at": feedback.created_at.isoformat() if feedback.created_at else None,
     }
+
+
+@app.post("/api/research/reports/{report_id}/actions/{action_id}/accept")
+async def accept_research_report_action(
+    report_id: str,
+    action_id: str,
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    user_id = _require_user_id(auth)
+    try:
+        report_uuid = _uuid.UUID(report_id)
+        action_uuid = _uuid.UUID(action_id)
+    except ValueError:
+        raise HTTPException(404, "Report action not found")
+
+    report = (await db.execute(_report_lookup_query(report_uuid, user_id))).scalars().first()
+    if not report:
+        raise HTTPException(404, "Report not found")
+
+    action = (
+        await db.execute(
+            select(RecommendedAction).where(
+                RecommendedAction.id == action_uuid,
+                RecommendedAction.user_id == user_id,
+            )
+        )
+    ).scalars().first()
+    if not action or not isinstance(action.payload, dict) or action.payload.get("report_id") != str(report.id):
+        raise HTTPException(404, "Report action not found")
+
+    return await update_recommended_action(str(action.id), RecommendedActionUpdate(status="accepted"), db, auth)
 
 
 @app.get("/api/research/signals")
