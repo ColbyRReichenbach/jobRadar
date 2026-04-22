@@ -36,16 +36,48 @@ from backend.metrics import (
     metrics_payload,
     observe_request,
 )
-from backend.models import Application, Contact, ContactDistinctDecision, EmailEvent, EmailFeedback, User, GmailToken, Company, RoleUmbrella, CompanyTechProfile, UserProfile, UserRoleInterest, AtsBehavior, WarmConnection, Alert, Interview, CompanyVisit, InterviewNote, NotificationPreference, ResumeDraft, IgnoredNetworkContact, ExtractionReport, ExtractionChangelog, DataConsent, ResearchProfile, ResearchRun, ResearchSourceItem, OpportunitySignal, OpportunityScore, OpportunityBrief, RecommendedAction, ResearchFeedback
+from backend.models import (
+    Alert,
+    Application,
+    AtsBehavior,
+    Company,
+    CompanyTechProfile,
+    CompanyVisit,
+    Contact,
+    ContactDistinctDecision,
+    DataConsent,
+    EmailEvent,
+    EmailFeedback,
+    ExtractionChangelog,
+    ExtractionReport,
+    GmailToken,
+    IgnoredNetworkContact,
+    Interview,
+    InterviewNote,
+    NotificationPreference,
+    OpportunityBrief,
+    OpportunityScore,
+    OpportunitySignal,
+    RecommendedAction,
+    ResearchEvidenceItem,
+    ResearchFeedback,
+    ResearchProfile,
+    ResearchReport,
+    ResearchReportSection,
+    ResearchRun,
+    ResearchRunStep,
+    ResearchSourceItem,
+    ResumeDraft,
+    RoleUmbrella,
+    User,
+    UserProfile,
+    UserRoleInterest,
+    WarmConnection,
+)
 from backend.services.alerts import create_user_alert
 from backend.services.ai_orchestrator import get_metrics_snapshot
 from backend.monitoring import configure_sentry
 from backend.services.hunter import find_contacts, generate_linkedin_search_url
-from backend.services.opportunity_radar.action_generator import generate_actions
-from backend.services.opportunity_radar.brief_generator import generate_briefs
-from backend.services.opportunity_radar.signal_extractor import extract_signals
-from backend.services.opportunity_radar.signal_scorer import score_signal
-from backend.services.opportunity_radar.sources import collect_internal_sources
 from backend.services.notification_preferences import is_alert_enabled, serialize_notification_preferences
 from backend.services.scraper import extract_job, validate_job_parse_url
 import structlog
@@ -416,6 +448,11 @@ class ResearchFeedbackCreate(BaseModel):
     report_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
     run_step_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
     feedback_scope: str = Field(default="signal", max_length=MAX_STATUS_LEN)
+    rating: str = Field(..., max_length=MAX_STATUS_LEN)
+    notes: Optional[str] = Field(None, max_length=MAX_LONG_TEXT_LEN)
+
+
+class ResearchReportFeedbackCreate(BaseModel):
     rating: str = Field(..., max_length=MAX_STATUS_LEN)
     notes: Optional[str] = Field(None, max_length=MAX_LONG_TEXT_LEN)
 
@@ -5178,6 +5215,85 @@ def _serialize_run(run: ResearchRun) -> dict:
     }
 
 
+def _serialize_run_step(step: ResearchRunStep) -> dict:
+    return {
+        "id": str(step.id),
+        "run_id": str(step.run_id),
+        "profile_id": str(step.profile_id) if step.profile_id else None,
+        "step_name": step.step_name,
+        "step_order": step.step_order,
+        "status": step.status,
+        "model_name": step.model_name,
+        "prompt_version": step.prompt_version,
+        "tool_name": step.tool_name,
+        "input_json": step.input_json or {},
+        "output_json": step.output_json or {},
+        "error_message": step.error_message,
+        "tokens_in": step.tokens_in,
+        "tokens_out": step.tokens_out,
+        "cost_estimate_cents": step.cost_estimate_cents,
+        "started_at": step.started_at.isoformat() if step.started_at else None,
+        "completed_at": step.completed_at.isoformat() if step.completed_at else None,
+        "created_at": step.created_at.isoformat() if step.created_at else None,
+    }
+
+
+def _serialize_research_report(report: ResearchReport) -> dict:
+    return {
+        "id": str(report.id),
+        "profile_id": str(report.profile_id) if report.profile_id else None,
+        "run_id": str(report.run_id) if report.run_id else None,
+        "report_date": report.report_date.isoformat() if report.report_date else None,
+        "title": report.title,
+        "summary_markdown": report.summary_markdown,
+        "structured_json": report.structured_json or {},
+        "diff_summary": report.diff_summary,
+        "status": report.status,
+        "overall_confidence": report.overall_confidence,
+        "finding_count": report.finding_count,
+        "source_count": report.source_count,
+        "new_findings_count": report.new_findings_count,
+        "changed_findings_count": report.changed_findings_count,
+        "created_at": report.created_at.isoformat() if report.created_at else None,
+    }
+
+
+def _serialize_report_section(section: ResearchReportSection) -> dict:
+    return {
+        "id": str(section.id),
+        "report_id": str(section.report_id),
+        "section_key": section.section_key,
+        "title": section.title,
+        "display_order": section.display_order,
+        "markdown": section.markdown,
+        "structured_json": section.structured_json or {},
+    }
+
+
+def _serialize_evidence_item(item: ResearchEvidenceItem) -> dict:
+    return {
+        "id": str(item.id),
+        "run_id": str(item.run_id) if item.run_id else None,
+        "report_id": str(item.report_id) if item.report_id else None,
+        "profile_id": str(item.profile_id) if item.profile_id else None,
+        "source_item_id": str(item.source_item_id) if item.source_item_id else None,
+        "evidence_type": item.evidence_type,
+        "title": item.title,
+        "claim": item.claim,
+        "snippet": item.snippet,
+        "url": item.url,
+        "domain": item.domain,
+        "company_name": item.company_name,
+        "role_title": item.role_title,
+        "published_at": item.published_at.isoformat() if item.published_at else None,
+        "confidence": item.confidence,
+        "relevance_score": item.relevance_score,
+        "novelty_score": item.novelty_score,
+        "structured_json": item.structured_json or {},
+        "created_at": item.created_at.isoformat() if item.created_at else None,
+    }
+
+
 def _serialize_signal(signal: OpportunitySignal, score: OpportunityScore | None = None) -> dict:
     payload = {
         "id": str(signal.id),
@@ -5326,7 +5442,11 @@ async def delete_research_profile(profile_id: str, db: AsyncSession = Depends(ge
     return {"status": "deleted"}
 
 
-@app.post("/api/research/profiles/{profile_id}/run", status_code=201)
+def _report_lookup_query(report_uuid: _uuid.UUID, user_id: _uuid.UUID):
+    return select(ResearchReport).where(ResearchReport.id == report_uuid, ResearchReport.user_id == user_id)
+
+
+@app.post("/api/research/profiles/{profile_id}/run", status_code=202)
 async def run_research_profile(profile_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
     user_id = _require_user_id(auth)
     try:
@@ -5347,136 +5467,95 @@ async def run_research_profile(profile_id: str, db: AsyncSession = Depends(get_d
         run_type="manual",
         mode=profile.mode,
         trigger_reason="manual_run",
-        status="running",
-        started_at=datetime.now(timezone.utc),
+        status="queued",
     )
     db.add(run)
-    await db.flush()
+    await db.commit()
+    await db.refresh(run)
 
+    queued_payload = _serialize_run(run)
+    if os.getenv("TESTING") == "1":
+        from backend.tasks.run_research_radar import execute_research_run
+
+        await execute_research_run(db, run.id)
+    else:
+        from backend.tasks.run_research_radar import run_research_radar
+
+        try:
+            run_research_radar.delay(str(run.id))
+        except Exception as exc:
+            run.status = "failed"
+            run.current_step = "enqueue"
+            run.error_message = f"Failed to enqueue research run: {exc}"[:2000]
+            run.status_detail = {"failed_step": "enqueue"}
+            run.completed_at = datetime.now(timezone.utc)
+            await db.commit()
+            raise HTTPException(status_code=503, detail="Failed to enqueue research run.") from exc
+
+    return queued_payload
+
+
+@app.get("/api/research/runs/{run_id}")
+async def get_research_run(run_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    user_id = _require_user_id(auth)
     try:
-        candidates = await collect_internal_sources(db, profile, user_id)
-        source_items: list[ResearchSourceItem] = []
-        for candidate in candidates:
-            company_id = None
-            if candidate.company_domain:
-                company = (
-                    await db.execute(select(Company).where(Company.domain == candidate.company_domain))
-                ).scalars().first()
-                if company:
-                    company_id = company.id
+        run_uuid = _uuid.UUID(run_id)
+    except ValueError:
+        raise HTTPException(404, "Run not found")
+    run = (
+        await db.execute(select(ResearchRun).where(ResearchRun.id == run_uuid, ResearchRun.user_id == user_id))
+    ).scalars().first()
+    if not run:
+        raise HTTPException(404, "Run not found")
+    return _serialize_run(run)
 
-            existing_stmt = select(ResearchSourceItem).where(
-                ResearchSourceItem.user_id == user_id,
-                ResearchSourceItem.source_url == candidate.source_url,
-                ResearchSourceItem.content_hash == candidate.content_hash,
-            )
-            existing = (await db.execute(existing_stmt)).scalars().first()
-            if existing:
-                source_items.append(existing)
-                continue
 
-            item = ResearchSourceItem(
-                run_id=run.id,
-                user_id=user_id,
-                profile_id=profile.id,
-                company_id=company_id,
-                source_type=candidate.source_type,
-                source_name=candidate.source_name,
-                source_url=candidate.source_url,
-                external_id=candidate.external_id,
-                title=candidate.title,
-                raw_text=candidate.raw_text,
-                raw_json=candidate.raw_json,
-                published_at=candidate.published_at,
-                content_hash=candidate.content_hash,
-            )
-            db.add(item)
-            source_items.append(item)
+@app.get("/api/research/runs/{run_id}/steps")
+async def list_research_run_steps(run_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    user_id = _require_user_id(auth)
+    try:
+        run_uuid = _uuid.UUID(run_id)
+    except ValueError:
+        raise HTTPException(404, "Run not found")
+    run = (
+        await db.execute(select(ResearchRun).where(ResearchRun.id == run_uuid, ResearchRun.user_id == user_id))
+    ).scalars().first()
+    if not run:
+        raise HTTPException(404, "Run not found")
+    steps = (
+        await db.execute(
+            select(ResearchRunStep)
+            .where(ResearchRunStep.run_id == run.id, ResearchRunStep.user_id == user_id)
+            .order_by(ResearchRunStep.step_order.asc(), ResearchRunStep.created_at.asc())
+        )
+    ).scalars().all()
+    return [_serialize_run_step(step) for step in steps]
 
-        await db.flush()
 
-        signal_counter: dict[str, int] = {}
-        for item in source_items:
-            generated = extract_signals(item, user_id=user_id, profile_id=profile.id, run_id=run.id, company_id=item.company_id)
-            for signal in generated:
-                duplicate_stmt = select(OpportunitySignal).where(
-                    OpportunitySignal.user_id == user_id,
-                    OpportunitySignal.source_item_id == item.id,
-                    OpportunitySignal.event_type == signal.event_type,
-                )
-                existing_signal = (await db.execute(duplicate_stmt)).scalars().first()
-                if existing_signal:
-                    continue
-
-                db.add(signal)
-                await db.flush()
-
-                scoring = score_signal(signal, profile=profile)
-                score_row = OpportunityScore(
-                    signal_id=signal.id,
-                    user_id=user_id,
-                    profile_id=profile.id,
-                    **scoring,
-                )
-                db.add(score_row)
-
-                brief_payload = generate_briefs(signal, scoring)
-                brief = OpportunityBrief(
-                    user_id=user_id,
-                    profile_id=profile.id,
-                    run_id=run.id,
-                    signal_id=signal.id,
-                    **brief_payload,
-                )
-                db.add(brief)
-                await db.flush()
-
-                for action_payload in generate_actions(signal, scoring):
-                    db.add(
-                        RecommendedAction(
-                            user_id=user_id,
-                            profile_id=profile.id,
-                            signal_id=signal.id,
-                            brief_id=brief.id,
-                            company_id=signal.company_id,
-                            action_type=action_payload["action_type"],
-                            title=action_payload["title"],
-                            body=action_payload.get("body"),
-                            payload=action_payload.get("payload"),
-                            priority=action_payload.get("priority", 50),
-                        )
-                    )
-
-                if scoring["total_score"] >= max(profile.minimum_score, 85):
-                    db.add(
-                        Alert(
-                            user_id=user_id,
-                            alert_type="opportunity_signal",
-                            title=f"Radar signal: {signal.title}",
-                            body=signal.summary,
-                            action_url=_alert_action_url("/radar", profile_id=str(profile.id), signal_id=str(signal.id)),
-                        )
-                    )
-
-                signal_counter[signal.event_type] = signal_counter.get(signal.event_type, 0) + 1
-
-        run.source_counts = {"total": len(source_items)}
-        run.signal_counts = signal_counter
-        run.status = "succeeded"
-        run.completed_at = datetime.now(timezone.utc)
-        profile.last_run_at = run.completed_at
-        profile.last_successful_run_at = run.completed_at
-        await db.commit()
-        await db.refresh(run)
-        return _serialize_run(run)
-    except Exception as exc:
-        await db.rollback()
-        run.status = "failed"
-        run.error_message = str(exc)[:2000]
-        run.completed_at = datetime.now(timezone.utc)
-        db.add(run)
-        await db.commit()
-        raise
+@app.get("/api/research/runs/{run_id}/trace")
+async def get_research_run_trace(run_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    user_id = _require_user_id(auth)
+    try:
+        run_uuid = _uuid.UUID(run_id)
+    except ValueError:
+        raise HTTPException(404, "Run not found")
+    run = (
+        await db.execute(select(ResearchRun).where(ResearchRun.id == run_uuid, ResearchRun.user_id == user_id))
+    ).scalars().first()
+    if not run:
+        raise HTTPException(404, "Run not found")
+    steps = (
+        await db.execute(
+            select(ResearchRunStep)
+            .where(ResearchRunStep.run_id == run.id, ResearchRunStep.user_id == user_id)
+            .order_by(ResearchRunStep.step_order.asc(), ResearchRunStep.created_at.asc())
+        )
+    ).scalars().all()
+    return {
+        "run": _serialize_run(run),
+        "step_count": len(steps),
+        "steps": [_serialize_run_step(step) for step in steps],
+    }
 
 
 @app.get("/api/research/runs")
@@ -5496,6 +5575,111 @@ async def list_research_runs(
             return []
     runs = (await db.execute(_paginate(stmt, limit, offset))).scalars().all()
     return [_serialize_run(r) for r in runs]
+
+
+@app.get("/api/research/reports")
+async def list_research_reports(
+    profile_id: Optional[str] = Query(None),
+    limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    user_id = _require_user_id(auth)
+    stmt = select(ResearchReport).where(ResearchReport.user_id == user_id).order_by(ResearchReport.report_date.desc())
+    if profile_id:
+        try:
+            stmt = stmt.where(ResearchReport.profile_id == _uuid.UUID(profile_id))
+        except ValueError:
+            return []
+    reports = (await db.execute(_paginate(stmt, limit, offset))).scalars().all()
+    return [_serialize_research_report(report) for report in reports]
+
+
+@app.get("/api/research/reports/{report_id}")
+async def get_research_report(report_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    user_id = _require_user_id(auth)
+    try:
+        report_uuid = _uuid.UUID(report_id)
+    except ValueError:
+        raise HTTPException(404, "Report not found")
+    report = (await db.execute(_report_lookup_query(report_uuid, user_id))).scalars().first()
+    if not report:
+        raise HTTPException(404, "Report not found")
+
+    sections = (
+        await db.execute(
+            select(ResearchReportSection)
+            .where(ResearchReportSection.report_id == report.id)
+            .order_by(ResearchReportSection.display_order.asc(), ResearchReportSection.title.asc())
+        )
+    ).scalars().all()
+    evidence = (
+        await db.execute(
+            select(ResearchEvidenceItem)
+            .where(ResearchEvidenceItem.report_id == report.id, ResearchEvidenceItem.user_id == user_id)
+            .order_by(ResearchEvidenceItem.created_at.asc())
+        )
+    ).scalars().all()
+    return {
+        **_serialize_research_report(report),
+        "sections": [_serialize_report_section(section) for section in sections],
+        "evidence": [_serialize_evidence_item(item) for item in evidence],
+    }
+
+
+@app.get("/api/research/reports/{report_id}/diff")
+async def get_research_report_diff(report_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    user_id = _require_user_id(auth)
+    try:
+        report_uuid = _uuid.UUID(report_id)
+    except ValueError:
+        raise HTTPException(404, "Report not found")
+    report = (await db.execute(_report_lookup_query(report_uuid, user_id))).scalars().first()
+    if not report:
+        raise HTTPException(404, "Report not found")
+    return {
+        "report_id": str(report.id),
+        "profile_id": str(report.profile_id) if report.profile_id else None,
+        "status": report.status,
+        "diff_summary": report.diff_summary,
+    }
+
+
+@app.post("/api/research/reports/{report_id}/feedback", status_code=201)
+async def create_research_report_feedback(
+    report_id: str,
+    payload: ResearchReportFeedbackCreate,
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    user_id = _require_user_id(auth)
+    try:
+        report_uuid = _uuid.UUID(report_id)
+    except ValueError:
+        raise HTTPException(404, "Report not found")
+    report = (await db.execute(_report_lookup_query(report_uuid, user_id))).scalars().first()
+    if not report:
+        raise HTTPException(404, "Report not found")
+
+    feedback = ResearchFeedback(
+        user_id=user_id,
+        report_id=report.id,
+        feedback_scope="report",
+        rating=payload.rating,
+        notes=payload.notes,
+    )
+    db.add(feedback)
+    await db.commit()
+    await db.refresh(feedback)
+    return {
+        "id": str(feedback.id),
+        "report_id": str(report.id),
+        "feedback_scope": feedback.feedback_scope,
+        "rating": feedback.rating,
+        "notes": feedback.notes,
+        "created_at": feedback.created_at.isoformat() if feedback.created_at else None,
+    }
 
 
 @app.get("/api/research/signals")

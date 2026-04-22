@@ -3,7 +3,15 @@ import uuid
 import pytest
 from sqlalchemy import select
 
-from backend.models import OpportunityScore, ResearchRun, ResearchSourceItem
+from backend.models import (
+    OpportunityScore,
+    ResearchEvidenceItem,
+    ResearchReport,
+    ResearchReportSection,
+    ResearchRun,
+    ResearchRunStep,
+    ResearchSourceItem,
+)
 from backend.services.opportunity_radar.signal_scorer import score_signal
 from tests.conftest import AUTH_HEADER, make_auth_header
 
@@ -100,14 +108,18 @@ async def test_manual_run_creates_run_and_sources_and_scores(client, db_session)
     profile_id = profile_resp.json()['id']
 
     run_resp = await client.post(f'/api/research/profiles/{profile_id}/run', headers=AUTH_HEADER)
-    assert run_resp.status_code == 201
+    assert run_resp.status_code == 202
     run_payload = run_resp.json()
-    assert run_payload['status'] == 'succeeded'
+    assert run_payload['status'] == 'queued'
     assert run_payload['run_type'] == 'manual'
     assert run_payload['mode'] == 'internal'
     assert run_payload['trigger_reason'] == 'manual_run'
     assert run_payload['status_detail'] == {}
     assert run_payload['report_id'] is None
+
+    run_detail = await client.get(f"/api/research/runs/{run_payload['id']}", headers=AUTH_HEADER)
+    assert run_detail.status_code == 200
+    assert run_detail.json()['status'] == 'succeeded'
 
     runs = (await db_session.execute(select(ResearchRun))).scalars().all()
     assert len(runs) >= 1
@@ -296,9 +308,9 @@ async def test_run_does_not_duplicate_same_signal_for_same_source(client):
     profile_id = profile_resp.json()['id']
 
     first_run = await client.post(f'/api/research/profiles/{profile_id}/run', headers=AUTH_HEADER)
-    assert first_run.status_code == 201
+    assert first_run.status_code == 202
     second_run = await client.post(f'/api/research/profiles/{profile_id}/run', headers=AUTH_HEADER)
-    assert second_run.status_code == 201
+    assert second_run.status_code == 202
 
     signals_resp = await client.get('/api/research/signals', headers=AUTH_HEADER)
     assert signals_resp.status_code == 200
@@ -314,9 +326,9 @@ async def test_run_marks_failed_when_source_collection_raises(client, monkeypatc
     async def _boom(*args, **kwargs):
         raise RuntimeError("collection failed")
 
-    monkeypatch.setattr("backend.main.collect_internal_sources", _boom)
-    with pytest.raises(Exception):
-        await client.post(f'/api/research/profiles/{profile_id}/run', headers=AUTH_HEADER)
+    monkeypatch.setattr("backend.tasks.run_research_radar.collect_internal_sources", _boom)
+    run_resp = await client.post(f'/api/research/profiles/{profile_id}/run', headers=AUTH_HEADER)
+    assert run_resp.status_code == 202
 
     runs_resp = await client.get('/api/research/runs', headers=AUTH_HEADER)
     assert runs_resp.status_code == 200
@@ -336,8 +348,120 @@ async def test_profile_source_types_limit_collection(client):
     )
     profile_id = profile_resp.json()['id']
     run_resp = await client.post(f'/api/research/profiles/{profile_id}/run', headers=AUTH_HEADER)
-    assert run_resp.status_code == 201
+    assert run_resp.status_code == 202
 
     signals_resp = await client.get('/api/research/signals', headers=AUTH_HEADER)
     assert signals_resp.status_code == 200
     assert all(signal['event_type'] != 'new_role' for signal in signals_resp.json())
+
+
+@pytest.mark.asyncio
+async def test_run_trace_endpoints_return_steps(client):
+    await client.post(
+        '/api/jobs',
+        json={"company": "TraceCo", "role_title": "Platform Engineer", "job_url": "https://traceco.com/jobs/1"},
+        headers=AUTH_HEADER,
+    )
+    profile_resp = await client.post('/api/research/profiles', json={"name": "Trace Test", "minimum_score": 10}, headers=AUTH_HEADER)
+    profile_id = profile_resp.json()['id']
+
+    run_resp = await client.post(f'/api/research/profiles/{profile_id}/run', headers=AUTH_HEADER)
+    assert run_resp.status_code == 202
+    run_id = run_resp.json()['id']
+
+    steps_resp = await client.get(f'/api/research/runs/{run_id}/steps', headers=AUTH_HEADER)
+    assert steps_resp.status_code == 200
+    steps = steps_resp.json()
+    assert len(steps) >= 2
+    assert steps[0]['step_name'] == 'collect_internal_sources'
+    assert steps[0]['status'] == 'succeeded'
+    assert steps[1]['step_name'] == 'process_internal_signals'
+    assert steps[1]['status'] == 'succeeded'
+
+    trace_resp = await client.get(f'/api/research/runs/{run_id}/trace', headers=AUTH_HEADER)
+    assert trace_resp.status_code == 200
+    trace = trace_resp.json()
+    assert trace['run']['id'] == run_id
+    assert trace['run']['status'] == 'succeeded'
+    assert trace['step_count'] == len(steps)
+    assert trace['steps'][0]['step_name'] == 'collect_internal_sources'
+
+
+@pytest.mark.asyncio
+async def test_report_endpoints_return_saved_report_and_accept_feedback(client, db_session):
+    profile_resp = await client.post('/api/research/profiles', json={"name": "Report Surface"}, headers=AUTH_HEADER)
+    assert profile_resp.status_code == 201
+    profile_id = profile_resp.json()['id']
+
+    run = ResearchRun(user_id=uuid.UUID('00000000-0000-0000-0000-000000000001'), profile_id=uuid.UUID(profile_id), status="succeeded")
+    db_session.add(run)
+    await db_session.flush()
+
+    report = ResearchReport(
+        user_id=uuid.UUID('00000000-0000-0000-0000-000000000001'),
+        profile_id=uuid.UUID(profile_id),
+        run_id=run.id,
+        title="Weekly AI Infra Scan",
+        summary_markdown="Three strong companies showed new platform-data hiring signals.",
+        diff_summary="Two companies are new since the previous run.",
+        status="published",
+        finding_count=3,
+        source_count=6,
+        new_findings_count=2,
+        changed_findings_count=1,
+    )
+    db_session.add(report)
+    await db_session.flush()
+
+    db_session.add(
+        ResearchReportSection(
+            report_id=report.id,
+            section_key="executive_summary",
+            title="Executive Summary",
+            display_order=1,
+            markdown="Hiring activity accelerated across the shortlist.",
+        )
+    )
+    db_session.add(
+        ResearchEvidenceItem(
+            user_id=uuid.UUID('00000000-0000-0000-0000-000000000001'),
+            profile_id=uuid.UUID(profile_id),
+            run_id=run.id,
+            report_id=report.id,
+            evidence_type="company_update",
+            title="TraceCo launched a new data platform opening",
+            claim="TraceCo is expanding its platform-data team.",
+            snippet="New staff platform engineer role posted this week.",
+            url="https://traceco.com/jobs/1",
+            domain="traceco.com",
+            company_name="TraceCo",
+            role_title="Platform Engineer",
+        )
+    )
+    await db_session.commit()
+
+    list_resp = await client.get('/api/research/reports', headers=AUTH_HEADER)
+    assert list_resp.status_code == 200
+    reports = list_resp.json()
+    assert any(item['id'] == str(report.id) for item in reports)
+
+    detail_resp = await client.get(f'/api/research/reports/{report.id}', headers=AUTH_HEADER)
+    assert detail_resp.status_code == 200
+    detail = detail_resp.json()
+    assert detail['title'] == "Weekly AI Infra Scan"
+    assert detail['sections'][0]['section_key'] == 'executive_summary'
+    assert detail['evidence'][0]['company_name'] == 'TraceCo'
+
+    diff_resp = await client.get(f'/api/research/reports/{report.id}/diff', headers=AUTH_HEADER)
+    assert diff_resp.status_code == 200
+    assert diff_resp.json()['diff_summary'] == "Two companies are new since the previous run."
+
+    feedback_resp = await client.post(
+        f'/api/research/reports/{report.id}/feedback',
+        json={'rating': 'useful', 'notes': 'This is the right level of detail.'},
+        headers=AUTH_HEADER,
+    )
+    assert feedback_resp.status_code == 201
+    feedback = feedback_resp.json()
+    assert feedback['report_id'] == str(report.id)
+    assert feedback['feedback_scope'] == 'report'

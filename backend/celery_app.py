@@ -20,7 +20,14 @@ celery_app = Celery(
     "apptrail",
     broker=REDIS_URL,
     backend=REDIS_URL,
-    include=["backend.tasks.poll_gmail", "backend.tasks.check_followups", "backend.tasks.check_dead_apps", "backend.tasks.compute_ats_metrics", "backend.tasks.send_weekly_digest"],
+    include=[
+        "backend.tasks.poll_gmail",
+        "backend.tasks.check_followups",
+        "backend.tasks.check_dead_apps",
+        "backend.tasks.compute_ats_metrics",
+        "backend.tasks.send_weekly_digest",
+        "backend.tasks.run_research_radar",
+    ],
 )
 
 celery_app.conf.update(
@@ -59,6 +66,10 @@ celery_app.conf.update(
         "send-weekly-digest": {
             "task": "backend.tasks.send_weekly_digest.send_weekly_digest",
             "schedule": 604800.0,  # weekly
+        },
+        "dispatch-due-research-profiles": {
+            "task": "backend.tasks.run_research_radar.dispatch_due_research_profiles",
+            "schedule": 900.0,  # every 15 minutes
         },
     },
 )
