@@ -16,6 +16,7 @@ async def test_get_preferences_default(client):
     assert data["sms_phone"] is None
     assert data["weekly_digest_enabled"] is False
     assert data["browser_notifications_enabled"] is False
+    assert data["radar_updates_enabled"] is True
     assert data["inbox_updates_enabled"] is True
     assert data["conversations_enabled"] is True
     assert data["quiet_hours_enabled"] is False
@@ -37,6 +38,7 @@ async def test_create_and_update_preferences(client):
     assert data["sms_enabled"] is True
     assert data["sms_phone"] == "+15551234567"
     assert data["weekly_digest_enabled"] is False
+    assert data["radar_updates_enabled"] is True
     assert data["inbox_updates_enabled"] is True
 
     # Update
@@ -45,6 +47,7 @@ async def test_create_and_update_preferences(client):
         json={
             "weekly_digest_enabled": True,
             "browser_notifications_enabled": True,
+            "radar_updates_enabled": False,
             "followups_enabled": False,
             "quiet_hours_enabled": True,
             "quiet_hours_start": 22,
@@ -57,6 +60,7 @@ async def test_create_and_update_preferences(client):
     assert data2["sms_enabled"] is True  # unchanged
     assert data2["weekly_digest_enabled"] is True
     assert data2["browser_notifications_enabled"] is True
+    assert data2["radar_updates_enabled"] is False
     assert data2["followups_enabled"] is False
     assert data2["quiet_hours_enabled"] is True
     assert data2["quiet_hours_start"] == 22
@@ -78,6 +82,7 @@ async def test_get_preferences_after_set(client):
     assert data["sms_enabled"] is True
     assert data["sms_phone"] == "+15559876543"
     assert data["weekly_digest_enabled"] is True
+    assert data["radar_updates_enabled"] is True
 
 
 @pytest.mark.asyncio

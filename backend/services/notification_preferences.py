@@ -10,6 +10,7 @@ DEFAULT_NOTIFICATION_PREFERENCES: dict[str, Any] = {
     "sms_phone": None,
     "weekly_digest_enabled": False,
     "browser_notifications_enabled": False,
+    "radar_updates_enabled": True,
     "inbox_updates_enabled": True,
     "conversations_enabled": True,
     "network_enabled": True,
@@ -34,6 +35,9 @@ ALERT_TYPE_TO_PREFERENCE: dict[str, str] = {
     "follow_up": "followups_enabled",
     "dead_listing": "listings_enabled",
     "weekly_digest": "weekly_digest_enabled",
+    "opportunity_signal": "radar_updates_enabled",
+    "research_report_ready": "radar_updates_enabled",
+    "research_run_failed": "radar_updates_enabled",
 }
 
 
@@ -49,6 +53,7 @@ def serialize_notification_preferences(pref: NotificationPreference | None) -> d
             "sms_phone": pref.sms_phone,
             "weekly_digest_enabled": pref.weekly_digest_enabled,
             "browser_notifications_enabled": pref.browser_notifications_enabled,
+            "radar_updates_enabled": pref.radar_updates_enabled,
             "inbox_updates_enabled": pref.inbox_updates_enabled,
             "conversations_enabled": pref.conversations_enabled,
             "network_enabled": pref.network_enabled,

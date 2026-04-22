@@ -25,6 +25,73 @@ async def test_research_profile_crud_user_isolation(client, db_session):
 
 
 @pytest.mark.asyncio
+async def test_research_profile_extended_fields_round_trip(client):
+    create_resp = await client.post(
+        '/api/research/profiles',
+        json={
+            "name": "Research Mode Tracker",
+            "objective": "Track product data roles in AI tooling companies.",
+            "selected_domains": ["ai_infrastructure"],
+            "selected_roles": ["Product Data Scientist"],
+            "selected_companies": ["OpenAI"],
+            "source_types": ["company_visit"],
+            "mode": "hybrid",
+            "frequency": "biweekly",
+            "depth": "deep",
+            "notification_mode": "email_digest",
+            "minimum_score": 82,
+            "target_locations": ["New York", "Remote"],
+            "remote_types": ["remote", "hybrid"],
+            "seniority_levels": ["senior", "staff"],
+            "research_source_scopes": ["company_news", "job_boards"],
+            "use_profile_context": True,
+            "include_public_web_research": True,
+            "report_prompt_notes": "Bias toward platform teams and strong experimentation culture.",
+            "max_search_queries": 12,
+            "max_sources_per_run": 24,
+        },
+        headers=AUTH_HEADER,
+    )
+    assert create_resp.status_code == 201
+    created = create_resp.json()
+    assert created["mode"] == "hybrid"
+    assert created["frequency"] == "biweekly"
+    assert created["depth"] == "deep"
+    assert created["target_locations"] == ["New York", "Remote"]
+    assert created["remote_types"] == ["remote", "hybrid"]
+    assert created["seniority_levels"] == ["senior", "staff"]
+    assert created["research_source_scopes"] == ["company_news", "job_boards"]
+    assert created["include_public_web_research"] is True
+    assert created["max_search_queries"] == 12
+    assert created["max_sources_per_run"] == 24
+    assert created["next_run_at"] is None
+    assert created["last_successful_run_at"] is None
+    assert created["updated_at"] is not None
+
+    patch_resp = await client.patch(
+        f"/api/research/profiles/{created['id']}",
+        json={
+            "mode": "research",
+            "depth": "standard",
+            "use_profile_context": False,
+            "include_public_web_research": False,
+            "report_prompt_notes": "Tighten around companies with recent hiring signals.",
+            "max_search_queries": 6,
+        },
+        headers=AUTH_HEADER,
+    )
+    assert patch_resp.status_code == 200
+    updated = patch_resp.json()
+    assert updated["mode"] == "research"
+    assert updated["depth"] == "standard"
+    assert updated["use_profile_context"] is False
+    assert updated["include_public_web_research"] is False
+    assert updated["report_prompt_notes"] == "Tighten around companies with recent hiring signals."
+    assert updated["max_search_queries"] == 6
+    assert updated["max_sources_per_run"] == 24
+
+
+@pytest.mark.asyncio
 async def test_manual_run_creates_run_and_sources_and_scores(client, db_session):
     await client.post('/api/company-visits', json={"domain": "example.com", "url": "https://example.com/careers"}, headers=AUTH_HEADER)
     await client.post('/api/jobs', json={"company": "Example", "role_title": "Data Engineer", "job_url": "https://example.com/jobs/1"}, headers=AUTH_HEADER)
@@ -34,7 +101,13 @@ async def test_manual_run_creates_run_and_sources_and_scores(client, db_session)
 
     run_resp = await client.post(f'/api/research/profiles/{profile_id}/run', headers=AUTH_HEADER)
     assert run_resp.status_code == 201
-    assert run_resp.json()['status'] == 'succeeded'
+    run_payload = run_resp.json()
+    assert run_payload['status'] == 'succeeded'
+    assert run_payload['run_type'] == 'manual'
+    assert run_payload['mode'] == 'internal'
+    assert run_payload['trigger_reason'] == 'manual_run'
+    assert run_payload['status_detail'] == {}
+    assert run_payload['report_id'] is None
 
     runs = (await db_session.execute(select(ResearchRun))).scalars().all()
     assert len(runs) >= 1
@@ -195,6 +268,11 @@ async def test_feedback_stats_endpoint_aggregates_recent_feedback(client):
         headers=AUTH_HEADER,
     )
     assert not_useful_resp.status_code == 201
+    useful_payload = useful_resp.json()
+    assert useful_payload['feedback_scope'] == 'signal'
+    assert useful_payload['signal_id'] == signal['id']
+    assert useful_payload['brief_id'] == brief['id']
+    assert useful_payload['action_id'] == action['id']
 
     stats_resp = await client.get('/api/research/feedback/stats', headers=AUTH_HEADER)
     assert stats_resp.status_code == 200

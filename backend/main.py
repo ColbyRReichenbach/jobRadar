@@ -362,9 +362,20 @@ class ResearchProfileCreate(BaseModel):
     keywords: list[str] = Field(default_factory=list)
     excluded_keywords: list[str] = Field(default_factory=list)
     source_types: list[str] = Field(default_factory=list)
+    mode: str = Field(default="internal", max_length=MAX_STATUS_LEN)
     frequency: str = Field(default="daily", max_length=MAX_STATUS_LEN)
+    depth: str = Field(default="standard", max_length=MAX_STATUS_LEN)
     notification_mode: str = Field(default="in_app", max_length=MAX_STATUS_LEN)
     minimum_score: int = Field(default=70, ge=0, le=100)
+    target_locations: list[str] = Field(default_factory=list)
+    remote_types: list[str] = Field(default_factory=list)
+    seniority_levels: list[str] = Field(default_factory=list)
+    research_source_scopes: list[str] = Field(default_factory=list)
+    use_profile_context: bool = True
+    include_public_web_research: bool = False
+    report_prompt_notes: Optional[str] = Field(None, max_length=MAX_LONG_TEXT_LEN)
+    max_search_queries: int = Field(default=8, ge=1, le=25)
+    max_sources_per_run: int = Field(default=20, ge=1, le=100)
     active: bool = True
 
 
@@ -377,9 +388,20 @@ class ResearchProfileUpdate(BaseModel):
     keywords: Optional[list[str]] = None
     excluded_keywords: Optional[list[str]] = None
     source_types: Optional[list[str]] = None
+    mode: Optional[str] = Field(None, max_length=MAX_STATUS_LEN)
     frequency: Optional[str] = Field(None, max_length=MAX_STATUS_LEN)
+    depth: Optional[str] = Field(None, max_length=MAX_STATUS_LEN)
     notification_mode: Optional[str] = Field(None, max_length=MAX_STATUS_LEN)
     minimum_score: Optional[int] = Field(None, ge=0, le=100)
+    target_locations: Optional[list[str]] = None
+    remote_types: Optional[list[str]] = None
+    seniority_levels: Optional[list[str]] = None
+    research_source_scopes: Optional[list[str]] = None
+    use_profile_context: Optional[bool] = None
+    include_public_web_research: Optional[bool] = None
+    report_prompt_notes: Optional[str] = Field(None, max_length=MAX_LONG_TEXT_LEN)
+    max_search_queries: Optional[int] = Field(None, ge=1, le=25)
+    max_sources_per_run: Optional[int] = Field(None, ge=1, le=100)
     active: Optional[bool] = None
 
 
@@ -391,6 +413,9 @@ class ResearchFeedbackCreate(BaseModel):
     signal_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
     brief_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
     action_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
+    report_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
+    run_step_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
+    feedback_scope: str = Field(default="signal", max_length=MAX_STATUS_LEN)
     rating: str = Field(..., max_length=MAX_STATUS_LEN)
     notes: Optional[str] = Field(None, max_length=MAX_LONG_TEXT_LEN)
 
@@ -4755,6 +4780,7 @@ class NotificationPrefPayload(BaseModel):
     sms_phone: str | None = Field(None, max_length=MAX_PHONE_LEN)
     weekly_digest_enabled: bool | None = None
     browser_notifications_enabled: bool | None = None
+    radar_updates_enabled: bool | None = None
     inbox_updates_enabled: bool | None = None
     conversations_enabled: bool | None = None
     network_enabled: bool | None = None
@@ -4805,6 +4831,8 @@ async def update_notification_preferences(
         pref.weekly_digest_enabled = payload.weekly_digest_enabled
     if "browser_notifications_enabled" in fields:
         pref.browser_notifications_enabled = payload.browser_notifications_enabled
+    if "radar_updates_enabled" in fields:
+        pref.radar_updates_enabled = payload.radar_updates_enabled
     if "inbox_updates_enabled" in fields:
         pref.inbox_updates_enabled = payload.inbox_updates_enabled
     if "conversations_enabled" in fields:
@@ -5101,12 +5129,26 @@ def _serialize_research_profile(profile: ResearchProfile) -> dict:
         "keywords": profile.keywords or [],
         "excluded_keywords": profile.excluded_keywords or [],
         "source_types": profile.source_types or [],
+        "mode": profile.mode,
         "frequency": profile.frequency,
+        "depth": profile.depth,
         "notification_mode": profile.notification_mode,
         "minimum_score": profile.minimum_score,
+        "target_locations": profile.target_locations or [],
+        "remote_types": profile.remote_types or [],
+        "seniority_levels": profile.seniority_levels or [],
+        "research_source_scopes": profile.research_source_scopes or [],
+        "use_profile_context": profile.use_profile_context,
+        "include_public_web_research": profile.include_public_web_research,
+        "report_prompt_notes": profile.report_prompt_notes,
+        "max_search_queries": profile.max_search_queries,
+        "max_sources_per_run": profile.max_sources_per_run,
         "active": profile.active,
         "last_run_at": profile.last_run_at.isoformat() if profile.last_run_at else None,
+        "next_run_at": profile.next_run_at.isoformat() if profile.next_run_at else None,
+        "last_successful_run_at": profile.last_successful_run_at.isoformat() if profile.last_successful_run_at else None,
         "created_at": profile.created_at.isoformat() if profile.created_at else None,
+        "updated_at": profile.updated_at.isoformat() if profile.updated_at else None,
     }
 
 
@@ -5114,12 +5156,24 @@ def _serialize_run(run: ResearchRun) -> dict:
     return {
         "id": str(run.id),
         "profile_id": str(run.profile_id),
+        "run_type": run.run_type,
+        "mode": run.mode,
+        "trigger_reason": run.trigger_reason,
         "status": run.status,
+        "orchestrator_version": run.orchestrator_version,
+        "graph_thread_id": run.graph_thread_id,
+        "current_step": run.current_step,
+        "report_id": str(run.report_id) if run.report_id else None,
         "started_at": run.started_at.isoformat() if run.started_at else None,
         "completed_at": run.completed_at.isoformat() if run.completed_at else None,
         "source_counts": run.source_counts or {},
         "signal_counts": run.signal_counts or {},
         "error_message": run.error_message,
+        "status_detail": run.status_detail or {},
+        "tokens_in": run.tokens_in,
+        "tokens_out": run.tokens_out,
+        "llm_call_count": run.llm_call_count,
+        "cost_estimate_cents": run.cost_estimate_cents,
         "created_at": run.created_at.isoformat() if run.created_at else None,
     }
 
@@ -5290,6 +5344,9 @@ async def run_research_profile(profile_id: str, db: AsyncSession = Depends(get_d
     run = ResearchRun(
         user_id=user_id,
         profile_id=profile.id,
+        run_type="manual",
+        mode=profile.mode,
+        trigger_reason="manual_run",
         status="running",
         started_at=datetime.now(timezone.utc),
     )
@@ -5408,6 +5465,7 @@ async def run_research_profile(profile_id: str, db: AsyncSession = Depends(get_d
         run.status = "succeeded"
         run.completed_at = datetime.now(timezone.utc)
         profile.last_run_at = run.completed_at
+        profile.last_successful_run_at = run.completed_at
         await db.commit()
         await db.refresh(run)
         return _serialize_run(run)
@@ -5557,6 +5615,9 @@ async def create_research_feedback(payload: ResearchFeedbackCreate, db: AsyncSes
         signal_id=_to_uuid(payload.signal_id),
         brief_id=_to_uuid(payload.brief_id),
         action_id=_to_uuid(payload.action_id),
+        report_id=_to_uuid(payload.report_id),
+        run_step_id=_to_uuid(payload.run_step_id),
+        feedback_scope=payload.feedback_scope,
         rating=payload.rating,
         notes=payload.notes,
     )
@@ -5565,7 +5626,14 @@ async def create_research_feedback(payload: ResearchFeedbackCreate, db: AsyncSes
     await db.refresh(feedback)
     return {
         "id": str(feedback.id),
+        "signal_id": str(feedback.signal_id) if feedback.signal_id else None,
+        "brief_id": str(feedback.brief_id) if feedback.brief_id else None,
+        "action_id": str(feedback.action_id) if feedback.action_id else None,
+        "report_id": str(feedback.report_id) if feedback.report_id else None,
+        "run_step_id": str(feedback.run_step_id) if feedback.run_step_id else None,
+        "feedback_scope": feedback.feedback_scope,
         "rating": feedback.rating,
+        "notes": feedback.notes,
         "created_at": feedback.created_at.isoformat() if feedback.created_at else None,
     }
 
@@ -5597,6 +5665,9 @@ async def research_feedback_stats(db: AsyncSession = Depends(get_db), auth: dict
                 "signal_id": str(row.signal_id) if row.signal_id else None,
                 "brief_id": str(row.brief_id) if row.brief_id else None,
                 "action_id": str(row.action_id) if row.action_id else None,
+                "report_id": str(row.report_id) if row.report_id else None,
+                "run_step_id": str(row.run_step_id) if row.run_step_id else None,
+                "feedback_scope": row.feedback_scope,
                 "rating": row.rating,
                 "notes": row.notes,
                 "created_at": row.created_at.isoformat() if row.created_at else None,
@@ -6195,13 +6266,14 @@ async def extraction_version_stats(
 # Data Consent & Account Management
 # ---------------------------------------------------------------------------
 
-CONSENT_TYPES = ("core", "ai_processing", "third_party_enrichment")
+CONSENT_TYPES = ("core", "ai_processing", "third_party_enrichment", "web_research")
 
 
 class ConsentBody(BaseModel):
     core: bool
     ai_processing: bool
     third_party_enrichment: bool
+    web_research: bool | None = None
 
 
 @app.get("/api/consent")
@@ -6231,9 +6303,15 @@ async def update_consent(
 
     now = datetime.now(timezone.utc)
     ip = request.client.host if request.client else None
-    mapping = {"core": body.core, "ai_processing": body.ai_processing, "third_party_enrichment": body.third_party_enrichment}
+    requested_consents = {
+        "core": body.core,
+        "ai_processing": body.ai_processing,
+        "third_party_enrichment": body.third_party_enrichment,
+        "web_research": body.web_research,
+    }
+    mapping: dict[str, bool] = {}
 
-    for consent_type, granted in mapping.items():
+    for consent_type, requested_value in requested_consents.items():
         result = await db.execute(
             select(DataConsent).where(
                 DataConsent.user_id == current_user.id,
@@ -6241,6 +6319,8 @@ async def update_consent(
             )
         )
         existing = result.scalar_one_or_none()
+        granted = existing.granted if requested_value is None and existing else bool(requested_value)
+        mapping[consent_type] = granted
         if existing:
             was_granted = existing.granted
             existing.granted = granted
