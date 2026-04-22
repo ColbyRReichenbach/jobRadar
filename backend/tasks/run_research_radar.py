@@ -98,32 +98,18 @@ async def _mark_step(
     await db.flush()
 
 
-async def execute_research_run(db: AsyncSession, run_id: UUID) -> None:
+async def _execute_internal_mode(db: AsyncSession, run, profile, *, finalize_run: bool) -> None:
     from backend.models import (
         Company,
         OpportunityBrief,
         OpportunityScore,
         OpportunitySignal,
         RecommendedAction,
-        ResearchRun,
-        ResearchRunStep,
         ResearchSourceItem,
     )
     from backend.services.alerts import create_user_alert
 
-    run, profile = await _load_run_and_profile(db, run_id)
-    if not run or not profile:
-        logger.warning("Research run %s could not be loaded", run_id)
-        return
-    if run.status not in {"queued", "retrying"}:
-        logger.info("Research run %s already in terminal/non-queue state %s", run_id, run.status)
-        return
-
-    run.status = "running"
-    run.mode = run.mode or profile.mode
-    run.started_at = run.started_at or datetime.now(timezone.utc)
     run.current_step = "collect_internal_sources"
-    run.error_message = None
     await db.flush()
 
     collect_step = await _create_step(
@@ -141,159 +127,198 @@ async def execute_research_run(db: AsyncSession, run_id: UUID) -> None:
     )
     await db.commit()
 
-    try:
-        if run.mode == "research":
-            raise RuntimeError("Research-mode execution is not implemented yet.")
+    candidates = await collect_internal_sources(db, profile, run.user_id)
+    source_items: list[ResearchSourceItem] = []
+    for candidate in candidates:
+        company_id = None
+        if candidate.company_domain:
+            company = (
+                await db.execute(select(Company).where(Company.domain == candidate.company_domain))
+            ).scalars().first()
+            if company:
+                company_id = company.id
 
-        candidates = await collect_internal_sources(db, profile, run.user_id)
-        source_items: list[ResearchSourceItem] = []
-        for candidate in candidates:
-            company_id = None
-            if candidate.company_domain:
-                company = (
-                    await db.execute(select(Company).where(Company.domain == candidate.company_domain))
-                ).scalars().first()
-                if company:
-                    company_id = company.id
-
-            existing_stmt = select(ResearchSourceItem).where(
-                ResearchSourceItem.user_id == run.user_id,
-                ResearchSourceItem.source_url == candidate.source_url,
-                ResearchSourceItem.content_hash == candidate.content_hash,
-            )
-            existing = (await db.execute(existing_stmt)).scalars().first()
-            if existing:
-                source_items.append(existing)
-                continue
-
-            item = ResearchSourceItem(
-                run_id=run.id,
-                user_id=run.user_id,
-                profile_id=profile.id,
-                company_id=company_id,
-                source_type=candidate.source_type,
-                source_name=candidate.source_name,
-                source_url=candidate.source_url,
-                external_id=candidate.external_id,
-                title=candidate.title,
-                raw_text=candidate.raw_text,
-                raw_json=candidate.raw_json,
-                published_at=candidate.published_at,
-                content_hash=candidate.content_hash,
-            )
-            db.add(item)
-            source_items.append(item)
-
-        await db.flush()
-        await _mark_step(
-            db,
-            collect_step,
-            status="succeeded",
-            output_json={"source_count": len(source_items)},
+        existing_stmt = select(ResearchSourceItem).where(
+            ResearchSourceItem.user_id == run.user_id,
+            ResearchSourceItem.source_url == candidate.source_url,
+            ResearchSourceItem.content_hash == candidate.content_hash,
         )
+        existing = (await db.execute(existing_stmt)).scalars().first()
+        if existing:
+            source_items.append(existing)
+            continue
 
-        run.current_step = "process_internal_signals"
-        process_step = await _create_step(
-            db,
+        item = ResearchSourceItem(
             run_id=run.id,
             user_id=run.user_id,
             profile_id=profile.id,
-            step_name="process_internal_signals",
-            step_order=2,
-            status="running",
-            input_json={"source_count": len(source_items), "minimum_score": profile.minimum_score},
+            company_id=company_id,
+            source_type=candidate.source_type,
+            source_name=candidate.source_name,
+            source_url=candidate.source_url,
+            external_id=candidate.external_id,
+            title=candidate.title,
+            raw_text=candidate.raw_text,
+            raw_json=candidate.raw_json,
+            published_at=candidate.published_at,
+            content_hash=candidate.content_hash,
         )
-        await db.commit()
+        db.add(item)
+        source_items.append(item)
 
-        signal_counter: dict[str, int] = {}
-        action_count = 0
-        for item in source_items:
-            generated = extract_signals(
-                item,
+    await db.flush()
+    await _mark_step(
+        db,
+        collect_step,
+        status="succeeded",
+        output_json={"source_count": len(source_items)},
+    )
+
+    run.current_step = "process_internal_signals"
+    process_step = await _create_step(
+        db,
+        run_id=run.id,
+        user_id=run.user_id,
+        profile_id=profile.id,
+        step_name="process_internal_signals",
+        step_order=2,
+        status="running",
+        input_json={"source_count": len(source_items), "minimum_score": profile.minimum_score},
+    )
+    await db.commit()
+
+    signal_counter: dict[str, int] = {}
+    action_count = 0
+    for item in source_items:
+        generated = extract_signals(
+            item,
+            user_id=run.user_id,
+            profile_id=profile.id,
+            run_id=run.id,
+            company_id=item.company_id,
+        )
+        for signal in generated:
+            duplicate_stmt = select(OpportunitySignal).where(
+                OpportunitySignal.user_id == run.user_id,
+                OpportunitySignal.source_item_id == item.id,
+                OpportunitySignal.event_type == signal.event_type,
+            )
+            existing_signal = (await db.execute(duplicate_stmt)).scalars().first()
+            if existing_signal:
+                continue
+
+            db.add(signal)
+            await db.flush()
+
+            scoring = score_signal(signal, profile=profile)
+            score_row = OpportunityScore(
+                signal_id=signal.id,
+                user_id=run.user_id,
+                profile_id=profile.id,
+                **scoring,
+            )
+            db.add(score_row)
+
+            brief_payload = generate_briefs(signal, scoring)
+            brief = OpportunityBrief(
                 user_id=run.user_id,
                 profile_id=profile.id,
                 run_id=run.id,
-                company_id=item.company_id,
+                signal_id=signal.id,
+                **brief_payload,
             )
-            for signal in generated:
-                duplicate_stmt = select(OpportunitySignal).where(
-                    OpportunitySignal.user_id == run.user_id,
-                    OpportunitySignal.source_item_id == item.id,
-                    OpportunitySignal.event_type == signal.event_type,
-                )
-                existing_signal = (await db.execute(duplicate_stmt)).scalars().first()
-                if existing_signal:
-                    continue
+            db.add(brief)
+            await db.flush()
 
-                db.add(signal)
-                await db.flush()
-
-                scoring = score_signal(signal, profile=profile)
-                score_row = OpportunityScore(
-                    signal_id=signal.id,
-                    user_id=run.user_id,
-                    profile_id=profile.id,
-                    **scoring,
-                )
-                db.add(score_row)
-
-                brief_payload = generate_briefs(signal, scoring)
-                brief = OpportunityBrief(
-                    user_id=run.user_id,
-                    profile_id=profile.id,
-                    run_id=run.id,
-                    signal_id=signal.id,
-                    **brief_payload,
-                )
-                db.add(brief)
-                await db.flush()
-
-                for action_payload in generate_actions(signal, scoring):
-                    db.add(
-                        RecommendedAction(
-                            user_id=run.user_id,
-                            profile_id=profile.id,
-                            signal_id=signal.id,
-                            brief_id=brief.id,
-                            company_id=signal.company_id,
-                            action_type=action_payload["action_type"],
-                            title=action_payload["title"],
-                            body=action_payload.get("body"),
-                            payload=action_payload.get("payload"),
-                            priority=action_payload.get("priority", 50),
-                        )
-                    )
-                    action_count += 1
-
-                if scoring["total_score"] >= max(profile.minimum_score, 85):
-                    await create_user_alert(
-                        db,
+            for action_payload in generate_actions(signal, scoring):
+                db.add(
+                    RecommendedAction(
                         user_id=run.user_id,
-                        alert_type="opportunity_signal",
-                        title=f"Radar signal: {signal.title}",
-                        body=signal.summary,
-                        action_url=_alert_action_url("/radar", profile_id=str(profile.id), signal_id=str(signal.id)),
+                        profile_id=profile.id,
+                        signal_id=signal.id,
+                        brief_id=brief.id,
+                        company_id=signal.company_id,
+                        action_type=action_payload["action_type"],
+                        title=action_payload["title"],
+                        body=action_payload.get("body"),
+                        payload=action_payload.get("payload"),
+                        priority=action_payload.get("priority", 50),
                     )
+                )
+                action_count += 1
 
-                signal_counter[signal.event_type] = signal_counter.get(signal.event_type, 0) + 1
+            if scoring["total_score"] >= max(profile.minimum_score, 85):
+                await create_user_alert(
+                    db,
+                    user_id=run.user_id,
+                    alert_type="opportunity_signal",
+                    title=f"Radar signal: {signal.title}",
+                    body=signal.summary,
+                    action_url=_alert_action_url("/radar", profile_id=str(profile.id), signal_id=str(signal.id)),
+                )
 
-        run.source_counts = {"total": len(source_items)}
-        run.signal_counts = signal_counter
+            signal_counter[signal.event_type] = signal_counter.get(signal.event_type, 0) + 1
+
+    run.source_counts = {"total": len(source_items)}
+    run.signal_counts = signal_counter
+    if finalize_run:
         run.status = "succeeded"
         run.current_step = "completed"
         run.completed_at = datetime.now(timezone.utc)
         profile.last_run_at = run.completed_at
         profile.last_successful_run_at = run.completed_at
-        await _mark_step(
-            db,
-            process_step,
-            status="succeeded",
-            output_json={
-                "signal_counts": signal_counter,
-                "action_count": action_count,
-            },
-        )
-        await db.commit()
+    await _mark_step(
+        db,
+        process_step,
+        status="succeeded",
+        output_json={
+            "signal_counts": signal_counter,
+            "action_count": action_count,
+        },
+    )
+    await db.commit()
+
+
+async def execute_research_run(db: AsyncSession, run_id: UUID) -> None:
+    from backend.models import ResearchRun, ResearchRunStep
+    from backend.services.alerts import create_user_alert
+    from backend.services.research_radar import run_research_graph
+
+    run, profile = await _load_run_and_profile(db, run_id)
+    if not run or not profile:
+        logger.warning("Research run %s could not be loaded", run_id)
+        return
+    if run.status not in {"queued", "retrying"}:
+        logger.info("Research run %s already in terminal/non-queue state %s", run_id, run.status)
+        return
+
+    run.status = "running"
+    run.mode = run.mode or profile.mode
+    run.started_at = run.started_at or datetime.now(timezone.utc)
+    run.current_step = "dispatch"
+    run.error_message = None
+    await db.commit()
+
+    try:
+        if run.mode in {"internal", "hybrid"}:
+            await _execute_internal_mode(db, run, profile, finalize_run=run.mode == "internal")
+
+        if run.mode in {"research", "hybrid"}:
+            await run_research_graph(
+                db,
+                run_id=run.id,
+                profile_id=profile.id,
+                user_id=run.user_id,
+                mode=run.mode,
+                trigger=run.trigger_reason or run.run_type,
+            )
+
+            run, profile = await _load_run_and_profile(db, run_id)
+            if run and profile:
+                profile.last_run_at = run.completed_at or datetime.now(timezone.utc)
+                if run.status in {"published", "ready"}:
+                    profile.last_successful_run_at = profile.last_run_at
+                await db.commit()
     except Exception as exc:
         await db.rollback()
         run, profile = await _load_run_and_profile(db, run_id)
@@ -317,11 +342,12 @@ async def execute_research_run(db: AsyncSession, run_id: UUID) -> None:
                 output_json=pending_step.output_json or {},
             )
 
+        failed_step_name = pending_step.step_name if pending_step else (run.status_detail or {}).get("failed_step") or run.current_step
         run.status = "failed"
         run.error_message = str(exc)[:2000]
-        run.current_step = pending_step.step_name if pending_step else run.current_step
+        run.current_step = failed_step_name
         run.status_detail = {
-            "failed_step": pending_step.step_name if pending_step else None,
+            "failed_step": failed_step_name,
         }
         run.completed_at = datetime.now(timezone.utc)
         await create_user_alert(

@@ -240,6 +240,85 @@ If a field is not found, set it to null.
             PromptChangelogEntry("2026-03-19", "v2", "Switched from Claude Sonnet to GPT-4o", "Consolidate on OpenAI"),
         ),
     ),
+    "research_brief_normalizer": AiTaskConfig(
+        name="research_brief_normalizer",
+        model=os.getenv("RADAR_BRIEF_MODEL", "gpt-5.1"),
+        max_tokens=1200,
+        prompt_version="v1",
+        service_path="backend/services/research_radar/llm.py",
+        purpose="Turn a Radar tracker plus AppTrail profile context into a strict research brief schema.",
+        fallback_behavior="Deterministic brief builder from tracker fields, saved profile context, and role interests.",
+        user_prompt_template="See `backend/services/research_radar/prompts.py::build_brief_normalization_prompt`.",
+        system_prompt="""You normalize job-search research trackers into strict JSON.
+Do not add narrative. Return only valid JSON that matches the requested schema.
+Prefer explicit tracker inputs, then use the AppTrail profile context to fill reasonable gaps without inventing facts.""",
+        changelog=(
+            PromptChangelogEntry("2026-04-22", "v1", "Initial research brief normalizer", "Radar Research graph launch"),
+        ),
+    ),
+    "research_planner": AiTaskConfig(
+        name="research_planner",
+        model=os.getenv("RADAR_PLANNER_MODEL", "gpt-5.1"),
+        max_tokens=1400,
+        prompt_version="v1",
+        service_path="backend/services/research_radar/llm.py",
+        purpose="Convert a normalized Radar brief into bounded research tasks with search queries and priorities.",
+        fallback_behavior="Deterministic planner based on tracker companies, role titles, and domains with depth-based caps.",
+        user_prompt_template="See `backend/services/research_radar/prompts.py::build_research_plan_prompt`.",
+        system_prompt="""You plan bounded web research tasks for a job-search assistant.
+Return only valid JSON with a `tasks` array.
+Do not create more tasks than requested. Each task must be concrete, externally searchable, and directly tied to the tracker objective.""",
+        changelog=(
+            PromptChangelogEntry("2026-04-22", "v1", "Initial research planner", "Radar Research graph launch"),
+        ),
+    ),
+    "research_evidence_extractor": AiTaskConfig(
+        name="research_evidence_extractor",
+        model=os.getenv("RADAR_EVIDENCE_MODEL", "gpt-5.1"),
+        max_tokens=1800,
+        prompt_version="v1",
+        service_path="backend/services/research_radar/llm.py",
+        purpose="Extract grounded evidence items from fetched public documents for Radar reports.",
+        fallback_behavior="Deterministic classifier over document title, path, and excerpt.",
+        user_prompt_template="See `backend/services/research_radar/prompts.py::build_evidence_extraction_prompt`.",
+        system_prompt="""You extract only grounded evidence from public documents for a job-search research report.
+Return only valid JSON with an `evidence_items` array.
+Every evidence item must be directly supported by the supplied document and must not invent facts.""",
+        changelog=(
+            PromptChangelogEntry("2026-04-22", "v1", "Initial research evidence extractor", "Radar Research graph launch"),
+        ),
+    ),
+    "research_report_writer": AiTaskConfig(
+        name="research_report_writer",
+        model=os.getenv("RADAR_REPORT_MODEL", "gpt-5.4"),
+        max_tokens=3000,
+        prompt_version="v1",
+        service_path="backend/services/research_radar/llm.py",
+        purpose="Write the structured Radar research report from validated evidence and diff data.",
+        fallback_behavior="Deterministic section builder using the strongest evidence items and diff summary.",
+        user_prompt_template="See `backend/services/research_radar/prompts.py::build_report_prompt`.",
+        system_prompt="""You write grounded research reports for a job-search assistant.
+Return only valid JSON with report title, summary markdown, and sections.
+Every section must stay inside the provided evidence. Do not invent companies, roles, or claims.""",
+        changelog=(
+            PromptChangelogEntry("2026-04-22", "v1", "Initial research report writer", "Radar Research graph launch"),
+        ),
+    ),
+    "research_report_verifier": AiTaskConfig(
+        name="research_report_verifier",
+        model=os.getenv("RADAR_VERIFY_MODEL", "gpt-5.1"),
+        max_tokens=1200,
+        prompt_version="v1",
+        service_path="backend/services/research_radar/llm.py",
+        purpose="Check report grounding, citation coverage, and tracker fit before Radar exposes the report as ready.",
+        fallback_behavior="Deterministic verification of section presence and citation coverage.",
+        user_prompt_template="See `backend/services/research_radar/prompts.py::build_verification_prompt`.",
+        system_prompt="""You verify whether a structured research report is grounded in its evidence.
+Return only valid JSON describing unsupported claims, citation coverage, tracker fit, hallucination risk, and final readiness.""",
+        changelog=(
+            PromptChangelogEntry("2026-04-22", "v1", "Initial research report verifier", "Radar Research graph launch"),
+        ),
+    ),
 }
 
 
@@ -255,6 +334,8 @@ def get_task(name: str) -> AiTaskConfig:
 
 
 def has_configured_api_key() -> bool:
+    if os.getenv("TESTING") == "1":
+        return False
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     return bool(api_key and api_key != "test-key")
 
@@ -442,10 +523,11 @@ async def run_json_task(
         try:
             request_kwargs: dict[str, Any] = {
                 "model": task_config.model,
-                "max_tokens": max_tokens or task_config.max_tokens,
                 "messages": [],
                 "response_format": {"type": "json_object"},
             }
+            token_key = "max_completion_tokens" if task_config.model.startswith("gpt-5") else "max_tokens"
+            request_kwargs[token_key] = max_tokens or task_config.max_tokens
             if task_config.system_prompt:
                 request_kwargs["messages"].append({"role": "system", "content": task_config.system_prompt})
             request_kwargs["messages"].append({"role": "user", "content": user_message})
