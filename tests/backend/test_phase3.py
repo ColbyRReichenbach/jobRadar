@@ -125,8 +125,13 @@ async def test_classify_rejection():
         '{"classification": "rejected", "color_code": "red", "urgency": "low", "key_sentence": "We regret to inform you", "summary": "Application rejected"}'
     )
 
-    with patch("backend.services.claude_client.client") as mock_client:
-        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+    with patch("backend.services.claude_client.ai_orchestrator.run_json_task", new=AsyncMock(return_value={
+        "classification": "rejected",
+        "color_code": "red",
+        "urgency": "low",
+        "key_sentence": "We regret to inform you",
+        "summary": "Application rejected",
+    })):
         from backend.services.claude_client import classify_email
 
         result = await classify_email("We regret to inform you that your application has been declined.")
@@ -142,8 +147,13 @@ async def test_classify_interview():
         '{"classification": "interview_request", "color_code": "green", "urgency": "high", "key_sentence": "We would like to schedule an interview", "summary": "Interview scheduled"}'
     )
 
-    with patch("backend.services.claude_client.client") as mock_client:
-        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+    with patch("backend.services.claude_client.ai_orchestrator.run_json_task", new=AsyncMock(return_value={
+        "classification": "interview_request",
+        "color_code": "green",
+        "urgency": "high",
+        "key_sentence": "We would like to schedule an interview",
+        "summary": "Interview scheduled",
+    })):
         from backend.services.claude_client import classify_email
 
         result = await classify_email("We would like to schedule an interview with you.")
@@ -159,8 +169,15 @@ async def test_classify_action_url():
         '{"classification": "action_required", "color_code": "yellow", "urgency": "high", "action_needed": true, "action_url": "https://calendly.com/recruiter/30min", "key_sentence": "Please schedule your interview", "summary": "Schedule interview"}'
     )
 
-    with patch("backend.services.claude_client.client") as mock_client:
-        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+    with patch("backend.services.claude_client.ai_orchestrator.run_json_task", new=AsyncMock(return_value={
+        "classification": "action_required",
+        "color_code": "yellow",
+        "urgency": "high",
+        "action_needed": True,
+        "action_url": "https://calendly.com/recruiter/30min",
+        "key_sentence": "Please schedule your interview",
+        "summary": "Schedule interview",
+    })):
         from backend.services.claude_client import classify_email
 
         result = await classify_email("Please schedule your interview at https://calendly.com/recruiter/30min")

@@ -10,6 +10,9 @@ COPY dashboardv2 /app
 ARG VITE_API_URL=http://localhost:8000
 ENV VITE_API_URL=${VITE_API_URL}
 
+ARG VITE_LOCAL_DEV_AUTH=false
+ENV VITE_LOCAL_DEV_AUTH=${VITE_LOCAL_DEV_AUTH}
+
 RUN npm run build
 
 FROM nginx:1.27-alpine

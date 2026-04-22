@@ -54,8 +54,8 @@
     {
       "matches": [
         "https://www.linkedin.com/jobs/*",
-        "https://boards.greenhouse.io/*/jobs/*",
-        "https://job-boards.greenhouse.io/*/jobs/*",
+        "https://boards.greenhouse.io/*",
+        "https://job-boards.greenhouse.io/*",
         "https://jobs.lever.co/*/*",
         "https://*.myworkdayjobs.com/*",
         "https://*.myworkday.com/*",

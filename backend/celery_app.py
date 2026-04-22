@@ -1,11 +1,20 @@
 import os
+import warnings
 
 from celery import Celery
 from dotenv import load_dotenv
 
 load_dotenv()
 
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+REDIS_URL = os.getenv("REDIS_URL")
+if not REDIS_URL:
+    if os.getenv("ENVIRONMENT", "development") != "development":
+        raise RuntimeError(
+            "REDIS_URL environment variable is required in production. "
+            "Set it to your Upstash Redis TLS URL (rediss://...)."
+        )
+    warnings.warn("REDIS_URL not set — Celery will use redis://localhost:6379/0 (dev only)")
+    REDIS_URL = "redis://localhost:6379/0"
 
 celery_app = Celery(
     "apptrail",

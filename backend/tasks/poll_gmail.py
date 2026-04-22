@@ -103,6 +103,9 @@ async def _poll_gmail_async():
         total_skipped_feedback = 0
 
         for gmail_token, user in token_rows:
+            from backend.dependencies import check_ai_consent
+            ai_enabled = await check_ai_consent(user.id, db)
+
             creds = await get_valid_token(db, user_id=user.id)
             service = build("gmail", "v1", credentials=creds)
 
@@ -165,6 +168,7 @@ async def _poll_gmail_async():
                     body=body,
                     sender=sender_name,
                     sender_email=sender_email,
+                    ai_enabled=ai_enabled,
                 )
 
                 if classification.get("classification") == "not_relevant":

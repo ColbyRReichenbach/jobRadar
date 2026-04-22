@@ -141,6 +141,15 @@ def test_company_identity_unknown_company():
     assert info["is_company"] is True
 
 
+def test_company_identity_can_suppress_logo_without_enrichment_consent():
+    from backend.services.company_identity import get_company_info
+
+    info = get_company_info("recruiter@stripe.com", include_logo=False)
+    assert info["company_name"] == "Stripe"
+    assert info["logo_url"] is None
+    assert info["is_company"] is True
+
+
 def test_company_identity_gmail():
     from backend.services.company_identity import get_company_info
 

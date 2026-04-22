@@ -436,16 +436,16 @@ function RunDetail({
 
   // Filter + sort emails
   const filteredEmails = useMemo(() => {
-    let list = emails.map((e, i) => ({ ...e, _idx: i }));
+    let list = emails.map((e, i) => ({ ...e, _idx: i } as AuditEmailRow & { _idx: number }));
 
     if (filter === 'reviewed') list = list.filter(e => (e.review_correct || '').trim());
     if (filter === 'unreviewed') list = list.filter(e => !(e.review_correct || '').trim());
     if (filter === 'errors') list = list.filter(e => (e.review_correct || '').trim().toLowerCase() === 'no');
 
     list.sort((a, b) => {
-      const av = a[sortCol] ?? '';
-      const bv = b[sortCol] ?? '';
-      const cmp = typeof av === 'string' ? av.localeCompare(bv) : Number(av) - Number(bv);
+      const av = (a as Record<string, unknown>)[sortCol] ?? '';
+      const bv = (b as Record<string, unknown>)[sortCol] ?? '';
+      const cmp = typeof av === 'string' ? av.localeCompare(String(bv)) : Number(av) - Number(bv);
       return sortAsc ? cmp : -cmp;
     });
 
@@ -678,7 +678,7 @@ function RunDetail({
               className="overflow-hidden"
             >
               <InlineReviewEditor
-                email={emails[editIdx]}
+                email={emails[editIdx]!}
                 onSave={async (review) => {
                   await onEmailUpdate(editIdx, review);
                   setEditIdx(null);
@@ -834,7 +834,7 @@ function CompareView({
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                 <YAxis domain={[0, 1]} tick={{ fontSize: 11 }} tickFormatter={(v: number) => `${(v * 100).toFixed(0)}%`} />
-                <Tooltip formatter={(v: number) => `${(v * 100).toFixed(1)}%`} />
+                <Tooltip formatter={(v) => `${(Number(v) * 100).toFixed(1)}%`} />
                 <Legend />
                 {METRIC_LINES.map(ml => (
                   <Line

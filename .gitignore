@@ -128,6 +128,10 @@ audit/raw_emails_batch1.json
 audit/__pycache__/
 audit/runs/
 
+# ─── Vite / Build Cache ──────────────────────────────────────────────────────
+dashboardv2/.vite/
+dashboardv2/dist/
+
 # ─── Misc ─────────────────────────────────────────────────────────────────────
 *.bak
 *.tmp
@@ -135,3 +139,4 @@ audit/runs/
 *.pid
 *.pid.lock
 .hypothesis/
+*.docx

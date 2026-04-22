@@ -29,7 +29,7 @@ async def test_generate_draft_uses_fallback():
     from backend.services.draft_writer import generate_draft
 
     # With no API key set, it should fall back to template
-    with patch("backend.services.draft_writer.with_retry", side_effect=Exception("No API key")):
+    with patch("backend.services.draft_writer.ai_orchestrator.run_json_task", side_effect=Exception("No API key")):
         draft = await generate_draft(
             draft_type="follow_up",
             company="FallbackCo",
@@ -50,7 +50,7 @@ async def test_generate_draft_endpoint(client, db_session):
     await db_session.commit()
     await db_session.refresh(app)
 
-    with patch("backend.services.draft_writer.with_retry", side_effect=Exception("No API")):
+    with patch("backend.services.draft_writer.ai_orchestrator.run_json_task", side_effect=Exception("No API")):
         resp = await client.post(
             "/api/drafts/generate",
             json={
@@ -69,7 +69,7 @@ async def test_generate_draft_endpoint(client, db_session):
 @pytest.mark.asyncio
 async def test_generate_draft_introduction(client):
     """Draft generation for introduction type."""
-    with patch("backend.services.draft_writer.with_retry", side_effect=Exception("No API")):
+    with patch("backend.services.draft_writer.ai_orchestrator.run_json_task", side_effect=Exception("No API")):
         resp = await client.post(
             "/api/drafts/generate",
             json={
@@ -126,7 +126,7 @@ async def test_generate_draft_with_conversation_history(client, db_session):
     db_session.add(email)
     await db_session.commit()
 
-    with patch("backend.services.draft_writer.with_retry", side_effect=Exception("No API")):
+    with patch("backend.services.draft_writer.ai_orchestrator.run_json_task", side_effect=Exception("No API")):
         resp = await client.post(
             "/api/drafts/generate",
             json={

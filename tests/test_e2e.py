@@ -6,12 +6,31 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from backend.models import DataConsent, User
 from tests.conftest import AUTH_HEADER
+from tests.conftest import TEST_USER_ID
+
+
+async def _grant_enrichment_consent(db_session):
+    now = datetime.now(timezone.utc)
+    user = await db_session.get(User, TEST_USER_ID)
+    user.data_consent_accepted_at = now
+    db_session.add(
+        DataConsent(
+            user_id=TEST_USER_ID,
+            consent_type="third_party_enrichment",
+            granted=True,
+            granted_at=now,
+            updated_at=now,
+        )
+    )
+    await db_session.commit()
 
 
 @pytest.mark.asyncio
 async def test_full_pipeline(client, db_session):
     """E2E: parse job -> create app -> find contacts -> rejection email -> status denied."""
+    await _grant_enrichment_consent(db_session)
 
     # 1. Parse a Greenhouse job (mocked to avoid live API dependency)
     mock_job_data = {
@@ -107,15 +126,14 @@ async def test_full_pipeline(client, db_session):
         "summary": "Application rejected for Data Analyst at E2ECorp",
     }
 
-    with patch("backend.services.claude_client.client") as mock_client:
-        mock_msg = MagicMock()
-        mock_msg.content = '{"classification": "rejected", "color_code": "red", "urgency": "low", "action_needed": false, "key_sentence": "We regret to inform you", "summary": "Application rejected for Data Analyst at E2ECorp"}'
-        mock_choice = MagicMock()
-        mock_choice.message = mock_msg
-        mock_response = MagicMock()
-        mock_response.choices = [mock_choice]
-        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
-
+    with patch("backend.services.claude_client.ai_orchestrator.run_json_task", new=AsyncMock(return_value={
+        "classification": "rejected",
+        "color_code": "red",
+        "urgency": "low",
+        "action_needed": False,
+        "key_sentence": "We regret to inform you",
+        "summary": "Application rejected for Data Analyst at E2ECorp",
+    })):
         from backend.services.claude_client import classify_email
 
         result = await classify_email(email["body"])

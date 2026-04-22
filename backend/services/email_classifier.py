@@ -1,4 +1,4 @@
-"""Lightweight LLM email classifier using GPT-4o-mini.
+"""Lightweight LLM email classifier using shared AI orchestration.
 
 Every email from Gmail sync passes through this classifier.
 Categories:
@@ -11,13 +11,9 @@ Categories:
   - not_relevant: marketing, newsletters, product updates, unrelated
 """
 
-import asyncio
-import json
 import logging
-import os
 
-import openai
-
+from backend.services import ai_orchestrator
 from backend.services.email_filter import (
     ATS_DOMAINS,
     AUTOMATED_LOCAL_PART_HINTS,
@@ -28,45 +24,12 @@ from backend.services.email_filter import (
     has_recruiting_sender_signal,
     is_obvious_noise_email,
 )
-from backend.utils.retry import with_retry
 
 logger = logging.getLogger(__name__)
 
-client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-CLASSIFIER_MODEL = "gpt-4o-mini"
-
-SYSTEM_PROMPT = """You are an email classifier for a job search tracking application.
-Classify the email into exactly ONE category and extract key metadata.
-
-Categories:
-- interview_request: Scheduling an interview, phone screen, onsite, technical assessment invite
-- rejection: Application rejected, not moving forward, position filled
-- offer: Job offer, compensation details, offer letter
-- action_item: Requires user action — complete assessment, fill form, provide references, sign document
-- job_update: Application received/confirmed, status update, under review, moved to next stage
-- conversation: Personal message from recruiter/hiring manager, networking, informational
-- not_relevant: Marketing, newsletters, product updates, promotions, account notifications, unrelated to job search
-
-Important exclusions:
-- Developer tooling notifications such as GitHub, Railway, Vercel, Linear, billing emails, deployment alerts, repository updates, account security notices, invoices, and newsletters are NOT job search emails.
-- Product updates from a company domain are still not_relevant unless they directly concern an active application, interview, or recruiting conversation.
-- Nuanced rejection phrasing such as "we will not be moving forward", "not selected", "position has been filled", "have not been accepted", and "pursuing other candidates" should all classify as rejection.
-- Recruiter or hiring-manager replies like "great speaking with you", "following up", and "can you chat this week" should classify as conversation when they are from a human sender.
-- Promotional recruiting-adjacent content from LinkedIn, alumni groups, newsletters, community events, and vendor marketing is still not_relevant unless it is directly tied to an active application or interview process.
-- Only treat a sender as human if it looks like a real individual or direct recruiter. Team aliases, no-reply mailboxes, newsletters, and system notifications are automated.
-
-Return ONLY valid JSON with these fields:
-{
-  "classification": "<one of the categories above>",
-  "confidence": <0.0-1.0>,
-  "company_name": "<extracted company name or null>",
-  "sender_role": "<recruiter/hiring_manager/hr/automated/unknown>",
-  "key_sentence": "<the most important sentence from the email>",
-  "summary": "<1-2 sentence summary>",
-  "action_needed": <true/false>,
-  "is_automated": <true if from ATS/no-reply, false if from a person>
-}"""
+CLASSIFIER_TASK = ai_orchestrator.get_task("email_classifier")
+CLASSIFIER_MODEL = CLASSIFIER_TASK.model
+SYSTEM_PROMPT = CLASSIFIER_TASK.system_prompt or ""
 
 
 async def classify_email(
@@ -74,6 +37,7 @@ async def classify_email(
     body: str,
     sender: str,
     sender_email: str = "",
+    ai_enabled: bool = True,
 ) -> dict:
     """Classify an email using GPT-4o-mini.
 
@@ -82,10 +46,15 @@ async def classify_email(
         body: Email body text (plain text, max ~4000 chars sent)
         sender: Sender display name
         sender_email: Sender email address
+        ai_enabled: When False, skip LLM and use rule-based fallback only
 
     Returns:
         Classification dict with category, confidence, metadata
     """
+    if not ai_enabled:
+        ai_orchestrator.record_fallback(CLASSIFIER_TASK, "disabled_by_consent", {"surface": "email_classifier"})
+        return _fallback_classify(subject, body, sender_email, sender=sender)
+
     # Truncate body to keep token usage low
     truncated_body = body[:4000] if body else ""
 
@@ -94,46 +63,24 @@ Subject: {subject}
 
 {truncated_body}"""
 
-    for attempt in range(3):
-        try:
-            response = await with_retry(
-                client.chat.completions.create,
-                model=CLASSIFIER_MODEL,
-                max_tokens=300,
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt},
-                ],
-            )
-            result = json.loads(response.choices[0].message.content)
+    try:
+        result = await ai_orchestrator.run_json_task(
+            CLASSIFIER_TASK,
+            user_prompt,
+            metadata={"surface": "email_classifier"},
+        )
 
-            # Validate classification is a known category
-            valid_categories = {
-                "interview_request", "rejection", "offer",
-                "action_item", "job_update", "conversation", "not_relevant",
-            }
-            if result.get("classification") not in valid_categories:
-                result["classification"] = "job_update"
+        valid_categories = {
+            "interview_request", "rejection", "offer",
+            "action_item", "job_update", "conversation", "not_relevant",
+        }
+        if result.get("classification") not in valid_categories:
+            result["classification"] = "job_update"
 
-            return result
-
-        except openai.RateLimitError:
-            logger.warning(f"Rate limited on attempt {attempt + 1}")
-            await asyncio.sleep(30 * (attempt + 1))
-        except openai.APIStatusError as e:
-            if e.status_code == 529:  # overloaded
-                await asyncio.sleep(2 ** attempt)
-            elif attempt == 2:
-                logger.error(f"Classifier API error: {e}")
-                break
-        except json.JSONDecodeError:
-            logger.error(f"Classifier JSON parse failed on attempt {attempt + 1}")
-            if attempt == 2:
-                break
-        except Exception as e:
-            logger.error(f"Classifier unexpected error: {e}")
-            if attempt == 2:
-                break
+        return result
+    except Exception as e:
+        logger.error("Classifier unexpected error: %s", e)
+        ai_orchestrator.record_fallback(CLASSIFIER_TASK, "task_failure", {"surface": "email_classifier"})
 
     # Fallback: basic keyword classification
     return _fallback_classify(subject, body, sender_email, sender=sender)

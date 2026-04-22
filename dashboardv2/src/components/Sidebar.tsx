@@ -1,5 +1,5 @@
 import { motion } from 'motion/react';
-import { LayoutDashboard, Mail, Search, Download, BarChart2, MessageSquare, LogOut, RefreshCw, Users, CalendarDays, Settings, FlaskConical, Bug } from 'lucide-react';
+import { LayoutDashboard, Mail, Search, Download, BarChart2, MessageSquare, LogOut, RefreshCw, Users, CalendarDays, Settings, FlaskConical, Bug, Radar as RadarIcon } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Logo } from './Logo';
 import { useAuth } from '../lib/AuthContext';
@@ -20,6 +20,7 @@ export function Sidebar({ activeTab, setActiveTab, onGmailSync }: SidebarProps) 
 
   const navItems = [
     { id: 'dashboard', label: 'Pipeline', icon: LayoutDashboard },
+    { id: 'radar', label: 'Radar', icon: RadarIcon },
     { id: 'emails', label: 'Inbox', icon: Mail },
     { id: 'conversations', label: 'Conversations', icon: MessageSquare },
     { id: 'network', label: 'Network', icon: Users },

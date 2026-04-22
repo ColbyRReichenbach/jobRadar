@@ -166,6 +166,62 @@ function detectPlatformFromUrl(url) {
   return "generic";
 }
 
+const UNAVAILABLE_PAGE_PATTERNS = [
+  /sorry,\s*we couldn['’]t find anything here/i,
+  /job posting you['’]re looking for might have closed/i,
+  /this job is no longer available/i,
+  /job not found/i,
+  /the page you are looking for doesn['’]?t exist/i,
+  /the page you requested could not be found/i,
+  /\b404(?:\s+error)?\b/i,
+];
+
+function getPageTextSnapshot() {
+  const title = cleanText(document.title || "");
+  const bodyText = cleanText(
+    (document.body?.innerText || document.documentElement?.innerText || "").slice(0, 8000)
+  );
+  return [title, bodyText].filter(Boolean).join("\n");
+}
+
+function extractUnavailableJobState(platform) {
+  if (platform === "generic") return null;
+
+  if (platform === "greenhouse" && /(?:[?&])error=true(?:&|$)/i.test(window.location.search)) {
+    return {
+      title: null,
+      company: null,
+      description: null,
+      location: null,
+      salary: null,
+      department: null,
+      source: platform,
+      _method: "unavailable",
+      _page_state: "unavailable",
+      _extractor_version: EXTRACTOR_VERSION,
+    };
+  }
+
+  const pageText = getPageTextSnapshot();
+  if (!pageText) return null;
+
+  const matched = UNAVAILABLE_PAGE_PATTERNS.some((pattern) => pattern.test(pageText));
+  if (!matched) return null;
+
+  return {
+    title: null,
+    company: null,
+    description: null,
+    location: null,
+    salary: null,
+    department: null,
+    source: platform,
+    _method: "unavailable",
+    _page_state: "unavailable",
+    _extractor_version: EXTRACTOR_VERSION,
+  };
+}
+
 // ──────────────────────────────────────────────
 // Layer 1: JSON-LD extraction (all platforms)
 // ──────────────────────────────────────────────
@@ -370,6 +426,10 @@ function extractLinkedIn() {
 // View 3: Embedded on company career pages via iframe (src=boards.greenhouse.io)
 // View 4: Embedded via Greenhouse API-powered custom pages (gh_jid param)
 function extractGreenhouse() {
+  if (!/\/jobs\//.test(window.location.pathname)) {
+    return null;
+  }
+
   // Try __remixContext first (new board)
   const scripts = document.querySelectorAll("script");
   for (const script of scripts) {
@@ -1239,6 +1299,14 @@ const PLATFORM_EXTRACTORS = {
 
 function extractJobData() {
   const platform = detectPlatformFromUrl();
+  const unavailable = extractUnavailableJobState(platform);
+  if (unavailable) {
+    return unavailable;
+  }
+
+  if (platform === "greenhouse" && !/\/jobs\//.test(window.location.pathname)) {
+    return null;
+  }
 
   // Collect results from all layers — then merge.
   // This ensures e.g. JSON-LD title + DOM description both contribute.
@@ -1347,7 +1415,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "EXTRACT_JOB" || message.type === "EXTRACT_LINKEDIN_JOB") {
     // Try immediate extraction
     const data = extractJobData();
-    if (data && (data.title || data.company)) {
+    if (data && (data._page_state === "unavailable" || data.title || data.company)) {
       sendResponse(data);
       return false;
     }
@@ -1358,7 +1426,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const interval = setInterval(() => {
       attempts++;
       const retryData = extractJobData();
-      if ((retryData && (retryData.title || retryData.company)) || attempts >= maxAttempts) {
+      if (
+        (retryData && (retryData._page_state === "unavailable" || retryData.title || retryData.company)) ||
+        attempts >= maxAttempts
+      ) {
         clearInterval(interval);
         sendResponse(retryData || null);
       }

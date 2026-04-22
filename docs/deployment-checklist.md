@@ -1,183 +1,134 @@
 # Deployment Checklist
 
-## Chosen Stack
+This checklist covers the current deployment shape for AppTrail and the minimum steps to bring up a working production environment.
+
+## Recommended Production Layout
 
 - Dashboard: Vercel
-- Backend web API: Railway
-- Celery worker: Railway
-- Celery beat: Railway
-- PostgreSQL: Railway managed Postgres
-- Redis: Railway managed Redis
+- Backend API: Railway or another container host
+- Celery worker: separate service on the same host
+- Celery beat: separate service on the same host
+- Database: PostgreSQL
+- Queue and ephemeral auth state: Redis
 
-## Railway Services
+That split matches the product design. The dashboard is static-plus-API, while the backend, worker, and scheduler have different runtime profiles and should be deployable independently.
 
-Create one Railway project with these services:
+## Local Docker Stack
 
-1. `web`
-   - Source: this repo
-   - Runtime: `backend/Dockerfile`
-   - Start command: `gunicorn -c gunicorn.conf.py backend.main:app`
+For local verification, the repo already supports a full Docker workflow:
 
-2. `worker`
-   - Source: this repo
-   - Runtime: `backend/Dockerfile`
-   - Start command: `celery -A backend.celery_app:celery_app worker --loglevel=info`
+```bash
+make local-env
+make local-up
+```
 
-3. `beat`
-   - Source: this repo
-   - Runtime: `backend/Dockerfile`
-   - Start command: `celery -A backend.celery_app:celery_app beat --loglevel=info`
+Or the one-command startup path:
 
-4. `postgres`
-   - Railway managed Postgres
+```bash
+make local-open
+```
 
-5. `redis`
-   - Railway managed Redis
+The local stack brings up:
 
-## Vercel Project
-
-Create one Vercel project for `dashboardv2/`.
-
-- Root directory: `dashboardv2`
-- Framework preset: Vite
-- Required env var:
-  - `VITE_API_URL=https://<your-backend-domain>`
+- Postgres
+- Redis
+- migration job
+- backend API
+- Celery worker
+- Celery beat
+- dashboard
 
 ## Required Backend Environment Variables
 
-Set these on all Railway runtime services unless noted otherwise.
+These should be set on the backend API and any worker process unless noted otherwise.
 
-### Required
+### Core
 
 - `ENVIRONMENT=production`
-- `JWT_SECRET=<strong-random-secret>`
-- `DATABASE_URL=<Railway Postgres asyncpg URL>`
-- `REDIS_URL=<Railway Redis URL>`
-- `DASHBOARD_URL=https://<your-vercel-domain>`
-- `GMAIL_CLIENT_ID=<google-oauth-client-id>`
-- `GMAIL_CLIENT_SECRET=<google-oauth-client-secret>`
-- `GOOGLE_REDIRECT_URI=https://<your-backend-domain>/api/auth/google/callback`
-- `APPTRAIL_GMAIL_TOKEN_ENCRYPTION_KEY=<valid-fernet-key>`
-- `ANTHROPIC_API_KEY=<anthropic-key>`
+- `DATABASE_URL`
+- `REDIS_URL`
+- `JWT_SECRET`
+- `DASHBOARD_URL`
+- `APPTRAIL_GMAIL_TOKEN_ENCRYPTION_KEY`
 
-### Required if you use these features
+### Google auth and Gmail
 
-- `SERPAPI_KEY=<serpapi-key>`
-- `HUNTER_API_KEY=<hunter-key>`
-- `TWILIO_ACCOUNT_SID=<twilio-sid>`
-- `TWILIO_AUTH_TOKEN=<twilio-auth-token>`
-- `TWILIO_FROM_NUMBER=<twilio-number>`
+- `GMAIL_CLIENT_ID`
+- `GMAIL_CLIENT_SECRET`
+- `GOOGLE_REDIRECT_URI`
 
-### Recommended
+### Product integrations
 
-- `RATE_LIMIT_STORAGE_URI=<same as REDIS_URL>`
-- `WEB_CONCURRENCY=2`
-- `DB_POOL_SIZE=10`
-- `DB_MAX_OVERFLOW=20`
-- `DB_POOL_TIMEOUT_SECONDS=30`
-- `DB_POOL_RECYCLE_SECONDS=1800`
-- `CELERY_CONCURRENCY=4`
-- `CELERY_PREFETCH_MULTIPLIER=1`
-- `CELERY_MAX_TASKS_PER_CHILD=100`
-- `CELERY_SOFT_TIME_LIMIT_SECONDS=300`
-- `CELERY_TIME_LIMIT_SECONDS=600`
-- `CELERY_RESULT_EXPIRES_SECONDS=3600`
+- `OPENAI_API_KEY` for classification, drafting, resume parsing, and resume tailoring
+- `HUNTER_API_KEY` if contact enrichment is enabled
+- `SERPAPI_KEY` if job search is enabled
+- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_FROM_NUMBER` if SMS alerts are enabled
 
-### Optional Observability
+### Observability
 
-- `SENTRY_DSN=<sentry-dsn>`
-- `SENTRY_ENVIRONMENT=production`
-- `SENTRY_TRACES_SAMPLE_RATE=0.1`
-- `APP_VERSION=<git-sha-or-release-tag>`
-- `PROMETHEUS_MULTIPROC_DIR=/tmp/prometheus`
+- `SENTRY_DSN` if Sentry is enabled
+- `SENTRY_ENVIRONMENT`
+- `PROMETHEUS_MULTIPROC_DIR` if you are exporting metrics from multi-process workers
 
-## Variables You Do Not Need For This Stack
+## Dashboard Environment Variables
 
-- `APPTRAIL_API_KEY`
-  - Legacy/testing fallback only. Production extension auth is now per-user.
-- `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY`
-  - The current production plan uses Railway Postgres, not Supabase.
+- `VITE_API_URL=https://<backend-domain>`
+- `VITE_CHROME_EXTENSION_URL=https://chromewebstore.google.com/detail/apptrail/<extension-id>` once the extension is published
 
-## Generate Missing Secrets
+`VITE_LOCAL_DEV_AUTH` is for local-only workflows and should stay off in production.
 
-### JWT secret
+## Service Start Commands
+
+### Backend API
 
 ```bash
-openssl rand -hex 32
+gunicorn -c gunicorn.conf.py backend.main:app
 ```
 
-### Gmail token encryption key
+### Worker
 
 ```bash
-python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+celery -A backend.celery_app:celery_app worker --loglevel=info
 ```
 
-## Google OAuth Setup
+### Beat
 
-In Google Cloud Console, update the OAuth client to include:
-
-- Authorized redirect URI:
-  - `https://<your-backend-domain>/api/auth/google/callback`
-
-Local development can keep:
-
-- `http://localhost:8000/api/auth/google/callback`
-
-## GitHub Secrets For Existing Deploy Workflow
-
-The repo already has a deploy workflow in `.github/workflows/deploy.yml`.
-
-Set these GitHub Actions secrets if you want push-to-main deploys:
-
-### Railway
-
-- `RAILWAY_API_TOKEN`
-- `RAILWAY_PROJECT_ID`
-- `RAILWAY_ENVIRONMENT`
-- `RAILWAY_SERVICE`
-
-Note: the current workflow deploys one Railway service. If you want full CI deploy automation for `web`, `worker`, and `beat`, expand the workflow to deploy each service explicitly.
-
-### Vercel
-
-- `VERCEL_TOKEN`
-- `VERCEL_ORG_ID`
-- `VERCEL_PROJECT_ID`
+```bash
+celery -A backend.celery_app:celery_app beat --loglevel=info
+```
 
 ## Deployment Order
 
-1. Create Railway project and add Postgres + Redis.
-2. Create Railway `web`, `worker`, and `beat` services from this repo.
-3. Set all Railway env vars.
-4. Assign a public Railway domain to the `web` service.
-5. Create the Vercel project for `dashboardv2/`.
-6. Set `VITE_API_URL` in Vercel to the Railway backend URL.
-7. Deploy Vercel and note the final dashboard URL.
-8. Update Railway `DASHBOARD_URL` to the final Vercel URL.
-9. Update Google OAuth redirect URI to the Railway backend callback URL.
-10. Run database migrations:
-    - via Railway release command, or
-    - manually: `alembic upgrade head`
-11. Smoke test:
-    - `GET /api/health`
-    - Google sign-in
-    - Gmail connect
-    - Calendar connect
-    - manual Gmail sync
-    - create one application
-    - generate one resume draft
-    - extension API key generation
+1. Provision PostgreSQL and Redis.
+2. Set backend secrets and environment variables.
+3. Deploy the backend API.
+4. Run `alembic upgrade head`.
+5. Deploy the worker and beat services against the same code revision.
+6. Deploy the dashboard with the correct `VITE_API_URL`.
+7. Verify Google OAuth redirect URIs match the deployed backend.
+8. Verify extension backend hosts if the extension will talk to production.
 
-## Recommended First Production Domain Layout
+## Pre-Launch Checks
 
-- Dashboard: `https://app.apptrail.com`
-- Backend API: `https://api.apptrail.com`
+- `pytest -q` passes on the release commit
+- dashboard production build succeeds
+- migrations apply cleanly from the previous production version
+- Google sign-in works
+- refresh-token flow works
+- Gmail connect and manual sync work
+- a worker can pick up scheduled jobs
+- `/metrics` is reachable from your monitoring system
+- `GET /api/ai/metrics` is protected and works for authenticated users
 
-That keeps OAuth, CORS, and `VITE_API_URL` clear and predictable.
+## Post-Launch Checks
 
-## Notes
+- create a test account and sign in end to end
+- connect Gmail and trigger a sync
+- save a job through the dashboard
+- save a job through the extension
+- verify the worker processes scheduled tasks
+- confirm logs, Sentry, and metrics are visible
 
-- Keep `worker` and `beat` separate from `web`. Do not run Celery inside the API process.
-- Start with Railway managed Postgres/Redis first. You can swap to external managed providers later if needed.
-- If you want to close GAP-003 next, use the Railway Redis instance as the shared revocation/rate-limit store.
+## Release Notes To Keep Current
+
+When the production setup changes, update this file first. It is the operational deployment document for the repo. Historical deployment thinking now lives in the archive.

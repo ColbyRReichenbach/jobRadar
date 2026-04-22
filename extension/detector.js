@@ -27,8 +27,8 @@ const PLATFORM_PATTERNS = [
   },
   {
     platform: "greenhouse",
-    regex: /(?:job-)?boards\.greenhouse\.io\/([^/]+)/,
-    extract: (m) => ({ token: m[1] }),
+    regex: /(?:job-)?boards\.greenhouse\.io\/([^/?]+)\?(?:[^#]*&)?error=true(?:[&#]|$)/,
+    extract: (m) => ({ token: m[1], unavailable: true }),
   },
   {
     platform: "greenhouse_hosted",

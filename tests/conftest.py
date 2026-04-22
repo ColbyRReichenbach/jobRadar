@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 # through, asyncpg tries to connect at import time and hangs the test suite.
 os.environ["TESTING"] = "1"
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
+os.environ["REDIS_URL"] = ""
 os.environ.setdefault("APPTRAIL_API_KEY", "test-api-key-for-testing")
 os.environ.setdefault("APPTRAIL_GMAIL_TOKEN_ENCRYPTION_KEY", "9gesi-IgHlO6wRffB63j5cbQhIXnGGCKuxr0IFnAcaM=")
 os.environ.setdefault("JWT_SECRET", "test-jwt-secret-for-testing")
@@ -47,6 +48,14 @@ _USER_SCOPED_MODELS = {
     "NotificationPreference",
     "ResumeDraft",
     "Alert",
+    "ResearchProfile",
+    "ResearchRun",
+    "ResearchSourceItem",
+    "OpportunitySignal",
+    "OpportunityScore",
+    "OpportunityBrief",
+    "RecommendedAction",
+    "ResearchFeedback",
 }
 
 

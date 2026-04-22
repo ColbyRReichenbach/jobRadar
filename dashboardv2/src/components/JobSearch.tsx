@@ -20,11 +20,19 @@ interface SearchResult {
   type: string;
   posted: string;
   description: string;
-  logoUrl: string;
+  logoUrl?: string;
   url?: string;
   matchScore?: number | null;
   fitLabel?: 'best_fit' | 'good_fit' | 'stretch' | null;
   matchedSkills?: string[];
+}
+
+function displayRole(result: SearchResult): string {
+  return result.role || 'Role unavailable';
+}
+
+function displayCompany(result: SearchResult): string {
+  return result.company || 'Company unavailable';
 }
 
 export function JobSearch({ jobs, setJobs }: JobSearchProps) {
@@ -51,16 +59,16 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
       const results = await searchJobs(searchQuery);
       const mappedResults: SearchResult[] = results.map((r: any) => ({
         id: r.id || r.url || Math.random().toString(),
-        company: r.company || 'Unknown',
-        role: r.title || 'Unknown Role',
+        company: r.company || '',
+        role: r.title || '',
         location: r.location || '',
         salary: r.salary || '',
         type: 'Full-time',
         posted: r.posted_at ? new Date(r.posted_at).toLocaleDateString() : 'Recently',
-        description: r.description || r.source || '',
-        logoUrl: `https://logo.clearbit.com/${(r.company || '').toLowerCase().replace(/\s+/g, '')}.com`,
+        description: r.description || '',
+        logoUrl: r.logo_url || undefined,
         url: r.url,
-      }));
+      })).filter((result) => result.company || result.role || result.url);
       try {
         const preview = await getSearchMatchPreview(
           mappedResults.map((result) => ({
@@ -104,6 +112,11 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
   const handleSave = async (e: MouseEvent, result: SearchResult) => {
     e.stopPropagation();
     if (jobs.some(j => j.company === result.company && j.role === result.role)) return;
+
+    if (!result.company || !result.role) {
+      setErrorMessage('This result is missing a company or job title, so it cannot be saved yet.');
+      return;
+    }
 
     try {
       const duplicateCheck = await checkJobDuplicates({
@@ -246,21 +259,21 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
               }}
               role="button"
               tabIndex={0}
-              aria-label={`Open ${result.role} at ${result.company}`}
+              aria-label={`Open ${displayRole(result)} at ${displayCompany(result)}`}
               className="p-5 group cursor-pointer transition-all bg-white rounded-3xl border border-slate-100 hover:shadow-[0_8px_30px_rgb(0,0,0,0.04)] focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300"
             >
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-100">
                     {result.logoUrl ? (
-                      <img src={result.logoUrl} alt={result.company} className="w-10 h-10 rounded-xl" referrerPolicy="no-referrer" />
+                      <img src={result.logoUrl} alt={displayCompany(result)} className="w-10 h-10 rounded-xl" referrerPolicy="no-referrer" />
                     ) : (
                       <Building2 className="w-5 h-5 text-slate-400" />
                     )}
                   </div>
                   <div>
-                    <h3 className="text-lg font-serif font-bold text-slate-900">{result.role}</h3>
-                    <p className="text-sm text-slate-500 font-sans">{result.company}</p>
+                    <h3 className="text-lg font-serif font-bold text-slate-900">{displayRole(result)}</h3>
+                    <p className="text-sm text-slate-500 font-sans">{displayCompany(result)}</p>
                     {result.fitLabel && (
                       <div className="mt-2">
                         {fitBadge(result)}
@@ -328,15 +341,15 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
               <div className="p-6 border-b border-slate-100 flex items-start justify-between bg-slate-50/50 shrink-0">
                 <div className="flex items-start gap-4 pr-4">
                   {selectedJob.logoUrl ? (
-                    <img src={selectedJob.logoUrl} alt={selectedJob.company} className="w-16 h-16 rounded-2xl border border-slate-100 shrink-0 bg-white" referrerPolicy="no-referrer" />
+                    <img src={selectedJob.logoUrl} alt={displayCompany(selectedJob)} className="w-16 h-16 rounded-2xl border border-slate-100 shrink-0 bg-white" referrerPolicy="no-referrer" />
                   ) : (
                     <div className="w-16 h-16 flex items-center justify-center rounded-2xl bg-white border border-slate-100 shrink-0">
                       <Building2 className="w-8 h-8 text-slate-400" />
                     </div>
                   )}
                   <div className="min-w-0 flex-1">
-                    <h2 id={selectedJobTitleId} className="text-2xl tracking-tight font-serif font-bold text-slate-900 break-words">{selectedJob.role}</h2>
-                    <p className="text-lg text-slate-500 font-sans truncate">{selectedJob.company}</p>
+                    <h2 id={selectedJobTitleId} className="text-2xl tracking-tight font-serif font-bold text-slate-900 break-words">{displayRole(selectedJob)}</h2>
+                    <p className="text-lg text-slate-500 font-sans truncate">{displayCompany(selectedJob)}</p>
                   </div>
                 </div>
                 <button 
@@ -364,17 +377,23 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
 
                 <div className="prose prose-slate max-w-none mb-4">
                   <h3 className="text-xl font-serif font-bold text-slate-900 mb-2">About the role</h3>
-                  <p className="text-slate-600 leading-relaxed">{selectedJob.description}</p>
-                  <p className="text-slate-600 leading-relaxed mt-4">
-                    Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.
-                  </p>
-                  <h3 className="text-xl font-serif font-bold text-slate-900 mt-6 mb-2">Requirements</h3>
-                  <ul className="list-disc pl-5 text-slate-600 space-y-2">
-                    <li>3+ years of experience in a similar role</li>
-                    <li>Strong portfolio demonstrating your skills</li>
-                    <li>Excellent communication and collaboration abilities</li>
-                    <li>Experience working in a fast-paced environment</li>
-                  </ul>
+                  {selectedJob.description ? (
+                    <p className="text-slate-600 leading-relaxed whitespace-pre-line">{selectedJob.description}</p>
+                  ) : (
+                    <p className="text-slate-500 leading-relaxed">No detailed job description was returned for this search result.</p>
+                  )}
+                  {selectedJob.matchedSkills && selectedJob.matchedSkills.length > 0 && (
+                    <>
+                      <h3 className="text-xl font-serif font-bold text-slate-900 mt-6 mb-2">Matched skills</h3>
+                      <div className="flex flex-wrap gap-2">
+                        {selectedJob.matchedSkills.map((skill) => (
+                          <span key={`modal-${selectedJob.id}-${skill}`} className="rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-700">
+                            {skill}
+                          </span>
+                        ))}
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -382,10 +401,18 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
               <div className="p-6 border-t border-slate-100 bg-slate-50/50 shrink-0 flex flex-col sm:flex-row items-center gap-4">
                 <button 
                   onClick={(e) => handleSave(e, selectedJob)}
-                  disabled={jobs.some(j => j.company === selectedJob.company && j.role === selectedJob.role)}
+                  disabled={
+                    !selectedJob.company ||
+                    !selectedJob.role ||
+                    jobs.some(j => j.company === selectedJob.company && j.role === selectedJob.role)
+                  }
                   className="w-full sm:flex-1 py-3 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-medium shadow-sm transition-colors disabled:bg-slate-200 disabled:text-slate-500"
                 >
-                  {jobs.some(j => j.company === selectedJob.company && j.role === selectedJob.role) ? 'Saved to Pipeline' : 'Save to Pipeline'}
+                  {!selectedJob.company || !selectedJob.role
+                    ? 'Missing Required Details'
+                    : jobs.some(j => j.company === selectedJob.company && j.role === selectedJob.role)
+                      ? 'Saved to Pipeline'
+                      : 'Save to Pipeline'}
                 </button>
                 {selectedJob?.url ? (
                   <button

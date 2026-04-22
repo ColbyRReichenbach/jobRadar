@@ -26,7 +26,8 @@ rm -f "${OUTPUT_PATH}"
   zip -r "${OUTPUT_PATH}" . \
     -x "*.DS_Store" \
     -x "__MACOSX/*" \
-    -x "images/icon-source.svg"
+    -x "images/icon-source.svg" \
+    -x "store/*"
 )
 
 echo "Packaged: ${OUTPUT_NAME}"

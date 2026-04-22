@@ -1,3 +1,4 @@
+import logging
 import os
 import uuid
 import hashlib
@@ -11,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_db
 
+_logger = logging.getLogger(__name__)
 
 # --- JWT Configuration ---
 
@@ -36,19 +38,91 @@ JWT_SECRET = _get_jwt_secret()
 JWT_ALGORITHM = "HS256"
 
 
-# --- Token Blacklist (in-memory for now, Redis in GAP-003) ---
+# --- Token Blacklist (Redis-backed with in-memory fallback) ---
 
-_token_blacklist: set[str] = set()
+_BLACKLIST_KEY_PREFIX = "apptrail:blacklist:"
+_token_blacklist: set[str] = set()  # in-memory fallback
+_redis_client = None
+
+
+def _get_redis_client():
+    global _redis_client
+    if os.getenv("TESTING") == "1":
+        return None
+    if _redis_client is not None:
+        return _redis_client
+    redis_url = os.getenv("REDIS_URL")
+    if not redis_url:
+        return None
+    try:
+        import redis
+        _redis_client = redis.from_url(redis_url, decode_responses=True)
+        _redis_client.ping()
+        _logger.info("Token blacklist using Redis")
+        return _redis_client
+    except Exception as exc:
+        _logger.warning("Redis unavailable for token blacklist, using in-memory fallback: %s", exc)
+        _redis_client = None
+        return None
 
 
 def blacklist_token(jti: str) -> None:
-    """Add a token's JTI to the blacklist."""
+    """Add a token's JTI to the blacklist (Redis with in-memory fallback)."""
+    client = _get_redis_client()
+    if client:
+        try:
+            client.setex(f"{_BLACKLIST_KEY_PREFIX}{jti}", ACCESS_TOKEN_EXPIRY, "1")
+            return
+        except Exception:
+            _logger.warning("Redis blacklist write failed, falling back to in-memory")
     _token_blacklist.add(jti)
 
 
 def is_token_blacklisted(jti: str) -> bool:
     """Check if a token JTI has been revoked."""
+    client = _get_redis_client()
+    if client:
+        try:
+            return bool(client.exists(f"{_BLACKLIST_KEY_PREFIX}{jti}"))
+        except Exception:
+            _logger.warning("Redis blacklist read failed, falling back to in-memory")
     return jti in _token_blacklist
+
+
+# --- One-Time Auth Code Exchange ---
+# After Google OAuth, we store a short-lived code in Redis/memory that the
+# frontend exchanges for the real JWT. This avoids putting the JWT in the URL.
+
+_AUTH_CODE_PREFIX = "apptrail:authcode:"
+_AUTH_CODE_TTL = 120  # 2 minutes
+_auth_code_store: dict[str, str] = {}  # in-memory fallback
+
+
+def store_auth_code(code: str, payload_json: str) -> None:
+    """Store a one-time auth code that maps to a JWT payload."""
+    client = _get_redis_client()
+    if client:
+        try:
+            client.setex(f"{_AUTH_CODE_PREFIX}{code}", _AUTH_CODE_TTL, payload_json)
+            return
+        except Exception:
+            _logger.warning("Redis auth code store failed, using in-memory fallback")
+    _auth_code_store[code] = payload_json
+
+
+def consume_auth_code(code: str) -> str | None:
+    """Retrieve and delete a one-time auth code. Returns the payload JSON or None."""
+    client = _get_redis_client()
+    if client:
+        try:
+            pipe = client.pipeline()
+            pipe.get(f"{_AUTH_CODE_PREFIX}{code}")
+            pipe.delete(f"{_AUTH_CODE_PREFIX}{code}")
+            results = pipe.execute()
+            return results[0]
+        except Exception:
+            _logger.warning("Redis auth code consume failed, using in-memory fallback")
+    return _auth_code_store.pop(code, None)
 
 
 # --- Token Creation ---
@@ -197,3 +271,29 @@ def clear_refresh_cookie(response) -> None:
         samesite=same_site,
         path="/api/auth",
     )
+
+
+async def check_ai_consent(user_id: uuid.UUID, db: AsyncSession) -> bool:
+    """Return True if the user has granted ai_processing consent."""
+    from backend.models import DataConsent
+    result = await db.execute(
+        select(DataConsent).where(
+            DataConsent.user_id == user_id,
+            DataConsent.consent_type == "ai_processing",
+            DataConsent.granted == True,
+        )
+    )
+    return result.scalar_one_or_none() is not None
+
+
+async def check_enrichment_consent(user_id: uuid.UUID, db: AsyncSession) -> bool:
+    """Return True if the user has granted third_party_enrichment consent."""
+    from backend.models import DataConsent
+    result = await db.execute(
+        select(DataConsent).where(
+            DataConsent.user_id == user_id,
+            DataConsent.consent_type == "third_party_enrichment",
+            DataConsent.granted == True,
+        )
+    )
+    return result.scalar_one_or_none() is not None

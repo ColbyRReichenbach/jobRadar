@@ -946,7 +946,7 @@ export function EmailFeed({
                 <div className="max-w-[72rem] mx-auto flex gap-3 flex-wrap">
                   {selectedMessage.classification === 'action_item' && selectedMessage.actionUrl && (
                     <button
-                      onClick={() => openExternal(selectedMessage.actionUrl)}
+                      onClick={() => openExternal(selectedMessage.actionUrl!)}
                       className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-xl shadow-sm hover:bg-indigo-700 transition-colors"
                     >
                       Take Action

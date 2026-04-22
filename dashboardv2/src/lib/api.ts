@@ -1,11 +1,17 @@
-import { Job, Email, Contact } from '../types';
+import { Job, Email, Contact, ResearchProfile, OpportunitySignal, OpportunityBrief, RecommendedAction, RadarFeedbackStats } from '../types';
 
 function normalizeApiBase(rawBase: string): string {
   return rawBase.replace(/\/+$/, '').replace(/\/api$/, '');
 }
 
-const API_BASE = normalizeApiBase(import.meta.env.VITE_API_URL || 'http://localhost:8000');
+const rawApiUrl = import.meta.env.VITE_API_URL;
+if (!rawApiUrl && import.meta.env.PROD) {
+  throw new Error('VITE_API_URL environment variable is required for production builds.');
+}
+const API_BASE = normalizeApiBase(rawApiUrl || 'http://localhost:8000');
 const PAGE_SIZE = 100;
+export const LOCAL_DEV_AUTH_ENABLED = import.meta.env.VITE_LOCAL_DEV_AUTH === 'true';
+const AUTH_SESSION_HINT_KEY = 'apptrail-auth-session';
 
 let _accessToken: string | null = null;
 let _unauthorizedHandler: (() => void) | null = null;
@@ -28,6 +34,28 @@ function resolveUrl(pathOrUrl: string): string {
     return pathOrUrl;
   }
   return `${API_BASE}${pathOrUrl}`;
+}
+
+function readSessionHint(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.localStorage.getItem(AUTH_SESSION_HINT_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function writeSessionHint(enabled: boolean) {
+  if (typeof window === 'undefined') return;
+  try {
+    if (enabled) {
+      window.localStorage.setItem(AUTH_SESSION_HINT_KEY, 'true');
+    } else {
+      window.localStorage.removeItem(AUTH_SESSION_HINT_KEY);
+    }
+  } catch {
+    // Ignore storage failures and fall back to in-memory auth only.
+  }
 }
 
 async function readErrorDetail(res: Response, fallback: string): Promise<string> {
@@ -65,6 +93,7 @@ async function fetchPaginatedArray<T>(buildPath: (limit: number, offset: number)
 
 function notifyUnauthorized() {
   _accessToken = null;
+  writeSessionHint(false);
   _unauthorizedHandler?.();
   fetch(`${API_BASE}/api/auth/logout`, {
     method: 'POST',
@@ -79,7 +108,7 @@ export async function apiFetch(pathOrUrl: string, options: RequestInit = {}): Pr
   const url = resolveUrl(pathOrUrl);
   let res = await fetch(url, { ...options, credentials: 'include' });
 
-  if (res.status === 401) {
+  if (res.status === 401 && readSessionHint()) {
     // Try to refresh
     const refreshed = await refreshAccessToken();
     if (refreshed) {
@@ -103,9 +132,15 @@ async function refreshAccessToken(): Promise<boolean> {
       method: 'POST',
       credentials: 'include',
     });
-    if (!res.ok) return false;
+    if (!res.ok) {
+      if (res.status === 401 || res.status === 403) {
+        writeSessionHint(false);
+      }
+      return false;
+    }
     const data = await res.json();
     _accessToken = data.access_token;
+    writeSessionHint(true);
     return true;
   } catch {
     return false;
@@ -121,6 +156,22 @@ export interface UserProfile {
   picture: string;
   gmail_connected: boolean;
   calendar_connected: boolean;
+  data_consent_accepted_at: string | null;
+}
+
+export interface ConsentStatus {
+  consents: {
+    core: boolean;
+    ai_processing: boolean;
+    third_party_enrichment: boolean;
+  };
+  accepted_at: string | null;
+}
+
+export interface ConsentUpdate {
+  core: boolean;
+  ai_processing: boolean;
+  third_party_enrichment: boolean;
 }
 
 export interface NotificationPrefs {
@@ -155,6 +206,11 @@ export interface ApiKeyCreateResponse {
 export interface GoogleAuthOptions {
   connectGmail?: boolean;
   connectCalendar?: boolean;
+}
+
+export interface LocalAuthOptions {
+  email?: string;
+  name?: string;
 }
 
 export interface AlertItem {
@@ -225,10 +281,32 @@ export async function getGoogleAuthUrl(options: GoogleAuthOptions = {}): Promise
   return data.auth_url;
 }
 
+export async function signInLocalDev(options: LocalAuthOptions = {}): Promise<boolean> {
+  const res = await fetch(`${API_BASE}/api/auth/local-login`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(options),
+  });
+  if (!res.ok) {
+    throw new Error(await readErrorDetail(res, 'Failed to start local session'));
+  }
+  const data = await res.json();
+  if (!data?.access_token) {
+    throw new Error('Local session did not return an access token');
+  }
+  _accessToken = data.access_token;
+  writeSessionHint(true);
+  return true;
+}
+
 export async function fetchMe(): Promise<UserProfile | null> {
   const token = getToken();
   if (!token) {
-    // Try refreshing first (page reload scenario)
+    if (!readSessionHint()) {
+      return null;
+    }
+    // Try refreshing first when we believe a session exists.
     const refreshed = await refreshAccessToken();
     if (!refreshed) return null;
   }
@@ -298,6 +376,25 @@ export async function generateApiKey(): Promise<ApiKeyCreateResponse> {
 
 export function setAuthToken(token: string) {
   _accessToken = token;
+  writeSessionHint(true);
+}
+
+export async function exchangeAuthCode(code: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/exchange`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ code }),
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    _accessToken = data.access_token;
+    writeSessionHint(true);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function setUnauthorizedHandler(handler: (() => void) | null) {
@@ -307,6 +404,7 @@ export function setUnauthorizedHandler(handler: (() => void) | null) {
 export function clearAuthToken() {
   const token = _accessToken;
   _accessToken = null;
+  writeSessionHint(false);
   _unauthorizedHandler?.();
   // Also call logout to clear refresh cookie
   fetch(`${API_BASE}/api/auth/logout`, {
@@ -331,7 +429,7 @@ function mapJob(raw: any): Job {
     salary: raw.salary || undefined,
     status: raw.status,
     dateAdded: raw.applied_at || new Date().toISOString(),
-    logoUrl: raw.logo_url || `https://logo.clearbit.com/${raw.company?.toLowerCase().replace(/\s+/g, '')}.com`,
+    logoUrl: raw.logo_url || undefined,
     source: raw.source || undefined,
     contacts: raw.contacts?.map(mapContact) || [],
     description: raw.description_text || undefined,
@@ -928,6 +1026,113 @@ export async function exportCsv(): Promise<void> {
   URL.revokeObjectURL(url);
 }
 
+
+export async function fetchResearchProfiles(): Promise<ResearchProfile[]> {
+  const res = await apiFetch(`${API_BASE}/api/research/profiles`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to fetch research profiles'));
+  return await res.json();
+}
+
+export async function createResearchProfile(payload: Partial<ResearchProfile>): Promise<ResearchProfile> {
+  const res = await apiFetch(`${API_BASE}/api/research/profiles`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to create research profile'));
+  return await res.json();
+}
+
+export async function updateResearchProfile(id: string, payload: Partial<ResearchProfile>): Promise<ResearchProfile> {
+  const res = await apiFetch(`${API_BASE}/api/research/profiles/${id}`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to update research profile'));
+  return await res.json();
+}
+
+export async function deleteResearchProfile(id: string): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/api/research/profiles/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to delete research profile'));
+}
+
+export async function runResearchProfile(id: string): Promise<any> {
+  const res = await apiFetch(`${API_BASE}/api/research/profiles/${id}/run`, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to run research profile'));
+  return await res.json();
+}
+
+export async function fetchResearchRuns(profileId?: string): Promise<any[]> {
+  const query = profileId ? `?profile_id=${encodeURIComponent(profileId)}` : '';
+  const res = await apiFetch(`${API_BASE}/api/research/runs${query}`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to fetch research runs'));
+  return await res.json();
+}
+
+export async function fetchOpportunitySignals(profileId?: string): Promise<OpportunitySignal[]> {
+  const query = profileId ? `?profile_id=${encodeURIComponent(profileId)}` : '';
+  const res = await apiFetch(`${API_BASE}/api/research/signals${query}`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to fetch opportunity signals'));
+  return await res.json();
+}
+
+export async function fetchOpportunityBriefs(profileId?: string): Promise<OpportunityBrief[]> {
+  const query = profileId ? `?profile_id=${encodeURIComponent(profileId)}` : '';
+  const res = await apiFetch(`${API_BASE}/api/research/briefs${query}`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to fetch opportunity briefs'));
+  return await res.json();
+}
+
+export async function fetchRecommendedActions(profileId?: string): Promise<RecommendedAction[]> {
+  const query = profileId ? `?profile_id=${encodeURIComponent(profileId)}` : '';
+  const res = await apiFetch(`${API_BASE}/api/research/actions${query}`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to fetch recommended actions'));
+  return await res.json();
+}
+
+export async function updateRecommendedAction(id: string, payload: { status: string }): Promise<RecommendedAction> {
+  const res = await apiFetch(`${API_BASE}/api/research/actions/${id}`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to update recommended action'));
+  return await res.json();
+}
+
+export async function acceptRecommendedAction(id: string): Promise<RecommendedAction> {
+  const res = await apiFetch(`${API_BASE}/api/research/actions/${id}/accept`, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to accept recommended action'));
+  return await res.json();
+}
+
+export async function sendResearchFeedback(payload: { signal_id?: string; brief_id?: string; action_id?: string; rating: string; notes?: string }): Promise<any> {
+  const res = await apiFetch(`${API_BASE}/api/research/feedback`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to save research feedback'));
+  return await res.json();
+}
+
+export async function fetchResearchFeedbackStats(): Promise<RadarFeedbackStats> {
+  const res = await apiFetch(`${API_BASE}/api/research/feedback/stats`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to load Radar feedback stats'));
+  return await res.json();
+}
+
 // ── Classifier Audit API ─────────────────────────────────────────────
 
 export interface AuditClassMetrics {
@@ -1173,4 +1378,37 @@ export async function fetchFeedbackStats(): Promise<FeedbackStats> {
   const res = await apiFetch(`${API_BASE}/api/emails/feedback/stats`, { headers: authHeaders() });
   if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to load feedback stats'));
   return res.json();
+}
+
+// ── Data Consent & Account ──────────────────────────────────────────────
+
+export async function fetchConsent(): Promise<ConsentStatus> {
+  const res = await apiFetch(`${API_BASE}/api/consent`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to load consent status'));
+  return res.json();
+}
+
+export async function updateConsent(body: ConsentUpdate): Promise<ConsentStatus> {
+  const res = await apiFetch(`${API_BASE}/api/consent`, {
+    method: 'PUT',
+    headers: authHeaders(),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to update consent'));
+  return res.json();
+}
+
+export async function deleteAccount(): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/api/account`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+    body: JSON.stringify({ confirm: 'DELETE' }),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to delete account'));
+}
+
+export async function exportAccountData(): Promise<Blob> {
+  const res = await apiFetch(`${API_BASE}/api/account/export`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to export data'));
+  return res.blob();
 }

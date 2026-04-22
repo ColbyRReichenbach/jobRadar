@@ -60,7 +60,7 @@ async def search_serpapi(query: str, location: str) -> list[dict]:
             "source": "serpapi",
             "url": job.get("related_links", [{}])[0].get("link") if job.get("related_links") else None,
             "posted_at": job.get("detected_extensions", {}).get("posted_at"),
-            "description_snippet": (job.get("description") or "")[:500],
+            "description": (job.get("description") or "")[:500],
         })
     return results
 
@@ -90,7 +90,7 @@ async def search_greenhouse(company_token: str) -> list[dict]:
             "source": "greenhouse",
             "url": job.get("absolute_url"),
             "posted_at": job.get("updated_at"),
-            "description_snippet": None,
+            "description": None,
         })
     return results
 

@@ -75,6 +75,7 @@ export function Analytics({ jobs }: AnalyticsProps) {
 
   const conversionRate = totalApplied > 0 ? ((totalInterviews / totalApplied) * 100).toFixed(1) : '0';
   const offerRate = totalInterviews > 0 ? ((totalOffers / totalInterviews) * 100).toFixed(1) : '0';
+  const hasAnalyticsData = filteredJobs.length > 0;
 
   const timeRangeText = timeRange === 'all' ? 'all time' : `the last ${timeRange.replace('d', ' days')}`;
 
@@ -126,7 +127,21 @@ export function Analytics({ jobs }: AnalyticsProps) {
           </motion.div>
         </div>
 
+        {!hasAnalyticsData && (
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-white rounded-3xl border border-slate-100 shadow-sm p-10 text-center"
+          >
+            <h2 className="text-2xl font-serif font-bold text-slate-900">No analytics yet</h2>
+            <p className="mt-3 text-slate-500">
+              Add jobs to your pipeline and move them through statuses to unlock charts, conversion rates, and source breakdowns.
+            </p>
+          </motion.div>
+        )}
+
         {/* Main Charts Grid */}
+        {hasAnalyticsData && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
           
           {/* Activity Timeline - Spans full width */}
@@ -281,6 +296,7 @@ export function Analytics({ jobs }: AnalyticsProps) {
           </motion.div>
 
         </div>
+        )}
       </div>
     </div>
   );

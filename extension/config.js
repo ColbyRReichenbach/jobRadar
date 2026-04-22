@@ -36,7 +36,7 @@ export function normalizeApiBase(value) {
   }
 
   throw new Error(
-    "Use https://api.apptrail.com or a local http://localhost URL."
+    "Use https://api.apptrail.com, http://localhost, or http://127.0.0.1."
   );
 }
 

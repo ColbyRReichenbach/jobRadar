@@ -1,0 +1,145 @@
+<svg width="1280" height="800" viewBox="0 0 1280 800" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1280" y2="800" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0f172a"/>
+      <stop offset="1" stop-color="#1e293b"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1280" height="800" fill="url(#bg)"/>
+
+  <text x="640" y="60" text-anchor="middle" font-family="Georgia, serif" font-size="32" font-weight="700" fill="#f8fafc">Smart Browsing Awareness</text>
+  <text x="640" y="90" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="16" fill="#94a3b8">Career page tracking, submission detection, and offline sync</text>
+
+  <!-- Three feature columns -->
+  <!-- Feature 1: Visit Tracking -->
+  <g transform="translate(80, 150)">
+    <rect width="350" height="480" rx="16" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>
+
+    <rect x="24" y="24" width="50" height="50" rx="14" fill="rgba(251,191,36,0.12)"/>
+    <text x="49" y="56" text-anchor="middle" font-size="24">&#128065;</text>
+
+    <text x="24" y="104" font-family="Inter, sans-serif" font-size="20" font-weight="700" fill="#f8fafc">Visit Tracking</text>
+    <text x="24" y="128" font-family="Inter, sans-serif" font-size="13" fill="#94a3b8">Monitors how often you visit career pages</text>
+
+    <!-- Nudge mockup -->
+    <g transform="translate(24, 155)">
+      <rect width="302" height="120" rx="12" fill="#fffbeb" stroke="#fde68a" stroke-width="1"/>
+      <text x="16" y="28" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#92400e">Interested in Stripe?</text>
+      <text x="16" y="48" font-family="Inter, sans-serif" font-size="12" fill="#78716c">You've visited their careers page 5 times</text>
+      <text x="16" y="66" font-family="Inter, sans-serif" font-size="12" fill="#78716c">this week. Ready to apply?</text>
+      <rect x="16" y="80" width="120" height="28" rx="7" fill="#f59e0b"/>
+      <text x="76" y="99" text-anchor="middle" font-family="Inter, sans-serif" font-size="12" font-weight="600" fill="white">Save to Pipeline</text>
+    </g>
+
+    <!-- Stats -->
+    <g transform="translate(24, 300)">
+      <rect width="302" height="44" rx="8" fill="rgba(255,255,255,0.04)"/>
+      <text x="16" y="28" font-family="Inter, sans-serif" font-size="12" fill="#94a3b8">Company visits this week</text>
+      <text x="270" y="28" text-anchor="end" font-family="Inter, sans-serif" font-size="16" font-weight="700" fill="#fcd34d">23</text>
+    </g>
+    <g transform="translate(24, 352)">
+      <rect width="302" height="44" rx="8" fill="rgba(255,255,255,0.04)"/>
+      <text x="16" y="28" font-family="Inter, sans-serif" font-size="12" fill="#94a3b8">Unique companies browsed</text>
+      <text x="270" y="28" text-anchor="end" font-family="Inter, sans-serif" font-size="16" font-weight="700" fill="#fcd34d">8</text>
+    </g>
+    <g transform="translate(24, 404)">
+      <rect width="302" height="44" rx="8" fill="rgba(255,255,255,0.04)"/>
+      <text x="16" y="28" font-family="Inter, sans-serif" font-size="12" fill="#94a3b8">Nudge threshold</text>
+      <text x="270" y="28" text-anchor="end" font-family="Inter, sans-serif" font-size="16" font-weight="700" fill="#fcd34d">3 visits</text>
+    </g>
+  </g>
+
+  <!-- Feature 2: Submission Detection -->
+  <g transform="translate(460, 150)">
+    <rect width="350" height="480" rx="16" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>
+
+    <rect x="24" y="24" width="50" height="50" rx="14" fill="rgba(34,197,94,0.12)"/>
+    <text x="49" y="56" text-anchor="middle" font-size="24">&#10003;</text>
+
+    <text x="24" y="104" font-family="Inter, sans-serif" font-size="20" font-weight="700" fill="#f8fafc">Auto-Detect Submissions</text>
+    <text x="24" y="128" font-family="Inter, sans-serif" font-size="13" fill="#94a3b8">Knows when you submit an application</text>
+
+    <!-- Confirmation page mockup -->
+    <g transform="translate(24, 155)">
+      <rect width="302" height="140" rx="12" fill="#ecfdf5" stroke="#a7f3d0" stroke-width="1"/>
+      <text x="151" y="36" text-anchor="middle" font-size="28">&#127881;</text>
+      <text x="151" y="62" text-anchor="middle" font-family="Inter, sans-serif" font-size="15" font-weight="600" fill="#065f46">Application Submitted!</text>
+      <text x="151" y="84" text-anchor="middle" font-family="Inter, sans-serif" font-size="12" fill="#047857">Stripe - Senior Backend Engineer</text>
+      <text x="151" y="108" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" fill="#6b7280">Status updated to Applied</text>
+      <text x="151" y="126" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" fill="#6b7280">Salary: $180k-$240k extracted</text>
+    </g>
+
+    <!-- Supported platforms -->
+    <text x="24" y="320" font-family="Inter, sans-serif" font-size="12" font-weight="600" fill="#94a3b8" letter-spacing="0.5">DETECTED ON</text>
+    <g transform="translate(24, 334)">
+      <rect width="90" height="28" rx="7" fill="rgba(34,197,94,0.1)"/>
+      <text x="45" y="19" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" font-weight="600" fill="#86efac">Greenhouse</text>
+    </g>
+    <g transform="translate(120, 334)">
+      <rect width="60" height="28" rx="7" fill="rgba(34,197,94,0.1)"/>
+      <text x="30" y="19" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" font-weight="600" fill="#86efac">Lever</text>
+    </g>
+    <g transform="translate(186, 334)">
+      <rect width="80" height="28" rx="7" fill="rgba(34,197,94,0.1)"/>
+      <text x="40" y="19" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" font-weight="600" fill="#86efac">Workday</text>
+    </g>
+
+    <!-- What it captures -->
+    <text x="24" y="396" font-family="Inter, sans-serif" font-size="12" font-weight="600" fill="#94a3b8" letter-spacing="0.5">AUTO-EXTRACTED</text>
+    <text x="40" y="420" font-family="Inter, sans-serif" font-size="13" fill="#cbd5e1">Salary range from job page</text>
+    <text x="40" y="442" font-family="Inter, sans-serif" font-size="13" fill="#cbd5e1">Department / team info</text>
+    <text x="40" y="464" font-family="Inter, sans-serif" font-size="13" fill="#cbd5e1">Application submission time</text>
+  </g>
+
+  <!-- Feature 3: Offline Sync -->
+  <g transform="translate(840, 150)">
+    <rect width="350" height="480" rx="16" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>
+
+    <rect x="24" y="24" width="50" height="50" rx="14" fill="rgba(99,102,241,0.12)"/>
+    <text x="49" y="56" text-anchor="middle" font-size="24">&#128268;</text>
+
+    <text x="24" y="104" font-family="Inter, sans-serif" font-size="20" font-weight="700" fill="#f8fafc">Works Offline</text>
+    <text x="24" y="128" font-family="Inter, sans-serif" font-size="13" fill="#94a3b8">Never lose data, even without internet</text>
+
+    <!-- Sync queue mockup -->
+    <g transform="translate(24, 155)">
+      <rect width="302" height="180" rx="12" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>
+
+      <text x="16" y="28" font-family="Inter, sans-serif" font-size="11" font-weight="600" fill="#94a3b8" letter-spacing="0.5">SYNC QUEUE</text>
+
+      <!-- Queued items -->
+      <g transform="translate(16, 42)">
+        <rect width="270" height="32" rx="6" fill="rgba(251,191,36,0.08)"/>
+        <circle cx="16" cy="16" r="4" fill="#f59e0b"/>
+        <text x="28" y="20" font-family="Inter, sans-serif" font-size="11" fill="#fcd34d">Visit: stripe.com/careers</text>
+        <text x="254" y="20" text-anchor="end" font-family="Inter, sans-serif" font-size="10" fill="#64748b">queued</text>
+      </g>
+      <g transform="translate(16, 80)">
+        <rect width="270" height="32" rx="6" fill="rgba(251,191,36,0.08)"/>
+        <circle cx="16" cy="16" r="4" fill="#f59e0b"/>
+        <text x="28" y="20" font-family="Inter, sans-serif" font-size="11" fill="#fcd34d">Visit: notion.so/careers</text>
+        <text x="254" y="20" text-anchor="end" font-family="Inter, sans-serif" font-size="10" fill="#64748b">queued</text>
+      </g>
+      <g transform="translate(16, 118)">
+        <rect width="270" height="32" rx="6" fill="rgba(34,197,94,0.08)"/>
+        <circle cx="16" cy="16" r="4" fill="#22c55e"/>
+        <text x="28" y="20" font-family="Inter, sans-serif" font-size="11" fill="#86efac">Submit: figma.com/careers</text>
+        <text x="254" y="20" text-anchor="end" font-family="Inter, sans-serif" font-size="10" fill="#64748b">queued</text>
+      </g>
+    </g>
+
+    <!-- Reconnect state -->
+    <g transform="translate(24, 356)">
+      <rect width="302" height="56" rx="10" fill="rgba(34,197,94,0.08)" stroke="rgba(34,197,94,0.2)" stroke-width="1"/>
+      <text x="151" y="24" text-anchor="middle" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#86efac">Connection restored</text>
+      <text x="151" y="44" text-anchor="middle" font-family="Inter, sans-serif" font-size="12" fill="#64748b">Syncing 3 queued items...</text>
+    </g>
+
+    <text x="24" y="440" font-family="Inter, sans-serif" font-size="13" fill="#cbd5e1">Queued in chrome.storage.local</text>
+    <text x="24" y="462" font-family="Inter, sans-serif" font-size="13" fill="#cbd5e1">FIFO sync on reconnect</text>
+    <text x="24" y="484" font-family="Inter, sans-serif" font-size="13" fill="#cbd5e1">No data ever lost</text>
+  </g>
+
+  <text x="640" y="680" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="18" fill="#cbd5e1">Your job search data is always captured, even on unstable networks</text>
+</svg>

@@ -27,14 +27,15 @@ services:
       timeout: 5s
       retries: 5
 
-  backend:
+  migrate:
     build:
       context: .
       dockerfile: backend/Dockerfile
+    env_file:
+      - .env.local
     environment:
       DATABASE_URL: postgresql+asyncpg://apptrail:apptrail@postgres:5432/apptrail
       REDIS_URL: redis://redis:6379/0
-      JWT_SECRET: local-dev-jwt-secret-change-me
       DASHBOARD_URL: http://localhost:3000
       GOOGLE_REDIRECT_URI: http://localhost:8000/api/auth/google/callback
     depends_on:
@@ -42,8 +43,68 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    command: ["alembic", "upgrade", "head"]
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - .env.local
+    environment:
+      DATABASE_URL: postgresql+asyncpg://apptrail:apptrail@postgres:5432/apptrail
+      REDIS_URL: redis://redis:6379/0
+      DASHBOARD_URL: http://localhost:3000
+      GOOGLE_REDIRECT_URI: http://localhost:8000/api/auth/google/callback
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     ports:
       - "8000:8000"
+
+  worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - .env.local
+    environment:
+      DATABASE_URL: postgresql+asyncpg://apptrail:apptrail@postgres:5432/apptrail
+      REDIS_URL: redis://redis:6379/0
+      DASHBOARD_URL: http://localhost:3000
+      GOOGLE_REDIRECT_URI: http://localhost:8000/api/auth/google/callback
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    command: ["celery", "-A", "backend.celery_app:celery_app", "worker", "--loglevel=info"]
+
+  beat:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - .env.local
+    environment:
+      DATABASE_URL: postgresql+asyncpg://apptrail:apptrail@postgres:5432/apptrail
+      REDIS_URL: redis://redis:6379/0
+      DASHBOARD_URL: http://localhost:3000
+      GOOGLE_REDIRECT_URI: http://localhost:8000/api/auth/google/callback
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    command: ["celery", "-A", "backend.celery_app:celery_app", "beat", "--loglevel=info"]
 
   dashboard:
     build:
@@ -51,6 +112,7 @@ services:
       dockerfile: dashboardv2/Dockerfile
       args:
         VITE_API_URL: http://localhost:8000
+        VITE_LOCAL_DEV_AUTH: "true"
     depends_on:
       - backend
     ports:

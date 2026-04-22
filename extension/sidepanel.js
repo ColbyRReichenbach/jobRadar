@@ -10,6 +10,8 @@ const SETTINGS_KEY = "apptrail_settings";
 const DEFAULT_SETTINGS = {
   linkedinAutoExtract: true,
 };
+const DEFAULT_NO_JOB_MESSAGE = "Navigate to a job posting page to get started.";
+const UNAVAILABLE_NO_JOB_MESSAGE = "This job posting is unavailable or has been removed.";
 
 async function getSettings() {
   const data = await chrome.storage.local.get(SETTINGS_KEY);
@@ -43,6 +45,40 @@ function hide(id) {
   document.getElementById(id).classList.add("hidden");
 }
 
+function setNoJobCtaVisible(isVisible) {
+  const button = document.getElementById("report-undetected-btn");
+  if (!button) return;
+
+  button.classList.toggle("hidden", !isVisible);
+  button.toggleAttribute("hidden", !isVisible);
+  button.setAttribute("aria-hidden", isVisible ? "false" : "true");
+}
+
+function setNoJobMessage(message) {
+  const copy = document.querySelector("#no-job > p");
+  if (copy) {
+    copy.textContent = message;
+  }
+}
+
+function showDefaultNoJobState() {
+  setNoJobMessage(DEFAULT_NO_JOB_MESSAGE);
+  setNoJobCtaVisible(true);
+  hide("undetected-form");
+  show("no-job");
+  hide("loading");
+  hide("job-data");
+}
+
+function showUnavailableState() {
+  setNoJobMessage(UNAVAILABLE_NO_JOB_MESSAGE);
+  setNoJobCtaVisible(false);
+  hide("undetected-form");
+  show("no-job");
+  hide("loading");
+  hide("job-data");
+}
+
 function clearElement(element) {
   element.replaceChildren();
 }
@@ -73,6 +109,36 @@ function isSafeExternalUrl(url) {
   } catch {
     return false;
   }
+}
+
+function readEditableValue(element) {
+  if (!element || element.classList.contains("placeholder")) {
+    return null;
+  }
+  const text = element.textContent?.trim();
+  return text || null;
+}
+
+function bindEditablePlaceholderBehavior(element, placeholder) {
+  if (!element || element.dataset.placeholderBound === "true") {
+    return;
+  }
+
+  element.dataset.placeholderBound = "true";
+
+  element.addEventListener("focus", () => {
+    if (element.classList.contains("placeholder")) {
+      element.textContent = "";
+      element.classList.remove("placeholder");
+    }
+  });
+
+  element.addEventListener("blur", () => {
+    if (!element.textContent.trim()) {
+      element.textContent = placeholder;
+      element.classList.add("placeholder");
+    }
+  });
 }
 
 function createContactCard(contact) {
@@ -179,9 +245,7 @@ async function init() {
       setupOpened = true;
       chrome.tabs.create({ url: "setup.html" });
     }
-    show("no-job");
-    hide("loading");
-    hide("job-data");
+    showDefaultNoJobState();
     return;
   }
 
@@ -203,9 +267,7 @@ async function init() {
   }
 
   if (!detection) {
-    show("no-job");
-    hide("loading");
-    hide("job-data");
+    showDefaultNoJobState();
     return;
   }
 
@@ -244,6 +306,10 @@ async function init() {
         const response = await chrome.tabs.sendMessage(tab.id, {
           type: "EXTRACT_JOB",
         });
+        if (response?._page_state === "unavailable") {
+          showUnavailableState();
+          return;
+        }
         if (response && (response.title || response.company)) {
           displayJobData(response);
           extracted = true;
@@ -256,6 +322,10 @@ async function init() {
     // Also try session storage for extraction from MutationObserver
     if (!extracted) {
       const stored = await chrome.storage.session.get("extractedJob");
+      if (stored.extractedJob?._page_state === "unavailable") {
+        showUnavailableState();
+        return;
+      }
       if (stored.extractedJob && (stored.extractedJob.title || stored.extractedJob.company)) {
         displayJobData(stored.extractedJob);
         extracted = true;
@@ -266,8 +336,7 @@ async function init() {
       await fallbackParse(currentUrl);
     }
   } catch (e) {
-    hide("loading");
-    show("no-job");
+    showDefaultNoJobState();
     renderAlert(
       document.getElementById("no-job"),
       "error",
@@ -329,20 +398,8 @@ function setFieldValue(id, value, placeholder) {
     el.textContent = placeholder;
     el.classList.add("placeholder");
   }
-  // Clear placeholder on focus
-  el.addEventListener("focus", () => {
-    if (el.classList.contains("placeholder")) {
-      el.textContent = "";
-      el.classList.remove("placeholder");
-    }
-  });
-  // Restore placeholder on blur if empty
-  el.addEventListener("blur", () => {
-    if (!el.textContent.trim()) {
-      el.textContent = placeholder;
-      el.classList.add("placeholder");
-    }
-  });
+
+  bindEditablePlaceholderBehavior(el, placeholder);
 }
 
 function displayJobData(data) {
@@ -426,17 +483,28 @@ document.getElementById("track-btn").addEventListener("click", async () => {
   const titleEl = document.getElementById("job-title");
   const locationEl = document.getElementById("job-location");
   const salaryEl = document.getElementById("job-salary");
-  const companyText = companyEl.classList.contains("placeholder") ? null : companyEl.textContent.trim();
-  const titleText = titleEl.classList.contains("placeholder") ? null : titleEl.textContent.trim();
-  const locationText = locationEl.classList.contains("placeholder") ? null : locationEl.textContent.trim();
-  const salaryText = salaryEl.classList.contains("placeholder") ? null : salaryEl.textContent.trim();
+  const companyText = readEditableValue(companyEl);
+  const titleText = readEditableValue(titleEl);
+  const locationText = readEditableValue(locationEl);
+  const salaryText = readEditableValue(salaryEl);
 
   const descriptionEl = document.getElementById("job-description");
   const descriptionText = descriptionEl?.value?.trim() || null;
 
+  if (!companyText || !titleText) {
+    renderAlert(
+      statusEl,
+      "warning",
+      "Enter both the company and job title before tracking this listing."
+    );
+    btn.disabled = false;
+    btn.textContent = "Track This Job";
+    return;
+  }
+
   const payload = {
-    company: companyText || currentJobData.company || "Unknown",
-    role_title: titleText || currentJobData.title || "Unknown Role",
+    company: companyText,
+    role_title: titleText,
     job_url: currentUrl,
     source: currentJobData.source || "manual",
     status: selectedStatus,
@@ -546,6 +614,11 @@ async function checkBrowsingNudge() {
   // Get current tab domain
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab || !tab.url) return;
+
+  const detection = detectPlatform(tab.url);
+  if (detection && detection.platform !== "generic") {
+    return;
+  }
 
   const domain = extractDomain(tab.url);
   if (!domain) return;
@@ -693,7 +766,10 @@ document.getElementById("report-undetected-btn")?.addEventListener("click", asyn
   ["manual-company", "manual-title", "manual-location", "manual-salary"].forEach((id) => {
     const el = document.getElementById(id);
     if (!el) return;
+    if (el.dataset.manualPlaceholderBound === "true") return;
+
     const placeholder = el.textContent;
+    el.dataset.manualPlaceholderBound = "true";
     el.addEventListener("focus", () => {
       if (el.style.fontStyle === "italic") {
         el.textContent = "";
@@ -737,14 +813,21 @@ document.getElementById("manual-track-btn")?.addEventListener("click", async () 
   const url = tab?.url || "";
 
   const jobPayload = {
-    company: getManualVal("manual-company") || "Unknown",
-    role_title: getManualVal("manual-title") || "Unknown Role",
+    company: getManualVal("manual-company"),
+    role_title: getManualVal("manual-title"),
     job_url: url,
     source: "manual",
     status: manualSelectedStatus,
     location: getManualVal("manual-location") || null,
     salary: getManualVal("manual-salary") || null,
   };
+
+  if (!jobPayload.company || !jobPayload.role_title) {
+    renderAlert(statusEl, "warning", "Enter both the company and job title before tracking this job.");
+    btn.disabled = false;
+    btn.textContent = "Track & Report";
+    return;
+  }
 
   try {
     // Track the job
@@ -846,6 +929,9 @@ function resetUI() {
   currentJobData = null;
   currentUrl = null;
   currentDetection = null;
+  setNoJobMessage(DEFAULT_NO_JOB_MESSAGE);
+  setNoJobCtaVisible(true);
+  hide("undetected-form");
   hide("job-data");
   hide("loading");
   hide("contacts-section");

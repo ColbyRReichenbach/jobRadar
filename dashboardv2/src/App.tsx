@@ -1,17 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { Sidebar } from './components/Sidebar';
-import { KanbanBoard } from './components/KanbanBoard';
 import { EmailFeed } from './components/EmailFeed';
-import { JobSearch } from './components/JobSearch';
-import { ExportData } from './components/ExportData';
-import { Analytics } from './components/Analytics';
-import { Conversations } from './components/Conversations';
-import { NetworkPage } from './components/NetworkPage';
-import { Calendar } from './components/Calendar';
-import { Settings } from './components/Settings';
-import { ClassifierAudit } from './components/ClassifierAudit';
-import { ExtractionReports } from './components/ExtractionReports';
-import { ProfilePage } from './components/ProfilePage';
 import { LoginPage } from './components/LoginPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { NotificationCenter } from './components/NotificationCenter';
@@ -22,11 +11,50 @@ import { motion, AnimatePresence } from 'motion/react';
 import { fetchJobs, fetchEmails } from './lib/api';
 import { AuthProvider, useAuth } from './lib/AuthContext';
 import { AddJobModal } from './components/AddJobModal';
+import { ConsentModal } from './components/ConsentModal';
+
+// Lazy-loaded route components for code splitting
+const KanbanBoard = lazy(() => import('./components/KanbanBoard').then(m => ({ default: m.KanbanBoard })));
+const JobSearch = lazy(() => import('./components/JobSearch').then(m => ({ default: m.JobSearch })));
+const ExportData = lazy(() => import('./components/ExportData').then(m => ({ default: m.ExportData })));
+const Analytics = lazy(() => import('./components/Analytics').then(m => ({ default: m.Analytics })));
+const Conversations = lazy(() => import('./components/Conversations').then(m => ({ default: m.Conversations })));
+const NetworkPage = lazy(() => import('./components/NetworkPage').then(m => ({ default: m.NetworkPage })));
+const Calendar = lazy(() => import('./components/Calendar').then(m => ({ default: m.Calendar })));
+const Radar = lazy(() => import('./components/Radar').then(m => ({ default: m.Radar })));
+const Settings = lazy(() => import('./components/Settings').then(m => ({ default: m.Settings })));
+const ClassifierAudit = lazy(() => import('./components/ClassifierAudit').then(m => ({ default: m.ClassifierAudit })));
+const ExtractionReports = lazy(() => import('./components/ExtractionReports').then(m => ({ default: m.ExtractionReports })));
+const ProfilePage = lazy(() => import('./components/ProfilePage').then(m => ({ default: m.ProfilePage })));
+
+const TAB_TITLES: Record<string, string> = {
+  dashboard: 'Dashboard',
+  search: 'Job Search',
+  radar: 'Opportunity Radar',
+  analytics: 'Analytics',
+  export: 'Export Data',
+  conversations: 'Conversations',
+  network: 'Network',
+  calendar: 'Calendar',
+  profile: 'Profile',
+  settings: 'Settings',
+  audit: 'Classifier Audit',
+  'extraction-reports': 'Extraction Reports',
+  emails: 'Inbox',
+};
+
+function LazyFallback() {
+  return (
+    <div className="flex flex-1 items-center justify-center">
+      <div className="w-8 h-8 border-2 rounded-full border-slate-300 border-t-slate-600 animate-spin" />
+    </div>
+  );
+}
 
 const USE_API = true;
 
 function AppContent() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, needsConsent, signOut, refreshUser } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [jobs, setJobs] = useState<Job[]>(USE_API ? [] : initialJobs);
   const [emails, setEmails] = useState<Email[]>(USE_API ? [] : initialEmails);
@@ -53,6 +81,11 @@ function AppContent() {
   } | null>(null);
   const [dashboardFocusRequest, setDashboardFocusRequest] = useState<{
     jobId: string;
+    token: number;
+  } | null>(null);
+  const [radarFocusRequest, setRadarFocusRequest] = useState<{
+    profileId?: string;
+    signalId?: string;
     token: number;
   } | null>(null);
 
@@ -85,6 +118,12 @@ function AppContent() {
     const interval = setInterval(loadData, 30000);
     return () => clearInterval(interval);
   }, [authLoading, loadData, user]);
+
+  // Dynamic page title
+  useEffect(() => {
+    const title = TAB_TITLES[activeTab];
+    document.title = title ? `${title} — AppTrail` : 'AppTrail';
+  }, [activeTab]);
 
   useEffect(() => {
     const media = window.matchMedia('(min-width: 768px)');
@@ -120,6 +159,8 @@ function AppContent() {
     const email = resolved.searchParams.get('email');
     const interviewId = resolved.searchParams.get('interview_id');
     const jobId = resolved.searchParams.get('job_id');
+    const profileId = resolved.searchParams.get('profile_id') || undefined;
+    const signalId = resolved.searchParams.get('signal_id') || undefined;
 
     if (resolved.pathname === '/network' && email) {
       setActiveTab('network');
@@ -143,6 +184,16 @@ function AppContent() {
       setActiveTab('dashboard');
       setDashboardFocusRequest({
         jobId,
+        token: Date.now(),
+      });
+      return;
+    }
+
+    if (resolved.pathname === '/radar') {
+      setActiveTab('radar');
+      setRadarFocusRequest({
+        profileId,
+        signalId,
         token: Date.now(),
       });
       return;
@@ -189,6 +240,17 @@ function AppContent() {
 
   if (!authLoading && !user) {
     return <LoginPage />;
+  }
+
+  if (!authLoading && needsConsent) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-[#F5F5F0]">
+        <ConsentModal
+          onAccepted={() => refreshUser()}
+          onDeclined={() => signOut()}
+        />
+      </div>
+    );
   }
 
   const showInbox = activeTab !== 'emails' && activeTab !== 'conversations';
@@ -277,30 +339,44 @@ function AppContent() {
             </div>
           )}
           <div className="flex-1 flex overflow-hidden">
-            {activeTab === 'dashboard' && <KanbanBoard jobs={jobs} setJobs={setJobs} focusRequest={dashboardFocusRequest} />}
-            {activeTab === 'search' && <JobSearch jobs={jobs} setJobs={setJobs} />}
-            {activeTab === 'analytics' && <Analytics jobs={jobs} />}
-            {activeTab === 'export' && <ExportData />}
-            {activeTab === 'conversations' && <Conversations emails={emails} jobs={jobs} focusRequest={emailFocusRequest?.tab === 'conversations' ? emailFocusRequest : null} />}
-            {activeTab === 'network' && <NetworkPage onOpenEmail={handleOpenEmail} onRefreshData={loadData} focusRequest={networkFocusRequest} />}
-            {activeTab === 'calendar' && <Calendar focusRequest={calendarFocusRequest} />}
-            {activeTab === 'profile' && <ProfilePage />}
-            {activeTab === 'settings' && <Settings />}
-            {activeTab === 'audit' && <ClassifierAudit />}
-            {activeTab === 'extraction-reports' && <ExtractionReports />}
-            {activeTab === 'emails' && (
-              <div className="flex-1 flex overflow-hidden">
-                <EmailFeed
-                  emails={emails}
-                  jobs={jobs}
-                  isCollapsed={false}
-                  setIsCollapsed={() => {}}
-                  forceOpen={true}
-                  onOpenAddJob={handleOpenAddJob}
-                  focusRequest={emailFocusRequest?.tab === 'emails' ? emailFocusRequest : null}
-                />
-              </div>
-            )}
+              <Suspense fallback={<LazyFallback />}>
+                {activeTab === 'dashboard' && <KanbanBoard jobs={jobs} setJobs={setJobs} focusRequest={dashboardFocusRequest} />}
+                {activeTab === 'search' && <JobSearch jobs={jobs} setJobs={setJobs} />}
+                {activeTab === 'radar' && <Radar focusRequest={radarFocusRequest} />}
+                {activeTab === 'analytics' && <Analytics jobs={jobs} />}
+              {activeTab === 'export' && <ExportData />}
+              {activeTab === 'conversations' && <Conversations emails={emails} jobs={jobs} focusRequest={emailFocusRequest?.tab === 'conversations' ? emailFocusRequest : null} />}
+              {activeTab === 'network' && <NetworkPage onOpenEmail={handleOpenEmail} onRefreshData={loadData} focusRequest={networkFocusRequest} />}
+              {activeTab === 'calendar' && <Calendar focusRequest={calendarFocusRequest} />}
+              {activeTab === 'profile' && <ProfilePage />}
+              {activeTab === 'settings' && <Settings />}
+              {activeTab === 'audit' && <ClassifierAudit />}
+              {activeTab === 'extraction-reports' && <ExtractionReports />}
+              {activeTab === 'emails' && (
+                <div className="flex-1 flex overflow-hidden">
+                  <EmailFeed
+                    emails={emails}
+                    jobs={jobs}
+                    isCollapsed={false}
+                    setIsCollapsed={() => {}}
+                    forceOpen={true}
+                    onOpenAddJob={handleOpenAddJob}
+                    focusRequest={emailFocusRequest?.tab === 'emails' ? emailFocusRequest : null}
+                  />
+                </div>
+              )}
+              {!(activeTab in TAB_TITLES) && (
+                <div className="flex flex-1 flex-col items-center justify-center gap-4 text-slate-500">
+                  <p className="text-lg font-serif">Page not found</p>
+                  <button
+                    onClick={() => setActiveTab('dashboard')}
+                    className="px-4 py-2 rounded-xl bg-slate-800 text-white text-sm font-medium hover:bg-slate-700 transition-colors"
+                  >
+                    Back to Dashboard
+                  </button>
+                </div>
+              )}
+            </Suspense>
           </div>
         </div>
       </main>

@@ -1,6 +1,6 @@
 # Prompt Registry
 
-All engineered prompts used across the application. Each entry includes the full prompt text, the model it runs on, the service file, and a changelog of modifications.
+Generated from `backend/services/ai_orchestrator.py`.
 
 **This file is NOT public.** It is for internal auditing and development only.
 
@@ -10,7 +10,7 @@ All engineered prompts used across the application. Each entry includes the full
 
 **Service:** `backend/services/email_classifier.py`
 **Model:** `gpt-4o-mini`
-**Purpose:** Classify every incoming Gmail email into one of 7 job-search categories.
+**Purpose:** Classify every incoming Gmail email into a job-search category with metadata.
 **Max tokens:** 300
 
 ### System Prompt
@@ -60,19 +60,21 @@ Subject: {subject}
 
 ### Changelog
 
-| Date       | Version | Change | Reason |
-|------------|---------|--------|--------|
-| 2026-03-01 | v1      | Initial prompt with 7 categories | Launch |
-| 2026-03-15 | v2      | Added "Important exclusions" block: developer tooling, nuanced rejection phrases, recruiter conversation signals, promotional recruiting content, human sender heuristics | High false positive rate on GitHub/Vercel/LinkedIn notifications; rejection emails with soft language being classified as job_update |
-| 2026-03-19 | v3      | Switched from Claude Haiku to GPT-4o-mini | Consolidate on OpenAI (free credits) |
+| Date | Version | Change | Reason |
+|------|---------|--------|--------|
+| 2026-03-01 | v1 | Initial prompt with 7 categories | Launch |
+| 2026-03-15 | v2 | Added "Important exclusions" block for developer tooling, nuanced rejection phrasing, recruiter conversation signals, and human-sender heuristics | Reduce false positives and soft-rejection misses |
+| 2026-03-19 | v3 | Switched from Claude Haiku to GPT-4o-mini | Consolidate on OpenAI |
+
+**Fallback:** Keyword-based rule engine using rejection/interview/action heuristics.
 
 ---
 
-## 2. Email Draft Writer
+## 2. Draft Writer
 
 **Service:** `backend/services/draft_writer.py`
 **Model:** `gpt-4o`
-**Purpose:** Generate context-aware email drafts for follow-ups, introductions, replies, and thank-you notes.
+**Purpose:** Generate contextual email drafts for follow-ups, introductions, replies, and thank-you notes.
 **Max tokens:** 500
 
 ### System Prompt
@@ -97,6 +99,21 @@ Return ONLY valid JSON:
 }
 ```
 
+### User Prompt Template
+
+```
+{type_prompt}
+
+Context:
+Draft type: {draft_type}
+Company: {company}
+Role: {role}
+Contact: {contact_name}
+Contact email: {contact_email}
+Additional context: {additional_context}
+Conversation history: {conversation_history}
+```
+
 ### Draft Type Prompts
 
 | Type | Prompt Template |
@@ -108,10 +125,12 @@ Return ONLY valid JSON:
 
 ### Changelog
 
-| Date       | Version | Change | Reason |
-|------------|---------|--------|--------|
-| 2026-03-08 | v1      | Initial prompt with 4 draft types | Sprint 14 launch |
-| 2026-03-19 | v2      | Switched from Claude Sonnet to GPT-4o | Consolidate on OpenAI |
+| Date | Version | Change | Reason |
+|------|---------|--------|--------|
+| 2026-03-08 | v1 | Initial prompt with 4 draft types | Sprint 14 launch |
+| 2026-03-19 | v2 | Switched from Claude Sonnet to GPT-4o | Consolidate on OpenAI |
+
+**Fallback:** Template-based drafts per draft type.
 
 ---
 
@@ -163,10 +182,12 @@ Remember: DO NOT invent any new experience or skills. Only reframe and reorder e
 
 ### Changelog
 
-| Date       | Version | Change | Reason |
-|------------|---------|--------|--------|
-| 2026-03-14 | v1      | Initial prompt with integrity rules | Sprint 20 launch |
-| 2026-03-19 | v2      | Switched from Claude Sonnet to GPT-4o | Consolidate on OpenAI |
+| Date | Version | Change | Reason |
+|------|---------|--------|--------|
+| 2026-03-14 | v1 | Initial prompt with integrity rules | Sprint 20 launch |
+| 2026-03-19 | v2 | Switched from Claude Sonnet to GPT-4o | Consolidate on OpenAI |
+
+**Fallback:** Returns the original resume with an "unable to generate" summary.
 
 ---
 
@@ -174,10 +195,10 @@ Remember: DO NOT invent any new experience or skills. Only reframe and reorder e
 
 **Service:** `backend/services/resume_parser.py`
 **Model:** `gpt-4o-mini`
-**Purpose:** Extract structured profile data (skills, education, experience) from resume text.
+**Purpose:** Extract structured skills, education, tools, and experience fields from resume text.
 **Max tokens:** 2000
 
-### Prompt (single message, no system prompt)
+### User Prompt Template
 
 ```
 Extract structured information from this resume. Return ONLY valid JSON with these fields:
@@ -193,29 +214,60 @@ Resume text:
 
 ### Changelog
 
-| Date       | Version | Change | Reason |
-|------------|---------|--------|--------|
-| 2026-03-06 | v1      | Initial extraction prompt | Sprint 5 launch |
-| 2026-03-19 | v2      | Switched from Claude Haiku to GPT-4o-mini | Consolidate on OpenAI |
+| Date | Version | Change | Reason |
+|------|---------|--------|--------|
+| 2026-03-06 | v1 | Initial extraction prompt | Sprint 5 launch |
+| 2026-03-19 | v2 | Switched from Claude Haiku to GPT-4o-mini | Consolidate on OpenAI |
+
+**Fallback:** Regex-based tech stack extraction with empty structured fields for the rest.
 
 ---
 
-## 5. Generic Client (Job Extraction / Fallback Classifier)
+## 5. Legacy Email Classifier
 
 **Service:** `backend/services/claude_client.py`
 **Model:** `gpt-4o`
-**Purpose:** Two functions — generic email classification (legacy) and HTML job posting extraction.
-**Max tokens:** 500 (classify), 1000 (extract)
+**Purpose:** Legacy generic email classification compatibility shim.
+**Max tokens:** 500
 
-### classify_email
+### System Prompt
 
-System: `Return only valid JSON. No preamble.`
-User: Raw email body text.
+```
+Return only valid JSON. No preamble.
+```
 
-### extract_job_from_html
+### User Prompt Template
 
-System: `Return only valid JSON. No preamble.`
-User:
+```
+{body}
+```
+
+### Changelog
+
+| Date | Version | Change | Reason |
+|------|---------|--------|--------|
+| 2026-02-28 | v1 | Initial generic prompt | Phase 1 launch |
+| 2026-03-19 | v2 | Switched from Claude Sonnet to GPT-4o | Consolidate on OpenAI |
+
+**Fallback:** Returns {"classification": "unknown", "color_code": "gray", "urgency": "low"}.
+
+---
+
+## 6. Html Job Extractor
+
+**Service:** `backend/services/claude_client.py`
+**Model:** `gpt-4o`
+**Purpose:** Legacy HTML job extraction fallback when deterministic scraping misses.
+**Max tokens:** 1000
+
+### System Prompt
+
+```
+Return only valid JSON. No preamble.
+```
+
+### User Prompt Template
+
 ```
 Extract job posting information from this HTML content.
 Return JSON only with keys: title, company, location, department, description.
@@ -226,10 +278,12 @@ If a field is not found, set it to null.
 
 ### Changelog
 
-| Date       | Version | Change | Reason |
-|------------|---------|--------|--------|
-| 2026-02-28 | v1      | Initial generic prompts | Phase 1 launch |
-| 2026-03-19 | v2      | Switched from Claude Sonnet to GPT-4o | Consolidate on OpenAI |
+| Date | Version | Change | Reason |
+|------|---------|--------|--------|
+| 2026-02-28 | v1 | Initial generic prompt | Phase 1 launch |
+| 2026-03-19 | v2 | Switched from Claude Sonnet to GPT-4o | Consolidate on OpenAI |
+
+**Fallback:** Returns null fields for title, company, location, department, and description.
 
 ---
 
@@ -238,18 +292,4 @@ If a field is not found, set it to null.
 | Tier | Model | Use Case | Why |
 |------|-------|----------|-----|
 | High volume / Low cost | `gpt-4o-mini` | Email classifier, Resume parser | Runs on every email/resume; needs speed + low cost |
-| High quality | `gpt-4o` | Draft writer, Resume tailor, Job extraction | User-facing output; quality matters more than cost |
-
----
-
-## Fallback Behavior
-
-All services have fallback logic when the LLM is unavailable:
-
-| Service | Fallback |
-|---------|----------|
-| Email classifier | Keyword-based rule engine (REJECTION_PHRASES, INTERVIEW_PHRASES, etc.) |
-| Draft writer | Template-based drafts per type (follow_up, introduction, reply, thank_you) |
-| Resume tailor | Returns original resume with "unable to generate" message |
-| Resume parser | `tech_extractor.extract_tech_stack()` regex-based skill extraction |
-| Generic client | Returns `{"classification": "unknown"}` or null fields |
+| High quality | `gpt-4o` | Draft writer, Resume tailor, legacy extraction | User-facing output; quality matters more than cost |

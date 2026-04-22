@@ -2,9 +2,10 @@ import csv
 import json
 import os
 import re
+import secrets
 import time
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Literal, Optional
 from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
 from uuid import uuid4
 
@@ -22,11 +23,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import NO_VALUE
 
-load_dotenv(override=True)
+load_dotenv(override=os.getenv("TESTING") != "1")
 os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
 
 from backend.database import async_session_factory, get_db
-from backend.dependencies import verify_api_key, create_jwt, create_refresh_token, decode_jwt, decode_refresh_token, get_current_user, set_refresh_cookie, clear_refresh_cookie, blacklist_token, REFRESH_COOKIE_NAME, generate_api_key, hash_api_key
+from backend.dependencies import verify_api_key, create_jwt, create_refresh_token, decode_jwt, decode_refresh_token, get_current_user, set_refresh_cookie, clear_refresh_cookie, blacklist_token, REFRESH_COOKIE_NAME, generate_api_key, hash_api_key, store_auth_code, consume_auth_code
 from backend.gmail_token_crypto import decrypt_gmail_token, encrypt_gmail_token, is_gmail_token_encrypted, validate_gmail_token_encryption_config
 from backend.logging_config import configure_logging
 from backend.metrics import (
@@ -35,10 +36,16 @@ from backend.metrics import (
     metrics_payload,
     observe_request,
 )
-from backend.models import Application, Contact, ContactDistinctDecision, EmailEvent, EmailFeedback, User, GmailToken, Company, RoleUmbrella, CompanyTechProfile, UserProfile, UserRoleInterest, AtsBehavior, WarmConnection, Alert, Interview, CompanyVisit, InterviewNote, NotificationPreference, ResumeDraft, IgnoredNetworkContact, ExtractionReport, ExtractionChangelog
+from backend.models import Application, Contact, ContactDistinctDecision, EmailEvent, EmailFeedback, User, GmailToken, Company, RoleUmbrella, CompanyTechProfile, UserProfile, UserRoleInterest, AtsBehavior, WarmConnection, Alert, Interview, CompanyVisit, InterviewNote, NotificationPreference, ResumeDraft, IgnoredNetworkContact, ExtractionReport, ExtractionChangelog, DataConsent, ResearchProfile, ResearchRun, ResearchSourceItem, OpportunitySignal, OpportunityScore, OpportunityBrief, RecommendedAction, ResearchFeedback
 from backend.services.alerts import create_user_alert
+from backend.services.ai_orchestrator import get_metrics_snapshot
 from backend.monitoring import configure_sentry
 from backend.services.hunter import find_contacts, generate_linkedin_search_url
+from backend.services.opportunity_radar.action_generator import generate_actions
+from backend.services.opportunity_radar.brief_generator import generate_briefs
+from backend.services.opportunity_radar.signal_extractor import extract_signals
+from backend.services.opportunity_radar.signal_scorer import score_signal
+from backend.services.opportunity_radar.sources import collect_internal_sources
 from backend.services.notification_preferences import is_alert_enabled, serialize_notification_preferences
 from backend.services.scraper import extract_job, validate_job_parse_url
 import structlog
@@ -49,10 +56,13 @@ validate_gmail_token_encryption_config()
 
 app = FastAPI(title="AppTrail API")
 request_logger = structlog.get_logger("backend.request")
+LOCAL_DEV_AUTH_ENABLED = os.getenv("LOCAL_DEV_AUTH", "").lower() in {"1", "true", "yes", "on"}
 
 _cors_origins = [
     "http://localhost:3000",
     "http://localhost:5173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
 ]
 _dashboard_url = os.getenv("DASHBOARD_URL")
 if _dashboard_url:
@@ -112,8 +122,8 @@ def _resolve_frontend_origin(frontend_origin: str | None, request: Request) -> s
     return os.getenv("DASHBOARD_URL", "http://localhost:5173").rstrip("/")
 
 
-def _build_frontend_callback_url(frontend_url: str, access_token: str) -> str:
-    return f"{frontend_url}/auth/callback#access_token={quote(access_token, safe='')}"
+def _build_frontend_callback_url(frontend_url: str, auth_code: str) -> str:
+    return f"{frontend_url}/auth/callback?code={quote(auth_code, safe='')}"
 
 
 def _google_authorization_kwargs(connect_gmail: bool, connect_calendar: bool) -> dict:
@@ -343,6 +353,56 @@ class EmailUpdate(BaseModel):
     hidden: Optional[bool] = None
 
 
+class ResearchProfileCreate(BaseModel):
+    name: str = Field(..., max_length=MAX_NAME_LEN)
+    objective: Optional[str] = Field(None, max_length=MAX_LONG_TEXT_LEN)
+    selected_domains: list[str] = Field(default_factory=list)
+    selected_roles: list[str] = Field(default_factory=list)
+    selected_companies: list[str] = Field(default_factory=list)
+    keywords: list[str] = Field(default_factory=list)
+    excluded_keywords: list[str] = Field(default_factory=list)
+    source_types: list[str] = Field(default_factory=list)
+    frequency: str = Field(default="daily", max_length=MAX_STATUS_LEN)
+    notification_mode: str = Field(default="in_app", max_length=MAX_STATUS_LEN)
+    minimum_score: int = Field(default=70, ge=0, le=100)
+    active: bool = True
+
+
+class ResearchProfileUpdate(BaseModel):
+    name: Optional[str] = Field(None, max_length=MAX_NAME_LEN)
+    objective: Optional[str] = Field(None, max_length=MAX_LONG_TEXT_LEN)
+    selected_domains: Optional[list[str]] = None
+    selected_roles: Optional[list[str]] = None
+    selected_companies: Optional[list[str]] = None
+    keywords: Optional[list[str]] = None
+    excluded_keywords: Optional[list[str]] = None
+    source_types: Optional[list[str]] = None
+    frequency: Optional[str] = Field(None, max_length=MAX_STATUS_LEN)
+    notification_mode: Optional[str] = Field(None, max_length=MAX_STATUS_LEN)
+    minimum_score: Optional[int] = Field(None, ge=0, le=100)
+    active: Optional[bool] = None
+
+
+class RecommendedActionUpdate(BaseModel):
+    status: Literal["open", "accepted", "dismissed", "completed"]
+
+
+class ResearchFeedbackCreate(BaseModel):
+    signal_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
+    brief_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
+    action_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
+    rating: str = Field(..., max_length=MAX_STATUS_LEN)
+    notes: Optional[str] = Field(None, max_length=MAX_LONG_TEXT_LEN)
+
+
+_ACTION_STATUS_TRANSITIONS: dict[str, set[str]] = {
+    "open": {"accepted", "dismissed", "completed"},
+    "accepted": {"completed", "dismissed"},
+    "dismissed": set(),
+    "completed": set(),
+}
+
+
 class SearchMatchPreviewJob(BaseModel):
     id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
     title: Optional[str] = Field(None, max_length=MAX_NAME_LEN)
@@ -407,6 +467,54 @@ def _require_user_id(auth: dict) -> _uuid.UUID:
     if not user_id:
         raise HTTPException(status_code=401, detail="JWT authentication required")
     return user_id
+
+
+def _infer_logo_domain_from_url(url: str | None) -> str | None:
+    if not url:
+        return None
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return None
+    host = (parsed.hostname or "").lower()
+    if host.startswith("www."):
+        host = host[4:]
+    from backend.services.company_identity import is_company_domain
+    if not is_company_domain(host):
+        return None
+    return host
+
+
+async def _resolve_search_logo_url(
+    db: AsyncSession,
+    company_name: str | None,
+    url: str | None,
+    include_logo: bool,
+) -> str | None:
+    if not include_logo:
+        return None
+
+    from sqlalchemy import func
+    from backend.services.company_identity import company_name_to_logo_url, get_logo_url
+
+    normalized_company = (company_name or "").strip()
+    if normalized_company:
+        stmt = select(Company).where(func.lower(Company.name) == normalized_company.lower()).limit(1)
+        result = await db.execute(stmt)
+        company = result.scalar_one_or_none()
+        if company:
+            if company.logo_url:
+                return company.logo_url
+            if company.domain:
+                return get_logo_url(company.domain)
+        canonical_logo = company_name_to_logo_url(company_name)
+        if canonical_logo:
+            return canonical_logo
+
+    inferred_domain = _infer_logo_domain_from_url(url)
+    if inferred_domain:
+        return get_logo_url(inferred_domain)
+    return None
 
 
 def _normalize_match_text(value: str | None) -> str:
@@ -850,6 +958,12 @@ async def prometheus_metrics():
     return Response(content=metrics_payload(), headers=metrics_headers())
 
 
+@app.get("/api/ai/metrics")
+async def ai_metrics(auth: dict = Depends(verify_api_key)):
+    _require_user_id(auth)
+    return get_metrics_snapshot()
+
+
 @app.post("/api/jobs/parse", dependencies=[Depends(verify_api_key)])
 @limiter.limit(_job_parse_rate_limit, error_message="Too many job parse requests. Try again in a minute.")
 async def parse_job(request: Request, req: JobParseRequest):
@@ -1087,6 +1201,7 @@ async def find_contacts_endpoint(
     auth: dict = Depends(verify_api_key),
 ):
     user_id = _require_user_id(auth)
+    from backend.dependencies import check_enrichment_consent
 
     app_id = _uuid.UUID(req.application_id)
     app_stmt = select(Application).where(
@@ -1126,6 +1241,16 @@ async def find_contacts_endpoint(
             "cached": True,
         }
 
+    linkedin_url = generate_linkedin_search_url(req.company, school=user_school)
+    enrichment_enabled = await check_enrichment_consent(user_id, db)
+    if not enrichment_enabled:
+        return {
+            "contacts": [],
+            "linkedin_search_url": linkedin_url,
+            "cached": False,
+            "enrichment_enabled": False,
+        }
+
     # Call Hunter.io
     contacts_data = await find_contacts(req.domain, req.company)
 
@@ -1149,11 +1274,11 @@ async def find_contacts_endpoint(
     for c in saved_contacts:
         await db.refresh(c)
 
-    linkedin_url = generate_linkedin_search_url(req.company, school=user_school)
     return {
         "contacts": [_serialize_contact(c) for c in saved_contacts],
         "linkedin_search_url": linkedin_url,
         "cached": False,
+        "enrichment_enabled": True,
     }
 
 
@@ -1999,17 +2124,22 @@ async def google_auth_callback(
     await db.commit()
     await db.refresh(user)
 
-    # Create refresh token for cookie-based session bootstrap.
-    refresh_token = create_refresh_token(str(user.id))
-    access_token = create_jwt(str(user.id), user.email, user.name, user.picture)
+    # Create a one-time auth code that the frontend will exchange for tokens.
+    # This avoids putting the JWT directly in the URL (browser history / logs).
+    import json as _json
 
-    # Redirect to frontend callback and include a one-time access-token bootstrap
-    # in the URL fragment for mobile/PWA contexts where the cross-site refresh
-    # cookie may not survive the redirect handoff.
+    auth_code = secrets.token_urlsafe(32)
+    code_payload = _json.dumps({
+        "user_id": str(user.id),
+        "email": user.email,
+        "name": user.name,
+        "picture": user.picture,
+    })
+    store_auth_code(auth_code, code_payload)
+
     from starlette.responses import RedirectResponse as _RedirectResponse
-    redirect_url = _build_frontend_callback_url(frontend_url, access_token)
+    redirect_url = _build_frontend_callback_url(frontend_url, auth_code)
     response = _RedirectResponse(url=redirect_url, status_code=302)
-    set_refresh_cookie(response, refresh_token)
     return response
 
 
@@ -2023,6 +2153,7 @@ async def get_me(current_user: User = Depends(get_current_user)):
         "picture": current_user.picture,
         "gmail_connected": current_user.gmail_connected,
         "calendar_connected": current_user.calendar_connected,
+        "data_consent_accepted_at": current_user.data_consent_accepted_at.isoformat() if current_user.data_consent_accepted_at else None,
     }
 
 
@@ -2046,6 +2177,89 @@ async def refresh_access_token(request: Request, db: AsyncSession = Depends(get_
 
     new_access = create_jwt(str(user.id), user.email, user.name, user.picture)
     return {"access_token": new_access, "token_type": "bearer"}
+
+
+class AuthCodeExchangeRequest(BaseModel):
+    code: str
+
+
+class LocalAuthRequest(BaseModel):
+    email: EmailStr | None = None
+    name: str | None = None
+
+
+@app.post("/api/auth/exchange")
+@limiter.limit(_auth_rate_limit, error_message="Too many auth requests. Try again in a minute.")
+async def exchange_auth_code(request: Request, body: AuthCodeExchangeRequest):
+    """Exchange a one-time auth code (from OAuth callback) for access + refresh tokens."""
+    payload_json = consume_auth_code(body.code)
+    if not payload_json:
+        raise HTTPException(status_code=400, detail="Invalid or expired auth code")
+
+    payload = json.loads(payload_json)
+    user_id = payload["user_id"]
+    access_token = create_jwt(user_id, payload["email"], payload.get("name"), payload.get("picture"))
+    refresh_token = create_refresh_token(user_id)
+
+    response = JSONResponse({
+        "access_token": access_token,
+        "token_type": "bearer",
+    })
+    set_refresh_cookie(response, refresh_token)
+    return response
+
+
+@app.post("/api/auth/local-login")
+@limiter.limit(_auth_rate_limit, error_message="Too many auth requests. Try again in a minute.")
+async def local_dev_login(
+    request: Request,
+    body: LocalAuthRequest | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Create or reuse a dev-only local account and return JWT session tokens."""
+    if not LOCAL_DEV_AUTH_ENABLED:
+        raise HTTPException(status_code=404, detail="Local development auth is disabled")
+
+    email = (body.email if body else None) or os.getenv("LOCAL_DEV_AUTH_EMAIL", "me@apptrail.local")
+    name = (body.name if body else None) or os.getenv("LOCAL_DEV_AUTH_NAME", "Local AppTrail User")
+    google_id = f"local-dev:{email}"
+
+    stmt = select(User).where(User.google_id == google_id)
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+
+    if user:
+        user.email = email
+        user.name = name
+        user.updated_at = datetime.now(timezone.utc)
+    else:
+        user = User(
+            google_id=google_id,
+            email=email,
+            name=name,
+            picture="",
+        )
+        db.add(user)
+        await db.flush()
+
+    await db.commit()
+    await db.refresh(user)
+
+    access_token = create_jwt(str(user.id), user.email, user.name, user.picture)
+    refresh_token = create_refresh_token(str(user.id))
+
+    response = JSONResponse({
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            "id": str(user.id),
+            "email": user.email,
+            "name": user.name,
+            "picture": user.picture,
+        },
+    })
+    set_refresh_cookie(response, refresh_token)
+    return response
 
 
 @app.post("/api/auth/logout")
@@ -2163,6 +2377,7 @@ async def sync_gmail(
     )
     from backend.services.company_identity import extract_domain, get_company_info
     from backend.services.email_filter import is_obvious_noise_email
+    from backend.dependencies import check_ai_consent
 
     # Get Gmail credentials
     user_id = current_user.id
@@ -2207,6 +2422,10 @@ async def sync_gmail(
         pref_stmt = select(NotificationPreference).where(NotificationPreference.user_id == user_id)
         pref_result = await db.execute(pref_stmt)
         notification_pref = pref_result.scalar_one_or_none()
+
+    ai_enabled = await check_ai_consent(user_id, db)
+    from backend.dependencies import check_enrichment_consent
+    enrichment_enabled = await check_enrichment_consent(user_id, db)
 
     # Get feedback blocklist
     feedback_stmt = (
@@ -2286,12 +2505,13 @@ async def sync_gmail(
         }):
             continue
 
-        # Classify with Haiku LLM
+        # Classify with LLM (or fallback if AI consent not granted)
         classification = await classify_email_llm(
             subject=subject,
             body=body_text,
             sender=sender_name,
             sender_email=sender_email_addr,
+            ai_enabled=ai_enabled,
         )
 
         cls = classification.get("classification", "job_update")
@@ -2301,7 +2521,7 @@ async def sync_gmail(
             continue
 
         # Company identity
-        company_info = get_company_info(sender_email_addr)
+        company_info = get_company_info(sender_email_addr, include_logo=enrichment_enabled)
         email_company_name = classification.get("company_name") or company_info.get("company_name")
 
         # Match to application
@@ -2511,18 +2731,23 @@ async def sync_calendar(
         raise HTTPException(status_code=502, detail="Google Calendar sync failed.") from exc
 
 
-@app.get("/api/search", dependencies=[Depends(verify_api_key)])
+@app.get("/api/search")
 @limiter.limit(_search_rate_limit, error_message="Too many search requests. Try again in a minute.")
 async def search_jobs_endpoint(
     request: Request,
     q: str = Query(""),
     location: str = Query(""),
     db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
 ):
     from datetime import timedelta
 
     from backend.models import JobListing
+    from backend.dependencies import check_enrichment_consent
     from backend.services.job_search import search_jobs
+
+    user_id = _require_user_id(auth)
+    include_logo = await check_enrichment_consent(user_id, db)
 
     # Check cache: listings saved within 24h matching this query
     cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
@@ -2535,18 +2760,20 @@ async def search_jobs_endpoint(
     cached = result.scalars().all()
 
     if cached:
+        serialized_cached = []
+        for c in cached:
+            serialized_cached.append({
+                "id": str(c.id),
+                "title": c.title,
+                "company": c.company,
+                "source": "cached",
+                "url": c.url,
+                "posted_at": c.posted_at.isoformat() if c.posted_at else None,
+                "description": c.description_snippet,
+                "logo_url": await _resolve_search_logo_url(db, c.company, c.url, include_logo),
+            })
         return {
-            "results": [
-                {
-                    "id": str(c.id),
-                    "title": c.title,
-                    "company": c.company,
-                    "source": c.description_snippet or "cached",
-                    "url": c.url,
-                    "posted_at": c.posted_at.isoformat() if c.posted_at else None,
-                }
-                for c in cached
-            ],
+            "results": serialized_cached,
             "cached": True,
         }
 
@@ -2560,14 +2787,22 @@ async def search_jobs_endpoint(
             company=r.get("company"),
             source=cache_source,
             url=r.get("url"),
-            description_snippet=r.get("source"),
+            description_snippet=r.get("description"),
         )
         db.add(listing)
 
     if results:
         await db.commit()
 
-    return {"results": results, "cached": False}
+    serialized_results = []
+    for r in results:
+        serialized_results.append({
+            **r,
+            "description": r.get("description"),
+            "logo_url": await _resolve_search_logo_url(db, r.get("company"), r.get("url"), include_logo),
+        })
+
+    return {"results": serialized_results, "cached": False}
 
 
 @app.get("/api/search/global")
@@ -2783,8 +3018,10 @@ async def parse_resume_text(
     """Parse resume text into structured profile."""
     user_id = _require_user_id(auth)
     from backend.services.resume_parser import parse_resume
+    from backend.dependencies import check_ai_consent
+    ai_on = await check_ai_consent(user_id, db)
 
-    parsed = await parse_resume(payload.text)
+    parsed = await parse_resume(payload.text, ai_enabled=ai_on)
 
     # Upsert profile scoped by user_id
     stmt = select(UserProfile).where(UserProfile.user_id == user_id).limit(1)
@@ -4153,6 +4390,7 @@ async def generate_draft_endpoint(
     """Generate an AI email draft."""
     import uuid as _uuid
     from backend.services.draft_writer import generate_draft
+    from backend.dependencies import check_ai_consent
 
     company = ""
     role = ""
@@ -4161,6 +4399,7 @@ async def generate_draft_endpoint(
     days_since = 0
 
     user_id = _require_user_id(auth)
+    ai_on = await check_ai_consent(user_id, db)
 
     # Get application context
     if payload.application_id:
@@ -4214,6 +4453,7 @@ async def generate_draft_endpoint(
         conversation_history=conversation_history,
         days_since=days_since,
         additional_context=payload.additional_context or "",
+        ai_enabled=ai_on,
     )
     return draft
 
@@ -4711,12 +4951,15 @@ async def tailor_resume_endpoint(
 
     # Generate tailored version
     from backend.services.resume_tailor import tailor_resume
+    from backend.dependencies import check_ai_consent
+    ai_on = await check_ai_consent(user_id, db)
     result = await tailor_resume(
         original_text=original_text,
         job_description=job_description,
         company=app.company or "",
         role=app.role_title or "",
         skills=skills,
+        ai_enabled=ai_on,
     )
 
     # Save draft
@@ -4845,6 +5088,522 @@ async def delete_resume_draft(
     await db.delete(draft)
     await db.commit()
     return {"status": "deleted"}
+
+
+def _serialize_research_profile(profile: ResearchProfile) -> dict:
+    return {
+        "id": str(profile.id),
+        "name": profile.name,
+        "objective": profile.objective,
+        "selected_domains": profile.selected_domains or [],
+        "selected_roles": profile.selected_roles or [],
+        "selected_companies": profile.selected_companies or [],
+        "keywords": profile.keywords or [],
+        "excluded_keywords": profile.excluded_keywords or [],
+        "source_types": profile.source_types or [],
+        "frequency": profile.frequency,
+        "notification_mode": profile.notification_mode,
+        "minimum_score": profile.minimum_score,
+        "active": profile.active,
+        "last_run_at": profile.last_run_at.isoformat() if profile.last_run_at else None,
+        "created_at": profile.created_at.isoformat() if profile.created_at else None,
+    }
+
+
+def _serialize_run(run: ResearchRun) -> dict:
+    return {
+        "id": str(run.id),
+        "profile_id": str(run.profile_id),
+        "status": run.status,
+        "started_at": run.started_at.isoformat() if run.started_at else None,
+        "completed_at": run.completed_at.isoformat() if run.completed_at else None,
+        "source_counts": run.source_counts or {},
+        "signal_counts": run.signal_counts or {},
+        "error_message": run.error_message,
+        "created_at": run.created_at.isoformat() if run.created_at else None,
+    }
+
+
+def _serialize_signal(signal: OpportunitySignal, score: OpportunityScore | None = None) -> dict:
+    payload = {
+        "id": str(signal.id),
+        "profile_id": str(signal.profile_id) if signal.profile_id else None,
+        "company_id": str(signal.company_id) if signal.company_id else None,
+        "application_id": str(signal.application_id) if signal.application_id else None,
+        "event_type": signal.event_type,
+        "title": signal.title,
+        "summary": signal.summary,
+        "evidence": signal.evidence or [],
+        "domains": signal.domains or [],
+        "roles": signal.roles or [],
+        "tech_stack": signal.tech_stack or [],
+        "confidence": signal.confidence,
+        "occurred_at": signal.occurred_at.isoformat() if signal.occurred_at else None,
+        "created_at": signal.created_at.isoformat() if signal.created_at else None,
+    }
+    if score:
+        payload["score"] = {
+            "total_score": score.total_score,
+            "role_fit": score.role_fit,
+            "domain_fit": score.domain_fit,
+            "company_interest": score.company_interest,
+            "recency": score.recency,
+            "public_data_buildability": score.public_data_buildability,
+            "outreach_path_strength": score.outreach_path_strength,
+            "portfolio_gap_relevance": score.portfolio_gap_relevance,
+            "source_confidence": score.source_confidence,
+            "explanation": score.explanation,
+        }
+    return payload
+
+
+def _serialize_brief(brief: OpportunityBrief) -> dict:
+    return {
+        "id": str(brief.id),
+        "profile_id": str(brief.profile_id) if brief.profile_id else None,
+        "run_id": str(brief.run_id) if brief.run_id else None,
+        "signal_id": str(brief.signal_id) if brief.signal_id else None,
+        "title": brief.title,
+        "brief_type": brief.brief_type,
+        "markdown": brief.markdown,
+        "structured_json": brief.structured_json,
+        "confidence": brief.confidence,
+        "created_at": brief.created_at.isoformat() if brief.created_at else None,
+    }
+
+
+def _serialize_action(action: RecommendedAction) -> dict:
+    return {
+        "id": str(action.id),
+        "profile_id": str(action.profile_id) if action.profile_id else None,
+        "signal_id": str(action.signal_id) if action.signal_id else None,
+        "brief_id": str(action.brief_id) if action.brief_id else None,
+        "company_id": str(action.company_id) if action.company_id else None,
+        "action_type": action.action_type,
+        "title": action.title,
+        "body": action.body,
+        "payload": action.payload,
+        "priority": action.priority,
+        "status": action.status,
+        "due_at": action.due_at.isoformat() if action.due_at else None,
+        "created_at": action.created_at.isoformat() if action.created_at else None,
+        "completed_at": action.completed_at.isoformat() if action.completed_at else None,
+    }
+
+
+@app.post("/api/research/profiles", status_code=201)
+async def create_research_profile(
+    payload: ResearchProfileCreate,
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    user_id = _require_user_id(auth)
+    profile = ResearchProfile(user_id=user_id, **payload.model_dump())
+    db.add(profile)
+    await db.commit()
+    await db.refresh(profile)
+    return _serialize_research_profile(profile)
+
+
+@app.get("/api/research/profiles")
+async def list_research_profiles(
+    limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    user_id = _require_user_id(auth)
+    stmt = (
+        select(ResearchProfile)
+        .where(ResearchProfile.user_id == user_id)
+        .order_by(ResearchProfile.created_at.desc())
+    )
+    rows = (await db.execute(_paginate(stmt, limit, offset))).scalars().all()
+    return [_serialize_research_profile(row) for row in rows]
+
+
+@app.get("/api/research/profiles/{profile_id}")
+async def get_research_profile(profile_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    user_id = _require_user_id(auth)
+    try:
+        p_uuid = _uuid.UUID(profile_id)
+    except ValueError:
+        raise HTTPException(404, "Profile not found")
+    stmt = select(ResearchProfile).where(ResearchProfile.id == p_uuid, ResearchProfile.user_id == user_id)
+    profile = (await db.execute(stmt)).scalars().first()
+    if not profile:
+        raise HTTPException(404, "Profile not found")
+    return _serialize_research_profile(profile)
+
+
+@app.patch("/api/research/profiles/{profile_id}")
+async def update_research_profile(profile_id: str, payload: ResearchProfileUpdate, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    user_id = _require_user_id(auth)
+    try:
+        p_uuid = _uuid.UUID(profile_id)
+    except ValueError:
+        raise HTTPException(404, "Profile not found")
+    stmt = select(ResearchProfile).where(ResearchProfile.id == p_uuid, ResearchProfile.user_id == user_id)
+    profile = (await db.execute(stmt)).scalars().first()
+    if not profile:
+        raise HTTPException(404, "Profile not found")
+
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(profile, key, value)
+    profile.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(profile)
+    return _serialize_research_profile(profile)
+
+
+@app.delete("/api/research/profiles/{profile_id}")
+async def delete_research_profile(profile_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    user_id = _require_user_id(auth)
+    try:
+        p_uuid = _uuid.UUID(profile_id)
+    except ValueError:
+        raise HTTPException(404, "Profile not found")
+    stmt = select(ResearchProfile).where(ResearchProfile.id == p_uuid, ResearchProfile.user_id == user_id)
+    profile = (await db.execute(stmt)).scalars().first()
+    if not profile:
+        raise HTTPException(404, "Profile not found")
+    await db.delete(profile)
+    await db.commit()
+    return {"status": "deleted"}
+
+
+@app.post("/api/research/profiles/{profile_id}/run", status_code=201)
+async def run_research_profile(profile_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    user_id = _require_user_id(auth)
+    try:
+        p_uuid = _uuid.UUID(profile_id)
+    except ValueError:
+        raise HTTPException(404, "Profile not found")
+    profile = (
+        await db.execute(
+            select(ResearchProfile).where(ResearchProfile.id == p_uuid, ResearchProfile.user_id == user_id)
+        )
+    ).scalars().first()
+    if not profile:
+        raise HTTPException(404, "Profile not found")
+
+    run = ResearchRun(
+        user_id=user_id,
+        profile_id=profile.id,
+        status="running",
+        started_at=datetime.now(timezone.utc),
+    )
+    db.add(run)
+    await db.flush()
+
+    try:
+        candidates = await collect_internal_sources(db, profile, user_id)
+        source_items: list[ResearchSourceItem] = []
+        for candidate in candidates:
+            company_id = None
+            if candidate.company_domain:
+                company = (
+                    await db.execute(select(Company).where(Company.domain == candidate.company_domain))
+                ).scalars().first()
+                if company:
+                    company_id = company.id
+
+            existing_stmt = select(ResearchSourceItem).where(
+                ResearchSourceItem.user_id == user_id,
+                ResearchSourceItem.source_url == candidate.source_url,
+                ResearchSourceItem.content_hash == candidate.content_hash,
+            )
+            existing = (await db.execute(existing_stmt)).scalars().first()
+            if existing:
+                source_items.append(existing)
+                continue
+
+            item = ResearchSourceItem(
+                run_id=run.id,
+                user_id=user_id,
+                profile_id=profile.id,
+                company_id=company_id,
+                source_type=candidate.source_type,
+                source_name=candidate.source_name,
+                source_url=candidate.source_url,
+                external_id=candidate.external_id,
+                title=candidate.title,
+                raw_text=candidate.raw_text,
+                raw_json=candidate.raw_json,
+                published_at=candidate.published_at,
+                content_hash=candidate.content_hash,
+            )
+            db.add(item)
+            source_items.append(item)
+
+        await db.flush()
+
+        signal_counter: dict[str, int] = {}
+        for item in source_items:
+            generated = extract_signals(item, user_id=user_id, profile_id=profile.id, run_id=run.id, company_id=item.company_id)
+            for signal in generated:
+                duplicate_stmt = select(OpportunitySignal).where(
+                    OpportunitySignal.user_id == user_id,
+                    OpportunitySignal.source_item_id == item.id,
+                    OpportunitySignal.event_type == signal.event_type,
+                )
+                existing_signal = (await db.execute(duplicate_stmt)).scalars().first()
+                if existing_signal:
+                    continue
+
+                db.add(signal)
+                await db.flush()
+
+                scoring = score_signal(signal, profile=profile)
+                score_row = OpportunityScore(
+                    signal_id=signal.id,
+                    user_id=user_id,
+                    profile_id=profile.id,
+                    **scoring,
+                )
+                db.add(score_row)
+
+                brief_payload = generate_briefs(signal, scoring)
+                brief = OpportunityBrief(
+                    user_id=user_id,
+                    profile_id=profile.id,
+                    run_id=run.id,
+                    signal_id=signal.id,
+                    **brief_payload,
+                )
+                db.add(brief)
+                await db.flush()
+
+                for action_payload in generate_actions(signal, scoring):
+                    db.add(
+                        RecommendedAction(
+                            user_id=user_id,
+                            profile_id=profile.id,
+                            signal_id=signal.id,
+                            brief_id=brief.id,
+                            company_id=signal.company_id,
+                            action_type=action_payload["action_type"],
+                            title=action_payload["title"],
+                            body=action_payload.get("body"),
+                            payload=action_payload.get("payload"),
+                            priority=action_payload.get("priority", 50),
+                        )
+                    )
+
+                if scoring["total_score"] >= max(profile.minimum_score, 85):
+                    db.add(
+                        Alert(
+                            user_id=user_id,
+                            alert_type="opportunity_signal",
+                            title=f"Radar signal: {signal.title}",
+                            body=signal.summary,
+                            action_url=_alert_action_url("/radar", profile_id=str(profile.id), signal_id=str(signal.id)),
+                        )
+                    )
+
+                signal_counter[signal.event_type] = signal_counter.get(signal.event_type, 0) + 1
+
+        run.source_counts = {"total": len(source_items)}
+        run.signal_counts = signal_counter
+        run.status = "succeeded"
+        run.completed_at = datetime.now(timezone.utc)
+        profile.last_run_at = run.completed_at
+        await db.commit()
+        await db.refresh(run)
+        return _serialize_run(run)
+    except Exception as exc:
+        await db.rollback()
+        run.status = "failed"
+        run.error_message = str(exc)[:2000]
+        run.completed_at = datetime.now(timezone.utc)
+        db.add(run)
+        await db.commit()
+        raise
+
+
+@app.get("/api/research/runs")
+async def list_research_runs(
+    profile_id: Optional[str] = Query(None),
+    limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    user_id = _require_user_id(auth)
+    stmt = select(ResearchRun).where(ResearchRun.user_id == user_id).order_by(ResearchRun.created_at.desc())
+    if profile_id:
+        try:
+            stmt = stmt.where(ResearchRun.profile_id == _uuid.UUID(profile_id))
+        except ValueError:
+            return []
+    runs = (await db.execute(_paginate(stmt, limit, offset))).scalars().all()
+    return [_serialize_run(r) for r in runs]
+
+
+@app.get("/api/research/signals")
+async def list_opportunity_signals(
+    profile_id: Optional[str] = Query(None),
+    limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    user_id = _require_user_id(auth)
+    stmt = select(OpportunitySignal).where(OpportunitySignal.user_id == user_id).order_by(OpportunitySignal.created_at.desc())
+    if profile_id:
+        try:
+            stmt = stmt.where(OpportunitySignal.profile_id == _uuid.UUID(profile_id))
+        except ValueError:
+            return []
+    signals = (await db.execute(_paginate(stmt, limit, offset))).scalars().all()
+
+    signal_ids = [signal.id for signal in signals]
+    scores: dict[_uuid.UUID, OpportunityScore] = {}
+    if signal_ids:
+        score_rows = (
+            await db.execute(select(OpportunityScore).where(OpportunityScore.signal_id.in_(signal_ids)))
+        ).scalars().all()
+        scores = {row.signal_id: row for row in score_rows}
+
+    return [_serialize_signal(signal, scores.get(signal.id)) for signal in signals]
+
+
+@app.get("/api/research/briefs")
+async def list_opportunity_briefs(
+    profile_id: Optional[str] = Query(None),
+    limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    user_id = _require_user_id(auth)
+    stmt = select(OpportunityBrief).where(OpportunityBrief.user_id == user_id).order_by(OpportunityBrief.created_at.desc())
+    if profile_id:
+        try:
+            stmt = stmt.where(OpportunityBrief.profile_id == _uuid.UUID(profile_id))
+        except ValueError:
+            return []
+    briefs = (await db.execute(_paginate(stmt, limit, offset))).scalars().all()
+    return [_serialize_brief(brief) for brief in briefs]
+
+
+@app.get("/api/research/actions")
+async def list_recommended_actions(
+    profile_id: Optional[str] = Query(None),
+    limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    user_id = _require_user_id(auth)
+    stmt = (
+        select(RecommendedAction)
+        .where(RecommendedAction.user_id == user_id)
+        .order_by(RecommendedAction.priority.desc(), RecommendedAction.created_at.desc())
+    )
+    if profile_id:
+        try:
+            stmt = stmt.where(RecommendedAction.profile_id == _uuid.UUID(profile_id))
+        except ValueError:
+            return []
+    actions = (await db.execute(_paginate(stmt, limit, offset))).scalars().all()
+    return [_serialize_action(action) for action in actions]
+
+
+@app.patch("/api/research/actions/{action_id}")
+async def update_recommended_action(action_id: str, payload: RecommendedActionUpdate, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    user_id = _require_user_id(auth)
+    try:
+        a_uuid = _uuid.UUID(action_id)
+    except ValueError:
+        raise HTTPException(404, "Action not found")
+    action = (
+        await db.execute(select(RecommendedAction).where(RecommendedAction.id == a_uuid, RecommendedAction.user_id == user_id))
+    ).scalars().first()
+    if not action:
+        raise HTTPException(404, "Action not found")
+    current_status = action.status
+    next_status = payload.status
+    if next_status != current_status and next_status not in _ACTION_STATUS_TRANSITIONS.get(current_status, set()):
+        raise HTTPException(400, f"Invalid action transition: {current_status} -> {next_status}")
+
+    action.status = next_status
+    if next_status == "completed":
+        action.completed_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(action)
+    return _serialize_action(action)
+
+
+@app.post("/api/research/actions/{action_id}/accept")
+async def accept_recommended_action(action_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    return await update_recommended_action(action_id, RecommendedActionUpdate(status="accepted"), db, auth)
+
+
+@app.post("/api/research/feedback", status_code=201)
+async def create_research_feedback(payload: ResearchFeedbackCreate, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    user_id = _require_user_id(auth)
+
+    def _to_uuid(value: str | None):
+        if not value:
+            return None
+        try:
+            return _uuid.UUID(value)
+        except ValueError:
+            raise HTTPException(400, f"Invalid uuid: {value}")
+
+    feedback = ResearchFeedback(
+        user_id=user_id,
+        signal_id=_to_uuid(payload.signal_id),
+        brief_id=_to_uuid(payload.brief_id),
+        action_id=_to_uuid(payload.action_id),
+        rating=payload.rating,
+        notes=payload.notes,
+    )
+    db.add(feedback)
+    await db.commit()
+    await db.refresh(feedback)
+    return {
+        "id": str(feedback.id),
+        "rating": feedback.rating,
+        "created_at": feedback.created_at.isoformat() if feedback.created_at else None,
+    }
+
+
+@app.get("/api/research/feedback/stats")
+async def research_feedback_stats(db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    user_id = _require_user_id(auth)
+    stmt = (
+        select(ResearchFeedback)
+        .where(ResearchFeedback.user_id == user_id)
+        .order_by(ResearchFeedback.created_at.desc())
+    )
+    feedback_rows = (await db.execute(stmt)).scalars().all()
+
+    total = len(feedback_rows)
+    useful = sum(1 for row in feedback_rows if row.rating == "useful")
+    not_useful = sum(1 for row in feedback_rows if row.rating == "not_useful")
+    usefulness_rate = round((useful / total) * 100, 1) if total else 0.0
+
+    return {
+        "total_feedback": total,
+        "useful": useful,
+        "not_useful": not_useful,
+        "usefulness_rate": usefulness_rate,
+        "notes_count": sum(1 for row in feedback_rows if row.notes),
+        "recent_feedback": [
+            {
+                "id": str(row.id),
+                "signal_id": str(row.signal_id) if row.signal_id else None,
+                "brief_id": str(row.brief_id) if row.brief_id else None,
+                "action_id": str(row.action_id) if row.action_id else None,
+                "rating": row.rating,
+                "notes": row.notes,
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+            }
+            for row in feedback_rows[:5]
+        ],
+    }
 
 
 # ── Classifier Audit Dashboard ───────────────────────────────────────
@@ -5430,3 +6189,182 @@ async def extraction_version_stats(
         "versions": version_list,
         "changelog": changelog,
     }
+
+
+# ---------------------------------------------------------------------------
+# Data Consent & Account Management
+# ---------------------------------------------------------------------------
+
+CONSENT_TYPES = ("core", "ai_processing", "third_party_enrichment")
+
+
+class ConsentBody(BaseModel):
+    core: bool
+    ai_processing: bool
+    third_party_enrichment: bool
+
+
+@app.get("/api/consent")
+async def get_consent(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(DataConsent).where(DataConsent.user_id == current_user.id)
+    )
+    rows = {r.consent_type: r.granted for r in result.scalars().all()}
+    return {
+        "consents": {ct: rows.get(ct, False) for ct in CONSENT_TYPES},
+        "accepted_at": current_user.data_consent_accepted_at.isoformat() if current_user.data_consent_accepted_at else None,
+    }
+
+
+@app.put("/api/consent")
+async def update_consent(
+    body: ConsentBody,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if not body.core:
+        raise HTTPException(status_code=400, detail="Core data consent is required to use AppTrail.")
+
+    now = datetime.now(timezone.utc)
+    ip = request.client.host if request.client else None
+    mapping = {"core": body.core, "ai_processing": body.ai_processing, "third_party_enrichment": body.third_party_enrichment}
+
+    for consent_type, granted in mapping.items():
+        result = await db.execute(
+            select(DataConsent).where(
+                DataConsent.user_id == current_user.id,
+                DataConsent.consent_type == consent_type,
+            )
+        )
+        existing = result.scalar_one_or_none()
+        if existing:
+            was_granted = existing.granted
+            existing.granted = granted
+            existing.updated_at = now
+            existing.ip_address = ip
+            if granted and not was_granted:
+                existing.granted_at = now
+                existing.revoked_at = None
+            elif not granted and was_granted:
+                existing.revoked_at = now
+        else:
+            consent = DataConsent(
+                user_id=current_user.id,
+                consent_type=consent_type,
+                granted=granted,
+                granted_at=now if granted else None,
+                ip_address=ip,
+                updated_at=now,
+            )
+            db.add(consent)
+
+    current_user.data_consent_accepted_at = now
+    current_user.updated_at = now
+    await db.commit()
+
+    return {
+        "consents": mapping,
+        "accepted_at": now.isoformat(),
+    }
+
+
+class DeleteAccountBody(BaseModel):
+    confirm: str
+
+
+@app.delete("/api/account", status_code=204)
+async def delete_account(
+    body: DeleteAccountBody,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if body.confirm != "DELETE":
+        raise HTTPException(status_code=400, detail='You must send {"confirm": "DELETE"} to delete your account.')
+
+    auth_header = request.headers.get("authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header.split(" ", 1)[1]
+        try:
+            payload = decode_jwt(token)
+            blacklist_token(payload.get("jti", ""))
+        except Exception:
+            pass
+
+    await db.delete(current_user)
+    await db.commit()
+
+    response = Response(status_code=204)
+    clear_refresh_cookie(response)
+    return response
+
+
+@app.get("/api/account/export")
+async def export_account_data(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    uid = current_user.id
+
+    def _serialize(obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        if isinstance(obj, uuid4.__class__):
+            return str(obj)
+        return str(obj)
+
+    def _row_dict(row):
+        mapper = sa_inspect(type(row))
+        d = {}
+        for col in mapper.columns:
+            val = getattr(row, col.key, None)
+            if isinstance(val, datetime):
+                val = val.isoformat()
+            elif hasattr(val, 'hex'):
+                val = str(val)
+            d[col.key] = val
+        return d
+
+    export: dict = {
+        "user": {
+            "id": str(current_user.id),
+            "email": current_user.email,
+            "name": current_user.name,
+            "created_at": current_user.created_at.isoformat() if current_user.created_at else None,
+        },
+    }
+
+    tables = [
+        ("applications", Application, Application.user_id == uid),
+        ("contacts", Contact, Contact.user_id == uid),
+        ("emails", EmailEvent, EmailEvent.user_id == uid),
+        ("interviews", Interview, Interview.user_id == uid),
+        ("company_visits", CompanyVisit, CompanyVisit.user_id == uid),
+        ("alerts", Alert, Alert.user_id == uid),
+        ("warm_connections", WarmConnection, WarmConnection.user_id == uid),
+        ("research_profiles", ResearchProfile, ResearchProfile.user_id == uid),
+        ("research_runs", ResearchRun, ResearchRun.user_id == uid),
+        ("research_source_items", ResearchSourceItem, ResearchSourceItem.user_id == uid),
+        ("opportunity_signals", OpportunitySignal, OpportunitySignal.user_id == uid),
+        ("opportunity_scores", OpportunityScore, OpportunityScore.user_id == uid),
+        ("opportunity_briefs", OpportunityBrief, OpportunityBrief.user_id == uid),
+        ("recommended_actions", RecommendedAction, RecommendedAction.user_id == uid),
+        ("research_feedback", ResearchFeedback, ResearchFeedback.user_id == uid),
+        ("consents", DataConsent, DataConsent.user_id == uid),
+    ]
+
+    for key, model, condition in tables:
+        result = await db.execute(select(model).where(condition))
+        export[key] = [_row_dict(r) for r in result.scalars().all()]
+
+    import uuid as _uuid
+    content = json.dumps(export, default=str, indent=2)
+    return Response(
+        content=content,
+        media_type="application/json",
+        headers={"Content-Disposition": f"attachment; filename=apptrail-export-{current_user.email}.json"},
+    )

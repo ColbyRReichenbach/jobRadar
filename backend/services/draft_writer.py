@@ -5,35 +5,14 @@ Generates context-aware email drafts for follow-ups, introductions, and replies.
 
 import json
 import logging
-import os
 
-import openai
-
-from backend.utils.retry import with_retry
+from backend.services import ai_orchestrator
 
 logger = logging.getLogger(__name__)
 
-client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-DRAFT_MODEL = "gpt-4o"
-
-SYSTEM_PROMPT = """You are an expert at writing professional job search emails.
-Generate a draft email based on the context provided.
-
-Rules:
-1. Be concise and professional
-2. Match the tone of any previous conversation (formal/casual)
-3. Never sound desperate or pushy
-4. Include specific details from the context (company name, role, conversation history)
-5. Keep subject lines under 60 characters
-6. Keep body under 150 words for follow-ups, 200 for introductions
-
-Return ONLY valid JSON:
-{
-  "subject": "<email subject line>",
-  "body": "<email body text>",
-  "tone": "<formal|casual|neutral>"
-}"""
+DRAFT_TASK = ai_orchestrator.get_task("draft_writer")
+DRAFT_MODEL = DRAFT_TASK.model
+SYSTEM_PROMPT = DRAFT_TASK.system_prompt or ""
 
 DRAFT_TYPE_PROMPTS = {
     "follow_up": "Write a polite follow-up email for a job application. It's been {days_since} days since the last activity. Keep it brief and professional.",
@@ -52,11 +31,16 @@ async def generate_draft(
     conversation_history: list[dict] | None = None,
     days_since: int = 0,
     additional_context: str = "",
+    ai_enabled: bool = True,
 ) -> dict:
     """Generate an AI email draft.
 
     Returns dict with subject, body, tone.
     """
+    if not ai_enabled:
+        ai_orchestrator.record_fallback(DRAFT_TASK, "disabled_by_consent", {"surface": "draft_writer", "draft_type": draft_type})
+        return _fallback_draft(draft_type, company, role, contact_name)
+
     # Build context prompt
     prompt_template = DRAFT_TYPE_PROMPTS.get(draft_type, DRAFT_TYPE_PROMPTS["follow_up"])
     type_prompt = prompt_template.format(
@@ -88,32 +72,11 @@ async def generate_draft(
     user_message = f"{type_prompt}\n\nContext:\n" + "\n".join(context_parts)
 
     try:
-        response = await with_retry(
-            client.chat.completions.create,
-            model=DRAFT_MODEL,
-            max_tokens=500,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_message},
-            ],
+        result = await ai_orchestrator.run_json_task(
+            DRAFT_TASK,
+            user_message,
+            metadata={"surface": "draft_writer", "draft_type": draft_type},
         )
-
-        text = response.choices[0].message.content.strip()
-        # Try to parse as JSON
-        if text.startswith("{"):
-            result = json.loads(text)
-        else:
-            # Extract JSON from response
-            start = text.find("{")
-            end = text.rfind("}") + 1
-            if start >= 0 and end > start:
-                result = json.loads(text[start:end])
-            else:
-                result = {
-                    "subject": f"Re: {role} position at {company}" if role else "Following up",
-                    "body": text,
-                    "tone": "neutral",
-                }
 
         return {
             "subject": result.get("subject", ""),
@@ -124,6 +87,7 @@ async def generate_draft(
 
     except Exception as e:
         logger.warning("Draft generation failed, returning template: %s", e)
+        ai_orchestrator.record_fallback(DRAFT_TASK, "task_failure", {"surface": "draft_writer", "draft_type": draft_type})
         return _fallback_draft(draft_type, company, role, contact_name)
 
 

@@ -4,7 +4,7 @@ import json
 import os
 from typing import Any
 
-from backend.utils.retry import with_retry
+from backend.services import ai_orchestrator
 
 
 async def extract_text_from_pdf(pdf_bytes: bytes) -> str:
@@ -21,16 +21,16 @@ async def extract_text_from_pdf(pdf_bytes: bytes) -> str:
     return "\n\n".join(text_parts)
 
 
-async def parse_resume(text: str) -> dict[str, Any]:
+async def parse_resume(text: str, ai_enabled: bool = True) -> dict[str, Any]:
     """Parse resume text into structured profile using GPT-4o-mini."""
-    import openai
-
-    api_key = os.getenv("OPENAI_API_KEY", "")
-    if not api_key or api_key == "test-key":
+    if not ai_enabled or not ai_orchestrator.has_configured_api_key():
+        ai_orchestrator.record_fallback(
+            "resume_parser",
+            "disabled_or_unconfigured",
+            {"surface": "resume_parser", "ai_enabled": ai_enabled},
+        )
         # Fallback: basic keyword extraction without LLM
         return _fallback_parse(text)
-
-    client = openai.AsyncOpenAI(api_key=api_key)
 
     prompt = f"""Extract structured information from this resume. Return ONLY valid JSON with these fields:
 - skills: list of technical skills (e.g. ["Python", "React", "SQL"])
@@ -43,20 +43,13 @@ Resume text:
 {text[:8000]}"""
 
     try:
-        response = await with_retry(
-            client.chat.completions.create,
-            model="gpt-4o-mini",
-            max_tokens=2000,
-            messages=[{"role": "user", "content": prompt}],
+        return await ai_orchestrator.run_json_task(
+            "resume_parser",
+            prompt,
+            metadata={"surface": "resume_parser"},
         )
-        content = response.choices[0].message.content
-        # Try to extract JSON from the response
-        start = content.find("{")
-        end = content.rfind("}") + 1
-        if start >= 0 and end > start:
-            return json.loads(content[start:end])
     except Exception:
-        pass
+        ai_orchestrator.record_fallback("resume_parser", "task_failure", {"surface": "resume_parser"})
 
     return _fallback_parse(text)
 

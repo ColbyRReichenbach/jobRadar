@@ -159,7 +159,7 @@ function VersionTimeline() {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="version" tick={{ fontSize: 10 }} angle={-30} textAnchor="end" height={60} />
               <YAxis domain={[0, 100]} tickFormatter={v => `${v}%`} tick={{ fontSize: 11 }} />
-              <Tooltip formatter={(val: number) => `${val}%`} />
+              <Tooltip formatter={(val) => `${val}%`} />
               <Legend />
               <Line type="monotone" dataKey="accuracy" name="Accuracy %" stroke="#10b981" strokeWidth={3} dot={{ r: 5 }} />
             </LineChart>
