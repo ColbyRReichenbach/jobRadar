@@ -11,6 +11,20 @@ from backend.services.research_radar.schemas import SearchCandidate
 from tests.conftest import AUTH_HEADER
 
 
+async def _grant_research_consent(client):
+    response = await client.put(
+        "/api/consent",
+        json={
+            "core": True,
+            "ai_processing": True,
+            "third_party_enrichment": False,
+            "web_research": True,
+        },
+        headers=AUTH_HEADER,
+    )
+    assert response.status_code == 200
+
+
 @pytest.mark.asyncio
 async def test_deterministic_normalized_brief_fills_from_context():
     tracker = {
@@ -112,6 +126,7 @@ async def test_research_mode_run_persists_report_and_steps(client, monkeypatch, 
 
     monkeypatch.setattr("backend.services.research_radar.nodes.search.search_public_web", _fake_search)
     monkeypatch.setattr("backend.services.research_radar.nodes.fetch.fetch_document", _fake_fetch)
+    await _grant_research_consent(client)
 
     profile_resp = await client.post(
         "/api/research/profiles",
@@ -191,6 +206,7 @@ async def test_research_mode_failed_step_is_persisted(client, monkeypatch, db_se
 
     monkeypatch.setattr("backend.services.research_radar.nodes.search.search_public_web", _fake_search)
     monkeypatch.setattr("backend.services.research_radar.nodes.fetch.fetch_document", _boom)
+    await _grant_research_consent(client)
 
     profile_resp = await client.post(
         "/api/research/profiles",
@@ -252,6 +268,7 @@ async def test_research_mode_http_fetch_error_falls_back_to_search_snippet(clien
 
     monkeypatch.setattr("backend.services.research_radar.nodes.search.search_public_web", _fake_search)
     monkeypatch.setattr("backend.services.research_radar.nodes.fetch.fetch_document", _blocked)
+    await _grant_research_consent(client)
 
     profile_resp = await client.post(
         "/api/research/profiles",
@@ -325,6 +342,7 @@ async def test_second_research_report_persists_diff_payload(client, monkeypatch)
 
     monkeypatch.setattr("backend.services.research_radar.nodes.search.search_public_web", _fake_search)
     monkeypatch.setattr("backend.services.research_radar.nodes.fetch.fetch_document", _fake_fetch)
+    await _grant_research_consent(client)
 
     profile_resp = await client.post(
         "/api/research/profiles",
@@ -383,6 +401,7 @@ async def test_research_trace_payload_includes_artifacts_and_summary(client, mon
 
     monkeypatch.setattr("backend.services.research_radar.nodes.search.search_public_web", _fake_search)
     monkeypatch.setattr("backend.services.research_radar.nodes.fetch.fetch_document", _fake_fetch)
+    await _grant_research_consent(client)
 
     profile_resp = await client.post(
         "/api/research/profiles",

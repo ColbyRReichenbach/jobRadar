@@ -73,6 +73,18 @@ async def test_metrics_endpoint_exposes_research_radar_metrics(client, monkeypat
     monkeypatch.setattr("backend.services.research_radar.nodes.search.search_public_web", _fake_search)
     monkeypatch.setattr("backend.services.research_radar.nodes.fetch.fetch_document", _fake_fetch)
 
+    consent_resp = await client.put(
+        "/api/consent",
+        json={
+            "core": True,
+            "ai_processing": True,
+            "third_party_enrichment": False,
+            "web_research": True,
+        },
+        headers=AUTH_HEADER,
+    )
+    assert consent_resp.status_code == 200
+
     profile_resp = await client.post(
         "/api/research/profiles",
         json={

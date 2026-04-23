@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 from uuid import UUID
 
@@ -31,6 +31,18 @@ def _alert_action_url(path: str, **params: str | None) -> str:
     clean_params = {key: value for key, value in params.items() if value}
     query = urlencode(clean_params)
     return f"{path}?{query}" if query else path
+
+
+def _next_run_delta(frequency: str) -> timedelta | None:
+    if frequency == "daily":
+        return timedelta(days=1)
+    if frequency == "weekly":
+        return timedelta(days=7)
+    if frequency == "biweekly":
+        return timedelta(days=14)
+    if frequency == "monthly":
+        return timedelta(days=30)
+    return None
 
 
 async def _load_run_and_profile(db: AsyncSession, run_id: UUID):
@@ -442,7 +454,7 @@ async def execute_research_run_with_new_session(run_id: UUID) -> None:
 
 async def dispatch_due_research_profiles_async() -> int:
     from backend.database import async_session_factory
-    from backend.models import ResearchProfile, ResearchRun
+    from backend.models import DataConsent, ResearchProfile, ResearchRun
 
     async with async_session_factory() as db:
         now = datetime.now(timezone.utc)
@@ -458,7 +470,35 @@ async def dispatch_due_research_profiles_async() -> int:
 
         queued = 0
         queued_run_ids: list[str] = []
+        state_changed = False
         for profile in due_profiles:
+            inflight_run = (
+                await db.execute(
+                    select(ResearchRun).where(
+                        ResearchRun.profile_id == profile.id,
+                        ResearchRun.status.in_(("queued", "running", "retrying")),
+                    )
+                )
+            ).scalars().first()
+            if inflight_run:
+                continue
+
+            if profile.mode in {"research", "hybrid"}:
+                consent_rows = (
+                    await db.execute(
+                        select(DataConsent.consent_type, DataConsent.granted).where(
+                            DataConsent.user_id == profile.user_id,
+                            DataConsent.consent_type.in_(("core", "ai_processing", "web_research")),
+                        )
+                    )
+                ).all()
+                consent_flags = {consent_type: bool(granted) for consent_type, granted in consent_rows}
+                if not all(consent_flags.get(key, False) for key in ("core", "ai_processing", "web_research")):
+                    delta = _next_run_delta(profile.frequency)
+                    profile.next_run_at = now + delta if delta and profile.active else None
+                    state_changed = True
+                    continue
+
             run = ResearchRun(
                 user_id=profile.user_id,
                 profile_id=profile.id,
@@ -471,9 +511,11 @@ async def dispatch_due_research_profiles_async() -> int:
             await db.flush()
             queued_run_ids.append(str(run.id))
             queued += 1
+            state_changed = True
 
-        if queued:
+        if state_changed:
             await db.commit()
+        if queued:
             for run_id in queued_run_ids:
                 run_research_radar.delay(run_id)
         return queued

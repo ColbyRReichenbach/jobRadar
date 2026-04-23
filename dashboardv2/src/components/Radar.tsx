@@ -89,6 +89,10 @@ function readTraceDebugFlag(): boolean {
   return ['127.0.0.1', 'localhost'].includes(window.location.hostname);
 }
 
+function hasResearchConsent(consent: ConsentStatus | null): boolean {
+  return Boolean(consent?.consents.core && consent?.consents.ai_processing && consent?.consents.web_research);
+}
+
 export function Radar({ focusRequest }: RadarProps) {
   const [profiles, setProfiles] = useState<ResearchProfile[]>([]);
   const [signals, setSignals] = useState<OpportunitySignal[]>([]);
@@ -152,6 +156,7 @@ export function Radar({ focusRequest }: RadarProps) {
   const traceDebugEnabled = readTraceDebugFlag();
   const latestRun = runs[0] || null;
   const latestRunSignalCount = Object.values(latestRun?.signal_counts || {}).reduce((total, count) => total + count, 0);
+  const researchConsentEnabled = hasResearchConsent(consent);
 
   const load = async (
     requestedProfileId?: string | null,
@@ -347,8 +352,8 @@ export function Radar({ focusRequest }: RadarProps) {
 
   const runNow = async () => {
     if (!selectedProfileId || !selectedProfile) return;
-    if (supportsReportSurface(selectedProfile.mode) && !consent?.consents.web_research) {
-      setErrorMessage('Enable web research consent before running research or hybrid trackers.');
+    if (supportsReportSurface(selectedProfile.mode) && !researchConsentEnabled) {
+      setErrorMessage('Research and hybrid trackers need core, AI processing, and web research consent before they can run.');
       return;
     }
 
@@ -465,7 +470,7 @@ export function Radar({ focusRequest }: RadarProps) {
             <button
               type="button"
               onClick={runNow}
-              disabled={!selectedProfileId || running}
+              disabled={!selectedProfileId || running || Boolean(selectedProfile && supportsReportSurface(selectedProfile.mode) && !researchConsentEnabled)}
               className="rounded-xl bg-slate-900 px-4 py-2 text-sm text-white disabled:opacity-50"
             >
               {running ? 'Running...' : 'Run now'}
@@ -492,9 +497,9 @@ export function Radar({ focusRequest }: RadarProps) {
           </div>
         </div>
 
-        {selectedProfile && supportsReportSurface(selectedProfile.mode) && !consent?.consents.web_research ? (
+        {selectedProfile && supportsReportSurface(selectedProfile.mode) && !researchConsentEnabled ? (
           <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-            This tracker needs web research consent to run in research mode. Update privacy settings to enable saved reports and public-web evidence collection.
+            This tracker needs core, AI processing, and web research consent to run in report mode. Update privacy settings to enable saved reports and public-web evidence collection.
           </div>
         ) : null}
 
@@ -549,7 +554,7 @@ export function Radar({ focusRequest }: RadarProps) {
             profile={editingMode === 'edit' ? selectedProfile : null}
             busy={creating || savingProfile}
             deleting={deletingProfile}
-            researchConsentEnabled={Boolean(consent?.consents.web_research)}
+            researchConsentEnabled={researchConsentEnabled}
             onCreate={createProfile}
             onUpdate={saveProfile}
             onDelete={removeProfile}

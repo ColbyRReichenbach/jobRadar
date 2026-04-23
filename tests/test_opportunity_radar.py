@@ -1,10 +1,13 @@
+from datetime import datetime, timedelta, timezone
 import uuid
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from backend.models import (
     OpportunityScore,
+    ResearchProfile,
     ResearchEvidenceItem,
     ResearchReport,
     ResearchReportSection,
@@ -13,7 +16,21 @@ from backend.models import (
     ResearchSourceItem,
 )
 from backend.services.opportunity_radar.signal_scorer import score_signal
-from tests.conftest import AUTH_HEADER, make_auth_header
+from tests.conftest import AUTH_HEADER, TEST_USER_ID, make_auth_header
+
+
+async def _grant_research_consent(client):
+    response = await client.put(
+        "/api/consent",
+        json={
+            "core": True,
+            "ai_processing": True,
+            "third_party_enrichment": False,
+            "web_research": True,
+        },
+        headers=AUTH_HEADER,
+    )
+    assert response.status_code == 200
 
 
 @pytest.mark.asyncio
@@ -34,6 +51,7 @@ async def test_research_profile_crud_user_isolation(client, db_session):
 
 @pytest.mark.asyncio
 async def test_research_profile_extended_fields_round_trip(client):
+    await _grant_research_consent(client)
     create_resp = await client.post(
         '/api/research/profiles',
         json={
@@ -72,7 +90,7 @@ async def test_research_profile_extended_fields_round_trip(client):
     assert created["include_public_web_research"] is True
     assert created["max_search_queries"] == 12
     assert created["max_sources_per_run"] == 24
-    assert created["next_run_at"] is None
+    assert created["next_run_at"] is not None
     assert created["last_successful_run_at"] is None
     assert created["updated_at"] is not None
 
@@ -93,10 +111,66 @@ async def test_research_profile_extended_fields_round_trip(client):
     assert updated["mode"] == "research"
     assert updated["depth"] == "standard"
     assert updated["use_profile_context"] is False
-    assert updated["include_public_web_research"] is False
+    assert updated["include_public_web_research"] is True
     assert updated["report_prompt_notes"] == "Tighten around companies with recent hiring signals."
     assert updated["max_search_queries"] == 6
     assert updated["max_sources_per_run"] == 24
+
+
+@pytest.mark.asyncio
+async def test_report_tracker_requires_consent_before_create_or_run(client):
+    create_resp = await client.post(
+        '/api/research/profiles',
+        json={
+            "name": "Blocked Research Tracker",
+            "mode": "research",
+            "selected_roles": ["Platform Engineer"],
+        },
+        headers=AUTH_HEADER,
+    )
+    assert create_resp.status_code == 400
+    assert "core, ai_processing, web_research" in create_resp.json()["detail"]
+
+    internal_resp = await client.post(
+        '/api/research/profiles',
+        json={"name": "Internal Tracker", "mode": "internal", "frequency": "daily"},
+        headers=AUTH_HEADER,
+    )
+    assert internal_resp.status_code == 201
+    assert internal_resp.json()["next_run_at"] is not None
+
+    await _grant_research_consent(client)
+
+    research_resp = await client.post(
+        '/api/research/profiles',
+        json={
+            "name": "Allowed Research Tracker",
+            "mode": "research",
+            "selected_roles": ["Platform Engineer"],
+            "frequency": "weekly",
+        },
+        headers=AUTH_HEADER,
+    )
+    assert research_resp.status_code == 201
+    assert research_resp.json()["include_public_web_research"] is True
+    assert research_resp.json()["next_run_at"] is not None
+
+    revoke_resp = await client.put(
+        "/api/consent",
+        json={
+            "core": True,
+            "ai_processing": False,
+            "third_party_enrichment": False,
+            "web_research": False,
+        },
+        headers=AUTH_HEADER,
+    )
+    assert revoke_resp.status_code == 200
+
+    run_resp = await client.post(f"/api/research/profiles/{research_resp.json()['id']}/run", headers=AUTH_HEADER)
+    assert run_resp.status_code == 400
+    assert "ai_processing" in run_resp.json()["detail"]
+    assert "web_research" in run_resp.json()["detail"]
 
 
 @pytest.mark.asyncio
@@ -385,6 +459,39 @@ async def test_run_trace_endpoints_return_steps(client):
     assert trace['run']['status'] == 'succeeded'
     assert trace['step_count'] == len(steps)
     assert trace['steps'][0]['step_name'] == 'collect_internal_sources'
+    assert trace['summary']['status'] == 'succeeded'
+    assert trace['timeline'][0]['step_name'] == 'collect_internal_sources'
+    assert trace['artifacts']['tracker_snapshot'] is None
+
+
+@pytest.mark.asyncio
+async def test_dispatch_due_profiles_skips_duplicate_inflight_runs(db_engine, monkeypatch):
+    from backend.tasks.run_research_radar import dispatch_due_research_profiles_async
+
+    session_factory = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
+    queued_run_ids: list[str] = []
+
+    monkeypatch.setattr("backend.database.async_session_factory", session_factory, raising=False)
+    monkeypatch.setattr("backend.tasks.run_research_radar.run_research_radar.delay", lambda run_id: queued_run_ids.append(run_id))
+
+    async with session_factory() as session:
+        profile = ResearchProfile(
+            user_id=TEST_USER_ID,
+            name="Scheduled Internal Tracker",
+            mode="internal",
+            frequency="daily",
+            active=True,
+            next_run_at=datetime.now(timezone.utc) - timedelta(minutes=5),
+        )
+        session.add(profile)
+        await session.commit()
+
+    first_dispatch = await dispatch_due_research_profiles_async()
+    second_dispatch = await dispatch_due_research_profiles_async()
+
+    assert first_dispatch == 1
+    assert second_dispatch == 0
+    assert len(queued_run_ids) == 1
 
 
 @pytest.mark.asyncio

@@ -4,7 +4,7 @@ import os
 import re
 import secrets
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Literal, Optional
 from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
 from uuid import uuid4
@@ -5374,6 +5374,140 @@ def _serialize_action(action: RecommendedAction) -> dict:
     }
 
 
+RESEARCH_TRACKER_MODES = {"internal", "research", "hybrid"}
+RESEARCH_TRACKER_FREQUENCIES = {"manual", "daily", "weekly", "biweekly", "monthly"}
+RESEARCH_TRACKER_DEPTHS = {"quick", "standard", "deep"}
+RESEARCH_TRACKER_NOTIFICATION_MODES = {"in_app", "email_digest"}
+REPORT_CAPABLE_MODES = {"research", "hybrid"}
+
+
+def _validate_research_tracker_value(field_name: str, value: str, allowed: set[str]) -> str:
+    if value not in allowed:
+        raise HTTPException(status_code=422, detail=f"Invalid {field_name}: {value}")
+    return value
+
+
+def _research_frequency_delta(frequency: str) -> timedelta | None:
+    if frequency == "daily":
+        return timedelta(days=1)
+    if frequency == "weekly":
+        return timedelta(days=7)
+    if frequency == "biweekly":
+        return timedelta(days=14)
+    if frequency == "monthly":
+        return timedelta(days=30)
+    return None
+
+
+def _schedule_research_profile(profile: ResearchProfile, *, reset: bool) -> None:
+    delta = _research_frequency_delta(profile.frequency)
+    if not profile.active or profile.frequency == "manual" or delta is None:
+        profile.next_run_at = None
+        return
+
+    now = datetime.now(timezone.utc)
+    next_run_at = profile.next_run_at
+    if next_run_at and next_run_at.tzinfo is None:
+        next_run_at = next_run_at.replace(tzinfo=timezone.utc)
+        profile.next_run_at = next_run_at
+    if reset or next_run_at is None or next_run_at <= now:
+        profile.next_run_at = now + delta
+
+
+async def _load_consent_flags(user_id: _uuid.UUID, db: AsyncSession) -> dict[str, bool]:
+    rows = (
+        await db.execute(
+            select(DataConsent.consent_type, DataConsent.granted).where(DataConsent.user_id == user_id)
+        )
+    ).all()
+    flags = {consent_type: False for consent_type in CONSENT_TYPES}
+    for consent_type, granted in rows:
+        if consent_type in flags:
+            flags[consent_type] = bool(granted)
+    return flags
+
+
+async def _ensure_research_tracker_consents(user_id: _uuid.UUID, db: AsyncSession, *, mode: str) -> None:
+    if mode not in REPORT_CAPABLE_MODES:
+        return
+    consent_flags = await _load_consent_flags(user_id, db)
+    missing = [consent_type for consent_type in ("core", "ai_processing", "web_research") if not consent_flags.get(consent_type)]
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Research and hybrid trackers require consent for: {', '.join(missing)}",
+        )
+
+
+async def _normalize_research_profile_create(
+    user_id: _uuid.UUID,
+    db: AsyncSession,
+    payload: ResearchProfileCreate,
+) -> dict:
+    data = payload.model_dump()
+    mode = _validate_research_tracker_value("mode", data["mode"], RESEARCH_TRACKER_MODES)
+    frequency = _validate_research_tracker_value("frequency", data["frequency"], RESEARCH_TRACKER_FREQUENCIES)
+    depth = _validate_research_tracker_value("depth", data["depth"], RESEARCH_TRACKER_DEPTHS)
+    notification_mode = _validate_research_tracker_value(
+        "notification_mode",
+        data["notification_mode"],
+        RESEARCH_TRACKER_NOTIFICATION_MODES,
+    )
+
+    data["mode"] = mode
+    data["frequency"] = frequency
+    data["depth"] = depth
+    data["notification_mode"] = notification_mode
+
+    if mode in REPORT_CAPABLE_MODES:
+        await _ensure_research_tracker_consents(user_id, db, mode=mode)
+        data["include_public_web_research"] = True
+    else:
+        data["include_public_web_research"] = False
+        data["research_source_scopes"] = []
+
+    return data
+
+
+async def _apply_research_profile_update(
+    user_id: _uuid.UUID,
+    db: AsyncSession,
+    profile: ResearchProfile,
+    payload: ResearchProfileUpdate,
+) -> None:
+    updates = payload.model_dump(exclude_unset=True)
+    next_mode = _validate_research_tracker_value("mode", updates.get("mode", profile.mode), RESEARCH_TRACKER_MODES)
+    next_frequency = _validate_research_tracker_value("frequency", updates.get("frequency", profile.frequency), RESEARCH_TRACKER_FREQUENCIES)
+    next_depth = _validate_research_tracker_value("depth", updates.get("depth", profile.depth), RESEARCH_TRACKER_DEPTHS)
+    next_notification_mode = _validate_research_tracker_value(
+        "notification_mode",
+        updates.get("notification_mode", profile.notification_mode),
+        RESEARCH_TRACKER_NOTIFICATION_MODES,
+    )
+
+    if next_mode in REPORT_CAPABLE_MODES:
+        await _ensure_research_tracker_consents(user_id, db, mode=next_mode)
+        updates["include_public_web_research"] = True
+    else:
+        updates["include_public_web_research"] = False
+        updates["research_source_scopes"] = []
+
+    schedule_reset = (
+        ("frequency" in updates and next_frequency != profile.frequency)
+        or ("active" in updates and bool(updates["active"]) != bool(profile.active))
+    )
+
+    updates["mode"] = next_mode
+    updates["frequency"] = next_frequency
+    updates["depth"] = next_depth
+    updates["notification_mode"] = next_notification_mode
+
+    for key, value in updates.items():
+        setattr(profile, key, value)
+
+    _schedule_research_profile(profile, reset=schedule_reset)
+
+
 @app.post("/api/research/profiles", status_code=201)
 async def create_research_profile(
     payload: ResearchProfileCreate,
@@ -5381,7 +5515,9 @@ async def create_research_profile(
     auth: dict = Depends(verify_api_key),
 ):
     user_id = _require_user_id(auth)
-    profile = ResearchProfile(user_id=user_id, **payload.model_dump())
+    data = await _normalize_research_profile_create(user_id, db, payload)
+    profile = ResearchProfile(user_id=user_id, **data)
+    _schedule_research_profile(profile, reset=True)
     db.add(profile)
     await db.commit()
     await db.refresh(profile)
@@ -5431,8 +5567,7 @@ async def update_research_profile(profile_id: str, payload: ResearchProfileUpdat
     if not profile:
         raise HTTPException(404, "Profile not found")
 
-    for key, value in payload.model_dump(exclude_unset=True).items():
-        setattr(profile, key, value)
+    await _apply_research_profile_update(user_id, db, profile, payload)
     profile.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(profile)
@@ -5473,6 +5608,7 @@ async def run_research_profile(profile_id: str, db: AsyncSession = Depends(get_d
     ).scalars().first()
     if not profile:
         raise HTTPException(404, "Profile not found")
+    await _ensure_research_tracker_consents(user_id, db, mode=profile.mode)
 
     run = ResearchRun(
         user_id=user_id,

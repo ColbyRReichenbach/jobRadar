@@ -74,6 +74,7 @@ function toggleListEntry(values: string[], entry: string, checked: boolean): str
 }
 
 function buildFormState(profile?: ResearchProfile | null): ResearchTrackerFormValues {
+  const supportsReports = profile?.mode === 'research' || profile?.mode === 'hybrid';
   return {
     name: profile?.name || '',
     objective: profile?.objective || '',
@@ -93,7 +94,7 @@ function buildFormState(profile?: ResearchProfile | null): ResearchTrackerFormVa
     seniority_levels: profile?.seniority_levels || [],
     research_source_scopes: profile?.research_source_scopes?.length ? profile.research_source_scopes : ['company_news', 'job_boards'],
     use_profile_context: profile?.use_profile_context ?? true,
-    include_public_web_research: profile?.include_public_web_research ?? false,
+    include_public_web_research: profile?.include_public_web_research ?? supportsReports,
     report_prompt_notes: profile?.report_prompt_notes || '',
     max_search_queries: profile?.max_search_queries ?? 8,
     max_sources_per_run: profile?.max_sources_per_run ?? 20,
@@ -146,9 +147,22 @@ export function ResearchTrackerForm({
 
   const canSubmit = useMemo(() => {
     if (!form.name.trim()) return false;
+    if (supportsReports && !researchConsentEnabled) return false;
     if (!supportsReports) return form.source_types.length > 0;
     return true;
-  }, [form.name, form.source_types.length, supportsReports]);
+  }, [form.name, form.source_types.length, researchConsentEnabled, supportsReports]);
+
+  useEffect(() => {
+    setForm((current) => {
+      if (supportsReports && !current.include_public_web_research) {
+        return { ...current, include_public_web_research: true };
+      }
+      if (!supportsReports && current.include_public_web_research) {
+        return { ...current, include_public_web_research: false };
+      }
+      return current;
+    });
+  }, [supportsReports]);
 
   const resetCreateState = () => {
     const empty = buildFormState(null);
@@ -175,7 +189,7 @@ export function ResearchTrackerForm({
       excluded_keywords: parseList(excludedKeywordsText),
       target_locations: parseList(locationsText),
       report_prompt_notes: form.report_prompt_notes.trim(),
-      include_public_web_research: canUseResearchMode && supportsReports ? form.include_public_web_research : false,
+      include_public_web_research: canUseResearchMode && supportsReports,
       research_source_scopes: supportsReports ? form.research_source_scopes : [],
     };
 
@@ -209,7 +223,7 @@ export function ResearchTrackerForm({
 
       {!researchConsentEnabled ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
-          Web research consent is off. You can still use internal Radar, but `research` and `hybrid` trackers will not run public web research until consent is enabled in Settings.
+          Core, AI processing, and web research consent are required for `research` and `hybrid` trackers. You can still use internal Radar until those settings are enabled.
         </div>
       ) : null}
 
@@ -577,13 +591,15 @@ export function ResearchTrackerForm({
           <label className="flex items-start gap-2 rounded-lg border border-slate-200 px-3 py-3 text-xs text-slate-700">
             <input
               type="checkbox"
-              checked={form.include_public_web_research}
+              checked={supportsReports ? true : form.include_public_web_research}
               onChange={(event) => setForm((current) => ({ ...current, include_public_web_research: event.target.checked }))}
-              disabled={!supportsReports || !researchConsentEnabled}
+              disabled
             />
             <span>
               <span className="block font-medium text-slate-900">Include public web research</span>
-              Allow Radar to gather external evidence for dated research reports.
+              {supportsReports
+                ? 'Required for report-capable trackers so Radar can gather external evidence and save dated reports.'
+                : 'Available automatically when you switch this tracker into research or hybrid mode.'}
             </span>
           </label>
         </div>
