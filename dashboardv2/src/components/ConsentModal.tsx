@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'motion/react';
-import { Shield, Brain, Users, Database, ExternalLink, Loader2 } from 'lucide-react';
+import { Shield, Brain, Users, Database, ExternalLink, Loader2, Globe } from 'lucide-react';
 import { DialogShell } from './DialogShell';
 import { updateConsent } from '../lib/api';
 
@@ -12,6 +12,7 @@ interface ConsentModalProps {
 export function ConsentModal({ onAccepted, onDeclined }: ConsentModalProps) {
   const [aiProcessing, setAiProcessing] = useState(true);
   const [thirdParty, setThirdParty] = useState(true);
+  const [webResearch, setWebResearch] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showDeclineWarning, setShowDeclineWarning] = useState(false);
@@ -24,6 +25,7 @@ export function ConsentModal({ onAccepted, onDeclined }: ConsentModalProps) {
         core: true,
         ai_processing: aiProcessing,
         third_party_enrichment: thirdParty,
+        web_research: webResearch,
       });
       onAccepted();
     } catch (err) {
@@ -130,6 +132,29 @@ export function ConsentModal({ onAccepted, onDeclined }: ConsentModalProps) {
               checked={thirdParty}
               onChange={(e) => setThirdParty(e.target.checked)}
               className="mt-1 w-4 h-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+            />
+          </div>
+        </label>
+
+        <label className="block rounded-xl border border-slate-200 p-4 cursor-pointer hover:bg-slate-50 transition-colors">
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-lg bg-sky-50 flex items-center justify-center flex-shrink-0 mt-0.5">
+              <Globe className="w-4.5 h-4.5 text-sky-600" />
+            </div>
+            <div className="flex-1">
+              <span className="text-sm font-semibold text-slate-900">Web Research</span>
+              <p className="mt-1 text-xs text-slate-500">
+                Allow Radar research trackers to search the public web and save dated reports with external evidence.
+              </p>
+              <p className="mt-1.5 text-xs text-slate-400">
+                If disabled, you can still use internal Radar, but research and hybrid trackers will not run public-web research.
+              </p>
+            </div>
+            <input
+              type="checkbox"
+              checked={webResearch}
+              onChange={(e) => setWebResearch(e.target.checked)}
+              className="mt-1 w-4 h-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
             />
           </div>
         </label>

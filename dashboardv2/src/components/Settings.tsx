@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Bell, Mail, Save, Loader2, KeyRound, Copy, RefreshCw, Chrome, ExternalLink, Shield, Download, Trash2, Brain, Users } from 'lucide-react';
+import { Bell, Mail, Save, Loader2, KeyRound, Copy, RefreshCw, Chrome, ExternalLink, Shield, Download, Trash2, Brain, Users, Globe } from 'lucide-react';
 import {
   ApiKeyStatus,
   ConsentStatus,
@@ -22,6 +22,7 @@ export function Settings() {
     sms_enabled: false,
     sms_phone: null,
     weekly_digest_enabled: false,
+    radar_updates_enabled: true,
     inbox_updates_enabled: true,
     conversations_enabled: true,
     network_enabled: true,
@@ -104,6 +105,7 @@ export function Settings() {
         sms_enabled: prefs.sms_enabled,
         sms_phone: phone || null,
         weekly_digest_enabled: prefs.weekly_digest_enabled,
+        radar_updates_enabled: prefs.radar_updates_enabled,
         inbox_updates_enabled: prefs.inbox_updates_enabled,
         conversations_enabled: prefs.conversations_enabled,
         network_enabled: prefs.network_enabled,
@@ -136,6 +138,7 @@ export function Settings() {
   const togglePref = (
     key:
       | 'inbox_updates_enabled'
+      | 'radar_updates_enabled'
       | 'conversations_enabled'
       | 'network_enabled'
       | 'interviews_enabled'
@@ -243,6 +246,7 @@ export function Settings() {
               <div className="grid gap-3 md:grid-cols-2">
                 {[
                   ['inbox_updates_enabled', 'Inbox updates', 'Interview, offer, rejection, and status updates'],
+                  ['radar_updates_enabled', 'Radar reports', 'New Radar signals, research reports, and report-ready alerts'],
                   ['conversations_enabled', 'Conversations', 'New recruiter or hiring-team threads that need attention'],
                   ['network_enabled', 'Network', 'New real-person contacts added from conversations'],
                   ['interviews_enabled', 'Interviews', 'Calendar interview sync events and changes'],
@@ -528,6 +532,24 @@ export function Settings() {
                   </span>
                 </label>
 
+                <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={consent.consents.web_research}
+                    onChange={(e) => setConsent({
+                      ...consent,
+                      consents: { ...consent.consents, web_research: e.target.checked },
+                    })}
+                    className="mt-0.5 w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <span className="text-sm text-slate-700">
+                    <span className="flex items-center gap-1.5 font-medium text-slate-900">
+                      <Globe className="w-3.5 h-3.5 text-sky-500" /> Web Research
+                    </span>
+                    Allow research and hybrid Radar trackers to search the public web and save dated research reports with evidence.
+                  </span>
+                </label>
+
                 <button
                   onClick={async () => {
                     setSavingConsent(true);
@@ -537,6 +559,7 @@ export function Settings() {
                         core: true,
                         ai_processing: consent.consents.ai_processing,
                         third_party_enrichment: consent.consents.third_party_enrichment,
+                        web_research: consent.consents.web_research,
                       });
                       setConsent(updated);
                       setStatusMessage('Privacy preferences updated.');

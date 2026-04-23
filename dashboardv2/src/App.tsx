@@ -86,6 +86,7 @@ function AppContent() {
   const [radarFocusRequest, setRadarFocusRequest] = useState<{
     profileId?: string;
     signalId?: string;
+    reportId?: string;
     token: number;
   } | null>(null);
 
@@ -161,6 +162,7 @@ function AppContent() {
     const jobId = resolved.searchParams.get('job_id');
     const profileId = resolved.searchParams.get('profile_id') || undefined;
     const signalId = resolved.searchParams.get('signal_id') || undefined;
+    const reportId = resolved.searchParams.get('report_id') || undefined;
 
     if (resolved.pathname === '/network' && email) {
       setActiveTab('network');
@@ -194,6 +196,7 @@ function AppContent() {
       setRadarFocusRequest({
         profileId,
         signalId,
+        reportId,
         token: Date.now(),
       });
       return;

@@ -33,7 +33,19 @@ async def fetch_documents(state):
         for candidate in task.get("candidates", []):
             if len(source_payloads) >= max_sources:
                 break
-            raw_html, raw_text = await fetch_document(candidate["url"])
+            fetch_error = None
+            try:
+                raw_html, raw_text = await fetch_document(candidate["url"])
+            except httpx.HTTPError as exc:
+                raw_html = ""
+                raw_text = " ".join(
+                    part.strip()
+                    for part in [candidate.get("title"), candidate.get("snippet")]
+                    if part and part.strip()
+                )
+                fetch_error = f"{type(exc).__name__}: {exc}"
+                if not raw_text:
+                    continue
             content_hash = hashlib.sha256(raw_text.encode("utf-8")).hexdigest()
             existing = (
                 await db.execute(
@@ -69,7 +81,11 @@ async def fetch_documents(state):
                 source_url=candidate["url"],
                 title=candidate["title"],
                 raw_text=raw_text,
-                raw_json={"html_excerpt": raw_html[:5000], "search_candidate": candidate},
+                raw_json={
+                    "html_excerpt": raw_html[:5000],
+                    "search_candidate": candidate,
+                    "fetch_error": fetch_error,
+                },
                 published_at=datetime.now(timezone.utc),
                 content_hash=content_hash,
             )

@@ -1,5 +1,6 @@
 import uuid
 
+import httpx
 import pytest
 from sqlalchemy import select
 
@@ -227,6 +228,57 @@ async def test_research_mode_failed_step_is_persisted(client, monkeypatch, db_se
     assert failed_step is not None
     assert failed_step.status == "failed"
     assert "fetch exploded" in (failed_step.error_message or "")
+
+
+@pytest.mark.asyncio
+async def test_research_mode_http_fetch_error_falls_back_to_search_snippet(client, monkeypatch):
+    async def _fake_search(query: str, max_results: int):
+        return [
+            SearchCandidate(
+                url="https://openai.com/careers/",
+                title="Careers at OpenAI",
+                snippet="OpenAI is hiring engineers across product and infrastructure teams.",
+                source_type="company_careers",
+                domain="openai.com",
+                published_at="2026-04-22T12:00:00+00:00",
+                why_selected=query,
+            )
+        ]
+
+    async def _blocked(url: str):
+        request = httpx.Request("GET", url)
+        response = httpx.Response(403, request=request)
+        raise httpx.HTTPStatusError("blocked", request=request, response=response)
+
+    monkeypatch.setattr("backend.services.research_radar.nodes.search.search_public_web", _fake_search)
+    monkeypatch.setattr("backend.services.research_radar.nodes.fetch.fetch_document", _blocked)
+
+    profile_resp = await client.post(
+        "/api/research/profiles",
+        json={
+            "name": "Snippet Fallback Tracker",
+            "mode": "research",
+            "depth": "quick",
+            "selected_roles": ["Platform Engineer"],
+            "selected_companies": ["OpenAI"],
+            "include_public_web_research": True,
+        },
+        headers=AUTH_HEADER,
+    )
+    assert profile_resp.status_code == 201
+
+    run_resp = await client.post(f"/api/research/profiles/{profile_resp.json()['id']}/run", headers=AUTH_HEADER)
+    assert run_resp.status_code == 202
+
+    run_detail = await client.get(f"/api/research/runs/{run_resp.json()['id']}", headers=AUTH_HEADER)
+    assert run_detail.status_code == 200
+    assert run_detail.json()["status"] == "published"
+
+    report_resp = await client.get(f"/api/research/reports/{run_detail.json()['report_id']}", headers=AUTH_HEADER)
+    assert report_resp.status_code == 200
+    evidence = report_resp.json()["evidence"]
+    assert evidence
+    assert "OpenAI is hiring engineers" in evidence[0]["claim"]
 
 
 @pytest.mark.asyncio

@@ -1,21 +1,41 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
+  ConsentStatus,
   acceptRecommendedAction,
+  acceptResearchReportAction,
   createResearchProfile,
   deleteResearchProfile,
+  fetchConsent,
   fetchOpportunityBriefs,
-  fetchResearchFeedbackStats,
   fetchOpportunitySignals,
   fetchRecommendedActions,
-  fetchResearchRuns,
+  fetchResearchFeedbackStats,
+  fetchResearchReport,
+  fetchResearchReportDiff,
+  fetchResearchReports,
   fetchResearchProfiles,
+  fetchResearchRunTrace,
+  fetchResearchRuns,
   runResearchProfile,
   sendResearchFeedback,
+  sendResearchReportFeedback,
   updateRecommendedAction,
   updateResearchProfile,
 } from '../lib/api';
-import { OpportunityBrief, OpportunitySignal, RadarFeedbackStats, RecommendedAction, ResearchProfile } from '../types';
-import { RadarProfileForm } from './RadarProfileForm';
+import {
+  OpportunityBrief,
+  OpportunitySignal,
+  RadarFeedbackStats,
+  RecommendedAction,
+  ResearchProfile,
+  ResearchReport,
+  ResearchReportDetail,
+  ResearchReportDiff,
+  ResearchRun,
+  ResearchRunTrace,
+} from '../types';
+import { RadarModeSwitch } from './RadarModeSwitch';
+import { RadarProfileForm, type RadarProfileFormValues } from './RadarProfileForm';
 import { SignalFeed } from './SignalFeed';
 import { OpportunityScoreBreakdown } from './OpportunityScoreBreakdown';
 import { RecommendedActions } from './RecommendedActions';
@@ -24,37 +44,17 @@ import { ResearchRunHistory } from './ResearchRunHistory';
 import { SignalDetailPanel } from './SignalDetailPanel';
 import { RadarFeedbackPanel } from './RadarFeedbackPanel';
 import { RadarInsightsPanel } from './RadarInsightsPanel';
+import { ResearchReportList } from './ResearchReportList';
+import { ResearchReportDetail as ResearchReportDetailPanel } from './ResearchReportDetail';
+import { ResearchReportDiff as ResearchReportDiffPanel } from './ResearchReportDiff';
+import { ResearchRunTracePanel } from './ResearchRunTracePanel';
 
-interface ResearchRunSummary {
-  id: string;
-  profile_id: string;
-  status: string;
-  created_at?: string | null;
-  started_at?: string | null;
-  completed_at?: string | null;
-  source_counts?: Record<string, number>;
-  signal_counts?: Record<string, number>;
-  error_message?: string | null;
-}
-
-type RadarProfileFormValues = {
-  name: string;
-  objective: string;
-  selected_domains: string[];
-  selected_roles: string[];
-  selected_companies: string[];
-  keywords: string[];
-  excluded_keywords: string[];
-  source_types: string[];
-  frequency: ResearchProfile['frequency'];
-  notification_mode: ResearchProfile['notification_mode'];
-  minimum_score: number;
-  active: boolean;
-};
+type RadarSurface = 'signals' | 'reports';
 
 interface RadarFocusRequest {
   profileId?: string;
   signalId?: string;
+  reportId?: string;
   token: number;
 }
 
@@ -62,16 +62,53 @@ interface RadarProps {
   focusRequest?: RadarFocusRequest | null;
 }
 
+function supportsSignalSurface(mode?: ResearchProfile['mode'] | null): boolean {
+  return mode !== 'research';
+}
+
+function supportsReportSurface(mode?: ResearchProfile['mode'] | null): boolean {
+  return mode === 'research' || mode === 'hybrid';
+}
+
+function resolveSurface(
+  profile: ResearchProfile | null,
+  currentSurface: RadarSurface,
+  preferredSurface?: RadarSurface | null
+): RadarSurface {
+  const nextSurface = preferredSurface || currentSurface;
+  if (!profile) return nextSurface;
+  if (nextSurface === 'reports' && supportsReportSurface(profile.mode)) return 'reports';
+  if (nextSurface === 'signals' && supportsSignalSurface(profile.mode)) return 'signals';
+  if (supportsReportSurface(profile.mode) && !supportsSignalSurface(profile.mode)) return 'reports';
+  return 'signals';
+}
+
+function readTraceDebugFlag(): boolean {
+  if (import.meta.env.DEV) return true;
+  if (typeof window === 'undefined') return false;
+  return ['127.0.0.1', 'localhost'].includes(window.location.hostname);
+}
+
 export function Radar({ focusRequest }: RadarProps) {
   const [profiles, setProfiles] = useState<ResearchProfile[]>([]);
   const [signals, setSignals] = useState<OpportunitySignal[]>([]);
   const [briefs, setBriefs] = useState<OpportunityBrief[]>([]);
   const [actions, setActions] = useState<RecommendedAction[]>([]);
-  const [runs, setRuns] = useState<ResearchRunSummary[]>([]);
+  const [runs, setRuns] = useState<ResearchRun[]>([]);
+  const [reports, setReports] = useState<ResearchReport[]>([]);
   const [feedbackStats, setFeedbackStats] = useState<RadarFeedbackStats | null>(null);
+  const [consent, setConsent] = useState<ConsentStatus | null>(null);
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
   const [selectedSignalId, setSelectedSignalId] = useState<string | null>(null);
+  const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [surface, setSurface] = useState<RadarSurface>('signals');
+  const [selectedReport, setSelectedReport] = useState<ResearchReportDetail | null>(null);
+  const [selectedDiff, setSelectedDiff] = useState<ResearchReportDiff | null>(null);
+  const [selectedTrace, setSelectedTrace] = useState<ResearchRunTrace | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingReport, setLoadingReport] = useState(false);
+  const [loadingTrace, setLoadingTrace] = useState(false);
   const [creating, setCreating] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [deletingProfile, setDeletingProfile] = useState(false);
@@ -87,10 +124,49 @@ export function Radar({ focusRequest }: RadarProps) {
     [profiles, selectedProfileId]
   );
 
-  const load = async (requestedProfileId?: string | null, preferredSignalId?: string | null) => {
+  const selectedSignal = useMemo(
+    () => signals.find((signal) => signal.id === selectedSignalId) || signals[0] || null,
+    [selectedSignalId, signals]
+  );
+
+  const selectedBrief = useMemo(() => {
+    if (!selectedSignal) return briefs[0] || null;
+    return briefs.find((brief) => brief.signal_id === selectedSignal.id) || null;
+  }, [briefs, selectedSignal]);
+
+  const selectedReportSummary = useMemo(
+    () => reports.find((report) => report.id === selectedReportId) || null,
+    [reports, selectedReportId]
+  );
+
+  const signalActions = useMemo(() => {
+    const profileActions = selectedProfileId
+      ? actions.filter((action) => action.profile_id === selectedProfileId)
+      : actions;
+    if (!selectedSignal) return profileActions;
+    const matching = profileActions.filter((action) => action.signal_id === selectedSignal.id);
+    return matching.length ? matching : profileActions;
+  }, [actions, selectedProfileId, selectedSignal]);
+
+  const reportActions = selectedReport?.actions || [];
+  const traceDebugEnabled = readTraceDebugFlag();
+  const latestRun = runs[0] || null;
+  const latestRunSignalCount = Object.values(latestRun?.signal_counts || {}).reduce((total, count) => total + count, 0);
+
+  const load = async (
+    requestedProfileId?: string | null,
+    preferredSignalId?: string | null,
+    preferredReportId?: string | null,
+    preferredSurface?: RadarSurface | null
+  ) => {
     setLoading(true);
     try {
-      const profileRows = await fetchResearchProfiles();
+      const [profileRows, feedbackStatsRow, consentRow] = await Promise.all([
+        fetchResearchProfiles(),
+        fetchResearchFeedbackStats(),
+        fetchConsent(),
+      ]);
+
       const requestedProfileExists =
         requestedProfileId !== undefined &&
         requestedProfileId !== null &&
@@ -99,29 +175,53 @@ export function Radar({ focusRequest }: RadarProps) {
         requestedProfileExists
           ? requestedProfileId
           : (selectedProfileId && profileRows.some((profile) => profile.id === selectedProfileId) ? selectedProfileId : profileRows[0]?.id || null);
+      const activeProfile = profileRows.find((profile) => profile.id === activeProfileId) || null;
 
-      const [signalRows, briefRows, actionRows, runRows, feedbackStatsRow] = await Promise.all([
+      const [signalRows, briefRows, actionRows, runRows, reportRows] = await Promise.all([
         fetchOpportunitySignals(activeProfileId || undefined),
         fetchOpportunityBriefs(activeProfileId || undefined),
         fetchRecommendedActions(activeProfileId || undefined),
         fetchResearchRuns(activeProfileId || undefined),
-        fetchResearchFeedbackStats(),
+        fetchResearchReports(activeProfileId || undefined),
       ]);
 
+      const nextSurface = resolveSurface(activeProfile, surface, preferredReportId ? 'reports' : preferredSurface);
+      const nextSignalId =
+        supportsSignalSurface(activeProfile?.mode) && signalRows.length
+          ? (preferredSignalId && signalRows.some((signal) => signal.id === preferredSignalId)
+              ? preferredSignalId
+              : selectedSignalId && signalRows.some((signal) => signal.id === selectedSignalId)
+                ? selectedSignalId
+                : signalRows[0].id)
+          : null;
+      const nextReportId =
+        supportsReportSurface(activeProfile?.mode) && reportRows.length
+          ? (preferredReportId && reportRows.some((report) => report.id === preferredReportId)
+              ? preferredReportId
+              : selectedReportId && reportRows.some((report) => report.id === selectedReportId)
+                ? selectedReportId
+                : reportRows[0].id)
+          : null;
+      const nextReport = reportRows.find((report) => report.id === nextReportId) || null;
+      const nextRunId =
+        nextReport?.run_id && runRows.some((run) => run.id === nextReport.run_id)
+          ? nextReport.run_id
+          : (selectedRunId && runRows.some((run) => run.id === selectedRunId) ? selectedRunId : runRows[0]?.id || null);
+
       setProfiles(profileRows);
-      setSelectedProfileId(activeProfileId);
       setSignals(signalRows);
       setBriefs(briefRows);
       setActions(actionRows);
       setRuns(runRows);
+      setReports(reportRows);
       setFeedbackStats(feedbackStatsRow);
-      setSelectedSignalId((current) => {
-        if (!signalRows.length) return null;
-        if (preferredSignalId && signalRows.some((signal) => signal.id === preferredSignalId)) return preferredSignalId;
-        if (current && signalRows.some((signal) => signal.id === current)) return current;
-        return signalRows[0].id;
-      });
-      if (activeProfileId) setEditingMode('edit');
+      setConsent(consentRow);
+      setSelectedProfileId(activeProfileId);
+      setSelectedSignalId(nextSignalId);
+      setSelectedReportId(nextReportId);
+      setSelectedRunId(nextRunId);
+      setSurface(nextSurface);
+      setEditingMode(activeProfileId ? 'edit' : 'create');
       setErrorMessage(null);
       setFeedbackMessage(null);
     } catch (error) {
@@ -138,39 +238,78 @@ export function Radar({ focusRequest }: RadarProps) {
 
   useEffect(() => {
     if (!focusRequest?.token) return;
-    load(focusRequest.profileId ?? undefined, focusRequest.signalId ?? undefined);
+    load(
+      focusRequest.profileId ?? undefined,
+      focusRequest.signalId ?? undefined,
+      focusRequest.reportId ?? undefined,
+      focusRequest.reportId ? 'reports' : undefined
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusRequest?.token]);
 
-  const selectedSignal = useMemo(
-    () => signals.find((signal) => signal.id === selectedSignalId) || signals[0],
-    [selectedSignalId, signals]
-  );
+  useEffect(() => {
+    if (!selectedReportId) {
+      setSelectedReport(null);
+      setSelectedDiff(null);
+      return;
+    }
 
-  const selectedBrief = useMemo(() => {
-    if (!selectedSignal) return briefs[0];
-    return briefs.find((brief) => brief.signal_id === selectedSignal.id);
-  }, [briefs, selectedSignal]);
+    let cancelled = false;
+    setLoadingReport(true);
 
-  const displayedActions = useMemo(() => {
-    const profileActions = selectedProfileId
-      ? actions.filter((action) => action.profile_id === selectedProfileId)
-      : actions;
-    if (!selectedSignal) return profileActions;
-    const signalActions = profileActions.filter((action) => action.signal_id === selectedSignal.id);
-    return signalActions.length ? signalActions : profileActions;
-  }, [actions, selectedProfileId, selectedSignal]);
+    Promise.all([fetchResearchReport(selectedReportId), fetchResearchReportDiff(selectedReportId)])
+      .then(([reportRow, diffRow]) => {
+        if (cancelled) return;
+        setSelectedReport(reportRow);
+        setSelectedDiff(diffRow);
+        if (reportRow.run_id) {
+          setSelectedRunId((current) => current || reportRow.run_id || null);
+        }
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setErrorMessage(error instanceof Error ? error.message : 'Failed to load research report');
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingReport(false);
+      });
 
-  const latestRun = runs[0];
-  const latestRunSignalCount = Object.values(latestRun?.signal_counts || {}).reduce((total, count) => total + count, 0);
-  const primaryAction = displayedActions[0];
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedReportId]);
+
+  useEffect(() => {
+    if (!traceDebugEnabled || !selectedRunId) {
+      setSelectedTrace(null);
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingTrace(true);
+
+    fetchResearchRunTrace(selectedRunId)
+      .then((traceRow) => {
+        if (!cancelled) setSelectedTrace(traceRow);
+      })
+      .catch((error) => {
+        if (!cancelled) setErrorMessage(error instanceof Error ? error.message : 'Failed to load run trace');
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingTrace(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedRunId, traceDebugEnabled]);
 
   const createProfile = async (payload: RadarProfileFormValues) => {
     setCreating(true);
     try {
       const created = await createResearchProfile(payload);
       setEditingMode('edit');
-      await load(created.id);
+      await load(created.id, undefined, undefined, created.mode === 'research' ? 'reports' : 'signals');
     } finally {
       setCreating(false);
     }
@@ -179,8 +318,8 @@ export function Radar({ focusRequest }: RadarProps) {
   const saveProfile = async (id: string, payload: RadarProfileFormValues) => {
     setSavingProfile(true);
     try {
-      await updateResearchProfile(id, payload);
-      await load(id);
+      const updated = await updateResearchProfile(id, payload);
+      await load(updated.id, undefined, undefined, updated.mode === 'research' ? 'reports' : surface);
       setErrorMessage(null);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to update tracker');
@@ -207,11 +346,22 @@ export function Radar({ focusRequest }: RadarProps) {
   };
 
   const runNow = async () => {
-    if (!selectedProfileId) return;
+    if (!selectedProfileId || !selectedProfile) return;
+    if (supportsReportSurface(selectedProfile.mode) && !consent?.consents.web_research) {
+      setErrorMessage('Enable web research consent before running research or hybrid trackers.');
+      return;
+    }
+
     setRunning(true);
     try {
-      await runResearchProfile(selectedProfileId);
-      await load(selectedProfileId);
+      const queuedRun = await runResearchProfile(selectedProfileId);
+      await load(
+        selectedProfileId,
+        selectedSignal?.id,
+        selectedReportId,
+        selectedProfile.mode === 'research' ? 'reports' : surface
+      );
+      if (queuedRun?.id) setSelectedRunId(queuedRun.id);
       setErrorMessage(null);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to run tracker');
@@ -220,7 +370,7 @@ export function Radar({ focusRequest }: RadarProps) {
     }
   };
 
-  const updateActionStatus = async (actionId: string, status: 'accepted' | 'dismissed' | 'completed') => {
+  const updateSignalActionStatus = async (actionId: string, status: 'accepted' | 'dismissed' | 'completed') => {
     setBusyActionId(actionId);
     try {
       if (status === 'accepted') {
@@ -228,7 +378,7 @@ export function Radar({ focusRequest }: RadarProps) {
       } else {
         await updateRecommendedAction(actionId, { status });
       }
-      await load(selectedProfileId);
+      await load(selectedProfileId, selectedSignal?.id, selectedReportId, surface);
       setErrorMessage(null);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : `Failed to update action to ${status}`);
@@ -237,15 +387,57 @@ export function Radar({ focusRequest }: RadarProps) {
     }
   };
 
-  const submitFeedback = async (payload: { signal_id?: string; brief_id?: string; action_id?: string; rating: string; notes?: string }) => {
+  const updateReportActionStatus = async (actionId: string, status: 'accepted' | 'dismissed' | 'completed') => {
+    if (!selectedReportId) return;
+    setBusyActionId(actionId);
+    try {
+      if (status === 'accepted') {
+        await acceptResearchReportAction(selectedReportId, actionId);
+      } else {
+        await updateRecommendedAction(actionId, { status });
+      }
+      await load(selectedProfileId, selectedSignal?.id, selectedReportId, 'reports');
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : `Failed to update report action to ${status}`);
+    } finally {
+      setBusyActionId(null);
+    }
+  };
+
+  const submitSignalFeedback = async (payload: { rating: string; notes?: string }) => {
+    if (!selectedSignal?.id) return;
     setSavingFeedback(true);
     try {
-      await sendResearchFeedback(payload);
+      await sendResearchFeedback({
+        signal_id: selectedSignal.id,
+        brief_id: selectedBrief?.id,
+        action_id: signalActions[0]?.id,
+        feedback_scope: 'signal',
+        rating: payload.rating,
+        notes: payload.notes,
+      });
       setFeedbackStats(await fetchResearchFeedbackStats());
       setFeedbackMessage('Feedback saved.');
       setErrorMessage(null);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to save Radar feedback');
+      setFeedbackMessage(null);
+    } finally {
+      setSavingFeedback(false);
+    }
+  };
+
+  const submitReportFeedback = async (payload: { rating: string; notes?: string }) => {
+    if (!selectedReportId) return;
+    setSavingFeedback(true);
+    try {
+      await sendResearchReportFeedback(selectedReportId, payload);
+      setFeedbackStats(await fetchResearchFeedbackStats());
+      setFeedbackMessage('Feedback saved.');
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to save report feedback');
       setFeedbackMessage(null);
     } finally {
       setSavingFeedback(false);
@@ -259,7 +451,7 @@ export function Radar({ focusRequest }: RadarProps) {
           <div>
             <h1 className="text-2xl font-serif font-bold text-slate-900">Opportunity Radar</h1>
             <p className="mt-2 max-w-3xl text-sm text-slate-600">
-              Radar turns your saved jobs, company activity, and internal hiring signals into ranked opportunities. The goal is not more noise. It is to show why something matters, what to do next, and which tracker surfaced it.
+              Radar now has two working lanes. Internal trackers turn your AppTrail activity into ranked opportunities. Research and hybrid trackers save dated reports with evidence, deltas, and follow-up actions.
             </p>
           </div>
           <div className="flex flex-wrap gap-3">
@@ -291,14 +483,20 @@ export function Radar({ focusRequest }: RadarProps) {
             <div className="mt-1 text-xl font-semibold text-slate-900">{signals.length}</div>
           </div>
           <div className="rounded-xl border border-slate-200 p-3">
-            <div className="text-xs uppercase tracking-wide text-slate-500">Actions in view</div>
-            <div className="mt-1 text-xl font-semibold text-slate-900">{displayedActions.length}</div>
+            <div className="text-xs uppercase tracking-wide text-slate-500">Reports in view</div>
+            <div className="mt-1 text-xl font-semibold text-slate-900">{reports.length}</div>
           </div>
           <div className="rounded-xl border border-slate-200 p-3">
             <div className="text-xs uppercase tracking-wide text-slate-500">Latest run output</div>
             <div className="mt-1 text-xl font-semibold text-slate-900">{latestRunSignalCount}</div>
           </div>
         </div>
+
+        {selectedProfile && supportsReportSurface(selectedProfile.mode) && !consent?.consents.web_research ? (
+          <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            This tracker needs web research consent to run in research mode. Update privacy settings to enable saved reports and public-web evidence collection.
+          </div>
+        ) : null}
 
         {errorMessage ? (
           <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
@@ -317,27 +515,41 @@ export function Radar({ focusRequest }: RadarProps) {
               profiles.map((profile) => (
                 <button
                   key={profile.id}
+                  type="button"
                   onClick={() => {
                     setSelectedProfileId(profile.id);
                     setEditingMode('edit');
-                    load(profile.id);
+                    load(profile.id, undefined, undefined, profile.mode === 'research' ? 'reports' : surface);
                   }}
-                  className={`w-full rounded-xl border px-3 py-2 text-left ${selectedProfileId === profile.id ? 'border-slate-300 bg-slate-100' : 'border-slate-200'}`}
+                  className={`w-full rounded-xl border px-3 py-2 text-left ${
+                    selectedProfileId === profile.id ? 'border-slate-300 bg-slate-100' : 'border-slate-200'
+                  }`}
                 >
                   <div className="text-sm font-medium text-slate-900">{profile.name}</div>
                   <div className="mt-1 text-xs text-slate-500">
-                    {profile.frequency} · min {profile.minimum_score} · {profile.active ? 'active' : 'paused'}
+                    {profile.mode} · {profile.frequency} · min {profile.minimum_score}
+                  </div>
+                  <div className="mt-1 text-[11px] text-slate-500">
+                    {profile.active ? 'active' : 'paused'}
+                    {profile.next_run_at ? ` · next ${new Date(profile.next_run_at).toLocaleString()}` : ''}
                   </div>
                 </button>
               ))
             )}
           </div>
 
+          <RadarModeSwitch
+            trackerMode={selectedProfile?.mode}
+            surface={surface}
+            onChange={(nextSurface) => setSurface(nextSurface)}
+          />
+
           <RadarProfileForm
             mode={editingMode === 'create' || !selectedProfile ? 'create' : 'edit'}
             profile={editingMode === 'edit' ? selectedProfile : null}
             busy={creating || savingProfile}
             deleting={deletingProfile}
+            researchConsentEnabled={Boolean(consent?.consents.web_research)}
             onCreate={createProfile}
             onUpdate={saveProfile}
             onDelete={removeProfile}
@@ -349,71 +561,149 @@ export function Radar({ focusRequest }: RadarProps) {
               <h2 className="font-semibold text-slate-800">Recent runs</h2>
               {selectedProfile ? <div className="text-xs text-slate-500">{selectedProfile.name}</div> : null}
             </div>
-            <ResearchRunHistory runs={runs} />
+            <ResearchRunHistory
+              runs={runs}
+              selectedRunId={selectedRunId}
+              onSelectRun={(runId) => setSelectedRunId(runId)}
+            />
           </div>
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white p-4 xl:col-span-4">
           <div className="mb-3 flex items-center justify-between gap-3">
-            <h2 className="font-semibold text-slate-800">Signal feed</h2>
+            <h2 className="font-semibold text-slate-800">{surface === 'signals' ? 'Signal feed' : 'Report history'}</h2>
             {selectedProfile ? <div className="text-xs text-slate-500">Tracker: {selectedProfile.name}</div> : null}
           </div>
-          <SignalFeed
-            loading={loading}
-            signals={signals}
-            selectedSignalId={selectedSignal?.id}
-            onSelectSignal={(signal) => setSelectedSignalId(signal.id)}
-          />
+
+          {surface === 'signals' ? (
+            <SignalFeed
+              loading={loading}
+              signals={signals}
+              selectedSignalId={selectedSignal?.id}
+              onSelectSignal={(signal) => setSelectedSignalId(signal.id)}
+            />
+          ) : (
+            <ResearchReportList
+              reports={reports}
+              selectedReportId={selectedReportId}
+              loading={loading}
+              onSelectReport={(report) => {
+                setSelectedReportId(report.id);
+                setSelectedRunId(report.run_id || null);
+                setSurface('reports');
+              }}
+            />
+          )}
         </div>
 
         <div className="space-y-4 xl:col-span-5">
-          <div className="rounded-2xl border border-slate-200 bg-white p-4">
-            <h2 className="mb-2 font-semibold text-slate-800">Selected signal</h2>
-            <SignalDetailPanel signal={selectedSignal} />
-          </div>
+          {surface === 'signals' ? (
+            <>
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <h2 className="mb-2 font-semibold text-slate-800">Selected signal</h2>
+                <SignalDetailPanel signal={selectedSignal || undefined} />
+              </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-4">
-            <h2 className="mb-2 font-semibold text-slate-800">Score breakdown</h2>
-            <OpportunityScoreBreakdown score={selectedSignal?.score} />
-          </div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <h2 className="mb-2 font-semibold text-slate-800">Score breakdown</h2>
+                <OpportunityScoreBreakdown score={selectedSignal?.score} />
+              </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-4">
-            <div className="mb-2">
-              <h2 className="font-semibold text-slate-800">Recommended actions</h2>
-              <p className="mt-1 text-xs text-slate-500">
-                {selectedSignal ? 'Showing actions tied to the selected signal when available.' : 'Select a signal to focus the action list.'}
-              </p>
-            </div>
-            <RecommendedActions
-              actions={displayedActions}
-              busyActionId={busyActionId}
-              onAccept={(actionId) => updateActionStatus(actionId, 'accepted')}
-              onDismiss={(actionId) => updateActionStatus(actionId, 'dismissed')}
-              onComplete={(actionId) => updateActionStatus(actionId, 'completed')}
-            />
-          </div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <div className="mb-2">
+                  <h2 className="font-semibold text-slate-800">Recommended actions</h2>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {selectedSignal ? 'Showing actions tied to the selected signal when available.' : 'Select a signal to focus the action list.'}
+                  </p>
+                </div>
+                <RecommendedActions
+                  actions={signalActions}
+                  busyActionId={busyActionId}
+                  onAccept={(actionId) => updateSignalActionStatus(actionId, 'accepted')}
+                  onDismiss={(actionId) => updateSignalActionStatus(actionId, 'dismissed')}
+                  onComplete={(actionId) => updateSignalActionStatus(actionId, 'completed')}
+                />
+              </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-4">
-            <h2 className="mb-2 font-semibold text-slate-800">Opportunity brief</h2>
-            <BriefPanel brief={selectedBrief} />
-          </div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <h2 className="mb-2 font-semibold text-slate-800">Opportunity brief</h2>
+                <BriefPanel brief={selectedBrief || undefined} />
+              </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-4">
-            <h2 className="mb-2 font-semibold text-slate-800">Feedback</h2>
-            <RadarFeedbackPanel
-              busy={savingFeedback}
-              message={feedbackMessage}
-              signalId={selectedSignal?.id}
-              briefId={selectedBrief?.id}
-              actionId={primaryAction?.id}
-              onSubmit={submitFeedback}
-            />
-          </div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <h2 className="mb-2 font-semibold text-slate-800">Feedback</h2>
+                <RadarFeedbackPanel
+                  busy={savingFeedback}
+                  message={feedbackMessage}
+                  enabled={Boolean(selectedSignal?.id)}
+                  title="Was this signal useful?"
+                  description="Capture whether the current signal, brief, and action framing were actually helpful."
+                  onSubmit={submitSignalFeedback}
+                />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <h2 className="mb-2 font-semibold text-slate-800">Selected report</h2>
+                <ResearchReportDetailPanel report={selectedReport} loading={loadingReport} />
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <h2 className="mb-2 font-semibold text-slate-800">What changed</h2>
+                <ResearchReportDiffPanel diff={selectedDiff} loading={loadingReport} />
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <div className="mb-2">
+                  <h2 className="font-semibold text-slate-800">Report actions</h2>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Use this list to move dated research findings into your actual job search workflow.
+                  </p>
+                </div>
+                <RecommendedActions
+                  actions={reportActions}
+                  busyActionId={busyActionId}
+                  onAccept={(actionId) => updateReportActionStatus(actionId, 'accepted')}
+                  onDismiss={(actionId) => updateReportActionStatus(actionId, 'dismissed')}
+                  onComplete={(actionId) => updateReportActionStatus(actionId, 'completed')}
+                />
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <h2 className="mb-2 font-semibold text-slate-800">Feedback</h2>
+                <RadarFeedbackPanel
+                  busy={savingFeedback}
+                  message={feedbackMessage}
+                  enabled={Boolean(selectedReportId)}
+                  title="Was this report useful?"
+                  description="Save report-level feedback so recurring runs can be tuned against what actually helps your search."
+                  onSubmit={submitReportFeedback}
+                />
+              </div>
+
+              {traceDebugEnabled ? (
+                <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                  <h2 className="mb-2 font-semibold text-slate-800">Run trace</h2>
+                  <p className="mb-3 text-xs text-slate-500">
+                    Local debug view for inspecting the stored run steps behind this report.
+                  </p>
+                  <ResearchRunTracePanel trace={selectedTrace} loading={loadingTrace} />
+                </div>
+              ) : null}
+            </>
+          )}
 
           <div className="rounded-2xl border border-slate-200 bg-white p-4">
             <h2 className="mb-2 font-semibold text-slate-800">Radar quality</h2>
             <RadarInsightsPanel stats={feedbackStats} />
           </div>
+
+          {surface === 'reports' && selectedReportSummary && !selectedReport ? (
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
+              Loading report {selectedReportSummary.title}...
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

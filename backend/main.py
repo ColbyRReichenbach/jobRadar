@@ -101,11 +101,12 @@ if _dashboard_url:
     _cors_origins.append(_dashboard_url.rstrip("/"))
 
 _VERCEL_PREVIEW_ORIGIN_RE = re.compile(r"^https://apptrail[a-z0-9-]*\.vercel\.app$")
+_LOCAL_FRONTEND_ORIGIN_RE = re.compile(r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
-    allow_origin_regex=r"^(chrome-extension://.*|https://apptrail[a-z0-9-]*\.vercel\.app)$",
+    allow_origin_regex=r"^(chrome-extension://.*|https://apptrail[a-z0-9-]*\.vercel\.app|https?://(localhost|127\.0\.0\.1)(:\d+)?)$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -131,6 +132,9 @@ def _is_allowed_frontend_origin(origin: str | None) -> bool:
         return False
 
     if normalized in _cors_origins:
+        return True
+
+    if _LOCAL_FRONTEND_ORIGIN_RE.fullmatch(normalized):
         return True
 
     return bool(_VERCEL_PREVIEW_ORIGIN_RE.fullmatch(normalized))

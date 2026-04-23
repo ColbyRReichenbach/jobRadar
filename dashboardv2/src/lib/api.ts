@@ -1,4 +1,19 @@
-import { Job, Email, Contact, ResearchProfile, OpportunitySignal, OpportunityBrief, RecommendedAction, RadarFeedbackStats } from '../types';
+import {
+  Contact,
+  Email,
+  Job,
+  OpportunityBrief,
+  OpportunitySignal,
+  RadarFeedbackStats,
+  RecommendedAction,
+  ResearchProfile,
+  ResearchReport,
+  ResearchReportDetail,
+  ResearchReportDiff,
+  ResearchRun,
+  ResearchRunStep,
+  ResearchRunTrace,
+} from '../types';
 
 function normalizeApiBase(rawBase: string): string {
   return rawBase.replace(/\/+$/, '').replace(/\/api$/, '');
@@ -164,6 +179,7 @@ export interface ConsentStatus {
     core: boolean;
     ai_processing: boolean;
     third_party_enrichment: boolean;
+    web_research: boolean;
   };
   accepted_at: string | null;
 }
@@ -172,6 +188,7 @@ export interface ConsentUpdate {
   core: boolean;
   ai_processing: boolean;
   third_party_enrichment: boolean;
+  web_research?: boolean;
 }
 
 export interface NotificationPrefs {
@@ -179,6 +196,7 @@ export interface NotificationPrefs {
   sms_phone: string | null;
   weekly_digest_enabled: boolean;
   browser_notifications_enabled: boolean;
+  radar_updates_enabled: boolean;
   inbox_updates_enabled: boolean;
   conversations_enabled: boolean;
   network_enabled: boolean;
@@ -1070,10 +1088,66 @@ export async function runResearchProfile(id: string): Promise<any> {
   return await res.json();
 }
 
-export async function fetchResearchRuns(profileId?: string): Promise<any[]> {
+export async function fetchResearchRuns(profileId?: string): Promise<ResearchRun[]> {
   const query = profileId ? `?profile_id=${encodeURIComponent(profileId)}` : '';
   const res = await apiFetch(`${API_BASE}/api/research/runs${query}`, { headers: authHeaders() });
   if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to fetch research runs'));
+  return await res.json();
+}
+
+export async function fetchResearchRun(runId: string): Promise<ResearchRun> {
+  const res = await apiFetch(`${API_BASE}/api/research/runs/${runId}`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to fetch research run'));
+  return await res.json();
+}
+
+export async function fetchResearchRunSteps(runId: string): Promise<ResearchRunStep[]> {
+  const res = await apiFetch(`${API_BASE}/api/research/runs/${runId}/steps`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to fetch research run steps'));
+  return await res.json();
+}
+
+export async function fetchResearchRunTrace(runId: string): Promise<ResearchRunTrace> {
+  const res = await apiFetch(`${API_BASE}/api/research/runs/${runId}/trace`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to fetch research run trace'));
+  return await res.json();
+}
+
+export async function fetchResearchReports(profileId?: string): Promise<ResearchReport[]> {
+  const query = profileId ? `?profile_id=${encodeURIComponent(profileId)}` : '';
+  const res = await apiFetch(`${API_BASE}/api/research/reports${query}`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to fetch research reports'));
+  return await res.json();
+}
+
+export async function fetchResearchReport(reportId: string): Promise<ResearchReportDetail> {
+  const res = await apiFetch(`${API_BASE}/api/research/reports/${reportId}`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to fetch research report'));
+  return await res.json();
+}
+
+export async function fetchResearchReportDiff(reportId: string): Promise<ResearchReportDiff> {
+  const res = await apiFetch(`${API_BASE}/api/research/reports/${reportId}/diff`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to fetch research report diff'));
+  return await res.json();
+}
+
+export async function acceptResearchReportAction(reportId: string, actionId: string): Promise<RecommendedAction> {
+  const res = await apiFetch(`${API_BASE}/api/research/reports/${reportId}/actions/${actionId}/accept`, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to accept report action'));
+  return await res.json();
+}
+
+export async function sendResearchReportFeedback(reportId: string, payload: { rating: string; notes?: string }): Promise<any> {
+  const res = await apiFetch(`${API_BASE}/api/research/reports/${reportId}/feedback`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to save report feedback'));
   return await res.json();
 }
 
@@ -1117,7 +1191,16 @@ export async function acceptRecommendedAction(id: string): Promise<RecommendedAc
   return await res.json();
 }
 
-export async function sendResearchFeedback(payload: { signal_id?: string; brief_id?: string; action_id?: string; rating: string; notes?: string }): Promise<any> {
+export async function sendResearchFeedback(payload: {
+  signal_id?: string;
+  brief_id?: string;
+  action_id?: string;
+  report_id?: string;
+  run_step_id?: string;
+  feedback_scope?: string;
+  rating: string;
+  notes?: string;
+}): Promise<any> {
   const res = await apiFetch(`${API_BASE}/api/research/feedback`, {
     method: 'POST',
     headers: authHeaders(),
