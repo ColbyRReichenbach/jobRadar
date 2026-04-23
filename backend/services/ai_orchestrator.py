@@ -40,6 +40,19 @@ class AiTaskConfig:
     changelog: tuple[PromptChangelogEntry, ...] = field(default_factory=tuple)
 
 
+@dataclass(frozen=True)
+class AiTaskRunResult:
+    payload: dict[str, Any]
+    task: str
+    model: str
+    prompt_version: str
+    duration_ms: float
+    retries: int
+    tokens_in: int | None = None
+    tokens_out: int | None = None
+    cost_estimate_cents: int | None = None
+
+
 AI_TASKS: dict[str, AiTaskConfig] = {
     "email_classifier": AiTaskConfig(
         name="email_classifier",
@@ -504,13 +517,23 @@ def write_prompt_registry(output_path: str) -> None:
         handle.write(render_prompt_registry_markdown())
 
 
-async def run_json_task(
+def _extract_usage_counts(response: Any) -> tuple[int | None, int | None]:
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return None, None
+    return (
+        getattr(usage, "prompt_tokens", None),
+        getattr(usage, "completion_tokens", None),
+    )
+
+
+async def run_json_task_with_metadata(
     task: str | AiTaskConfig,
     user_message: str,
     *,
     metadata: dict[str, Any] | None = None,
     max_tokens: int | None = None,
-) -> dict[str, Any]:
+) -> AiTaskRunResult:
     if not has_configured_api_key():
         raise RuntimeError("OPENAI_API_KEY is not configured")
 
@@ -534,6 +557,7 @@ async def run_json_task(
 
             response = await client.chat.completions.create(**request_kwargs)
             parsed = parse_json_payload(response.choices[0].message.content or "")
+            tokens_in, tokens_out = _extract_usage_counts(response)
             duration_ms = round((time.perf_counter() - started) * 1000, 2)
             row = _task_metrics_row(task_config)
             row["runs"] += 1
@@ -553,7 +577,16 @@ async def run_json_task(
                 duration_ms,
                 metadata or {},
             )
-            return parsed
+            return AiTaskRunResult(
+                payload=parsed,
+                task=task_config.name,
+                model=task_config.model,
+                prompt_version=task_config.prompt_version,
+                duration_ms=duration_ms,
+                retries=retry_count,
+                tokens_in=tokens_in,
+                tokens_out=tokens_out,
+            )
         except Exception as exc:  # noqa: BLE001
             last_error = exc
             if attempt == 2 or not _should_retry(exc):
@@ -582,3 +615,20 @@ async def run_json_task(
         repr(last_error),
     )
     raise RuntimeError(f"AI task failed: {task_config.name}") from last_error
+
+
+async def run_json_task(
+    task: str | AiTaskConfig,
+    user_message: str,
+    *,
+    metadata: dict[str, Any] | None = None,
+    max_tokens: int | None = None,
+) -> dict[str, Any]:
+    return (
+        await run_json_task_with_metadata(
+            task,
+            user_message,
+            metadata=metadata,
+            max_tokens=max_tokens,
+        )
+    ).payload

@@ -34,7 +34,7 @@ async def schedule_next_run(state):
 
     profile = await db.get(ResearchProfile, state["profile_id"])
     if not profile or profile.frequency == "manual":
-        return {}
+        return {"next_run_at": None}
 
     now = datetime.now(timezone.utc)
     if profile.frequency == "daily":
@@ -45,4 +45,4 @@ async def schedule_next_run(state):
         profile.next_run_at = now + timedelta(days=14)
     elif profile.frequency == "monthly":
         profile.next_run_at = now + timedelta(days=30)
-    return {}
+    return {"next_run_at": profile.next_run_at.isoformat() if profile.next_run_at else None}

@@ -358,3 +358,62 @@ async def test_second_research_report_persists_diff_payload(client, monkeypatch)
     diff = diff_resp.json()
     assert diff["new_findings"]
     assert "new findings" in diff["diff_summary"]
+
+
+@pytest.mark.asyncio
+async def test_research_trace_payload_includes_artifacts_and_summary(client, monkeypatch):
+    async def _fake_search(query: str, max_results: int):
+        return [
+            SearchCandidate(
+                url="https://example.com/careers/platform-engineer",
+                title="Platform Engineer at Example",
+                snippet="Example is hiring a platform engineer for its data platform team.",
+                source_type="company_careers",
+                domain="example.com",
+                published_at="2026-04-22T12:00:00+00:00",
+                why_selected=query,
+            )
+        ]
+
+    async def _fake_fetch(url: str):
+        return (
+            "<html><body><h1>Platform Engineer</h1><p>Example is growing its data platform team.</p></body></html>",
+            "Platform Engineer Example is growing its data platform team.",
+        )
+
+    monkeypatch.setattr("backend.services.research_radar.nodes.search.search_public_web", _fake_search)
+    monkeypatch.setattr("backend.services.research_radar.nodes.fetch.fetch_document", _fake_fetch)
+
+    profile_resp = await client.post(
+        "/api/research/profiles",
+        json={
+            "name": "Trace Payload Tracker",
+            "mode": "research",
+            "depth": "quick",
+            "selected_roles": ["Platform Engineer"],
+            "selected_companies": ["Example"],
+            "include_public_web_research": True,
+            "max_search_queries": 1,
+        },
+        headers=AUTH_HEADER,
+    )
+    assert profile_resp.status_code == 201
+
+    run_resp = await client.post(f"/api/research/profiles/{profile_resp.json()['id']}/run", headers=AUTH_HEADER)
+    assert run_resp.status_code == 202
+
+    trace_resp = await client.get(f"/api/research/runs/{run_resp.json()['id']}/trace", headers=AUTH_HEADER)
+    assert trace_resp.status_code == 200
+    trace = trace_resp.json()
+
+    assert trace["summary"]["status"] == "published"
+    assert trace["summary"]["step_count"] == trace["step_count"]
+    assert trace["summary"]["run_duration_seconds"] is not None
+    assert trace["artifacts"]["tracker_snapshot"]["name"] == "Trace Payload Tracker"
+    assert trace["artifacts"]["normalized_brief"]["ideal_role_titles"] == ["Platform Engineer"]
+    assert trace["artifacts"]["search_tasks"]
+    assert trace["artifacts"]["fetched_sources"]
+    assert trace["artifacts"]["evidence_items"]
+    assert trace["artifacts"]["final_report"]["status"] == "published"
+    assert trace["artifacts"]["verification_result"]["status"] in {"ready", "needs_review"}
+    assert trace["timeline"][0]["step_name"] == "load_tracker_context"

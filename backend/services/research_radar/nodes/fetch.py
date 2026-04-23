@@ -68,6 +68,7 @@ async def fetch_documents(state):
                         "raw_text": existing.raw_text,
                         "company_name": task.get("company_hint"),
                         "role_title": task.get("role_hint"),
+                        "fetch_error": (existing.raw_json or {}).get("fetch_error"),
                     }
                 )
                 continue
@@ -102,6 +103,7 @@ async def fetch_documents(state):
                     "raw_text": item.raw_text,
                     "company_name": task.get("company_hint"),
                     "role_title": task.get("role_hint"),
+                    "fetch_error": fetch_error,
                 }
             )
         if len(source_payloads) >= max_sources:

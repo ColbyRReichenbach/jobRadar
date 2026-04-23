@@ -79,6 +79,7 @@ from backend.services.ai_orchestrator import get_metrics_snapshot
 from backend.monitoring import configure_sentry
 from backend.services.hunter import find_contacts, generate_linkedin_search_url
 from backend.services.notification_preferences import is_alert_enabled, serialize_notification_preferences
+from backend.services.research_radar.observability import build_trace_payload
 from backend.services.scraper import extract_job, validate_job_parse_url
 import structlog
 
@@ -5194,6 +5195,9 @@ def _serialize_research_profile(profile: ResearchProfile) -> dict:
 
 
 def _serialize_run(run: ResearchRun) -> dict:
+    duration_seconds = None
+    if run.started_at and run.completed_at:
+        duration_seconds = max((run.completed_at - run.started_at).total_seconds(), 0.0)
     return {
         "id": str(run.id),
         "profile_id": str(run.profile_id),
@@ -5215,11 +5219,15 @@ def _serialize_run(run: ResearchRun) -> dict:
         "tokens_out": run.tokens_out,
         "llm_call_count": run.llm_call_count,
         "cost_estimate_cents": run.cost_estimate_cents,
+        "duration_seconds": duration_seconds,
         "created_at": run.created_at.isoformat() if run.created_at else None,
     }
 
 
 def _serialize_run_step(step: ResearchRunStep) -> dict:
+    duration_seconds = None
+    if step.started_at and step.completed_at:
+        duration_seconds = max((step.completed_at - step.started_at).total_seconds(), 0.0)
     return {
         "id": str(step.id),
         "run_id": str(step.run_id),
@@ -5236,6 +5244,7 @@ def _serialize_run_step(step: ResearchRunStep) -> dict:
         "tokens_in": step.tokens_in,
         "tokens_out": step.tokens_out,
         "cost_estimate_cents": step.cost_estimate_cents,
+        "duration_seconds": duration_seconds,
         "started_at": step.started_at.isoformat() if step.started_at else None,
         "completed_at": step.completed_at.isoformat() if step.completed_at else None,
         "created_at": step.created_at.isoformat() if step.created_at else None,
@@ -5559,6 +5568,7 @@ async def get_research_run_trace(run_id: str, db: AsyncSession = Depends(get_db)
         "run": _serialize_run(run),
         "step_count": len(steps),
         "steps": [_serialize_run_step(step) for step in steps],
+        **build_trace_payload(run, steps),
     }
 
 

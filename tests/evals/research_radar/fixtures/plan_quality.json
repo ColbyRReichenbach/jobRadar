@@ -1,0 +1,25 @@
+[
+  {
+    "name": "quick_depth_keeps_plan_bounded_and_company_specific",
+    "normalized_brief": {
+      "search_objective": "Find public hiring signals for platform engineering roles.",
+      "ideal_role_titles": ["Platform Engineer", "Data Engineer"],
+      "target_domains": ["developer_tools"],
+      "target_companies": ["OpenAI"],
+      "target_locations": ["Remote"],
+      "remote_preferences": ["remote"],
+      "seniority": ["senior"],
+      "must_have_signals": ["platform"],
+      "avoid_signals": ["intern"],
+      "fit_summary": "6 years of experience, skills in Python and SQL.",
+      "search_constraints": ["Prefer remote-friendly roles."]
+    },
+    "depth": "quick",
+    "max_queries": 8,
+    "expect": {
+      "max_tasks": 4,
+      "required_task_types": ["role_openings", "company_hiring_signal"],
+      "queries_contain": ["OpenAI"]
+    }
+  }
+]

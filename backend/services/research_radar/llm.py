@@ -22,6 +22,19 @@ from backend.services.research_radar.schemas import (
 )
 
 
+def _task_call_metric(result: ai_orchestrator.AiTaskRunResult) -> dict[str, Any]:
+    return {
+        "task": result.task,
+        "model": result.model,
+        "prompt_version": result.prompt_version,
+        "duration_ms": result.duration_ms,
+        "retries": result.retries,
+        "tokens_in": result.tokens_in,
+        "tokens_out": result.tokens_out,
+        "cost_estimate_cents": result.cost_estimate_cents,
+    }
+
+
 def _unique_clean(values: list[str] | None) -> list[str]:
     seen: set[str] = set()
     cleaned: list[str] = []
@@ -85,16 +98,24 @@ def deterministic_normalized_brief(tracker: dict[str, Any], user_context: dict[s
     )
 
 
-async def normalize_brief(tracker: dict[str, Any], user_context: dict[str, Any]) -> NormalizedResearchBrief:
+async def normalize_brief_with_metrics(
+    tracker: dict[str, Any],
+    user_context: dict[str, Any],
+) -> tuple[NormalizedResearchBrief, dict[str, Any] | None]:
     if not ai_orchestrator.has_configured_api_key():
-        return deterministic_normalized_brief(tracker, user_context)
+        return deterministic_normalized_brief(tracker, user_context), None
 
-    payload = await ai_orchestrator.run_json_task(
+    result = await ai_orchestrator.run_json_task_with_metadata(
         "research_brief_normalizer",
         build_brief_normalization_prompt(tracker=tracker, user_context=user_context),
         metadata={"surface": "research_radar", "profile_name": tracker.get("name")},
     )
-    return NormalizedResearchBrief.model_validate(payload)
+    return NormalizedResearchBrief.model_validate(result.payload), _task_call_metric(result)
+
+
+async def normalize_brief(tracker: dict[str, Any], user_context: dict[str, Any]) -> NormalizedResearchBrief:
+    normalized, _ = await normalize_brief_with_metrics(tracker, user_context)
+    return normalized
 
 
 def deterministic_research_plan(normalized_brief: dict[str, Any], depth: str, max_queries: int) -> list[ResearchSearchTask]:
@@ -156,11 +177,15 @@ def deterministic_research_plan(normalized_brief: dict[str, Any], depth: str, ma
     return tasks[:max_tasks]
 
 
-async def plan_research_tasks(normalized_brief: dict[str, Any], depth: str, max_queries: int) -> list[ResearchSearchTask]:
+async def plan_research_tasks_with_metrics(
+    normalized_brief: dict[str, Any],
+    depth: str,
+    max_queries: int,
+) -> tuple[list[ResearchSearchTask], dict[str, Any] | None]:
     if not ai_orchestrator.has_configured_api_key():
-        return deterministic_research_plan(normalized_brief, depth, max_queries)
+        return deterministic_research_plan(normalized_brief, depth, max_queries), None
 
-    payload = await ai_orchestrator.run_json_task(
+    result = await ai_orchestrator.run_json_task_with_metadata(
         "research_planner",
         build_research_plan_prompt(
             normalized_brief=normalized_brief,
@@ -169,8 +194,13 @@ async def plan_research_tasks(normalized_brief: dict[str, Any], depth: str, max_
         ),
         metadata={"surface": "research_radar", "depth": depth},
     )
-    tasks = payload.get("tasks", payload)
-    return [ResearchSearchTask.model_validate(task) for task in tasks]
+    tasks = result.payload.get("tasks", result.payload)
+    return [ResearchSearchTask.model_validate(task) for task in tasks], _task_call_metric(result)
+
+
+async def plan_research_tasks(normalized_brief: dict[str, Any], depth: str, max_queries: int) -> list[ResearchSearchTask]:
+    tasks, _ = await plan_research_tasks_with_metrics(normalized_brief, depth, max_queries)
+    return tasks
 
 
 def deterministic_extract_evidence(normalized_brief: dict[str, Any], source_document: dict[str, Any]) -> list[ExtractedEvidence]:
@@ -216,18 +246,26 @@ def deterministic_extract_evidence(normalized_brief: dict[str, Any], source_docu
     ]
 
 
-async def extract_evidence(normalized_brief: dict[str, Any], source_document: dict[str, Any]) -> list[ExtractedEvidence]:
+async def extract_evidence_with_metrics(
+    normalized_brief: dict[str, Any],
+    source_document: dict[str, Any],
+) -> tuple[list[ExtractedEvidence], dict[str, Any] | None]:
     if not ai_orchestrator.has_configured_api_key():
-        return deterministic_extract_evidence(normalized_brief, source_document)
+        return deterministic_extract_evidence(normalized_brief, source_document), None
 
-    payload = await ai_orchestrator.run_json_task(
+    result = await ai_orchestrator.run_json_task_with_metadata(
         "research_evidence_extractor",
         build_evidence_extraction_prompt(normalized_brief=normalized_brief, source_document=source_document),
         metadata={"surface": "research_radar", "source_url": source_document.get("source_url")},
         max_tokens=1800,
     )
-    evidence_items = payload.get("evidence_items", payload)
-    return [ExtractedEvidence.model_validate(item) for item in evidence_items]
+    evidence_items = result.payload.get("evidence_items", result.payload)
+    return [ExtractedEvidence.model_validate(item) for item in evidence_items], _task_call_metric(result)
+
+
+async def extract_evidence(normalized_brief: dict[str, Any], source_document: dict[str, Any]) -> list[ExtractedEvidence]:
+    evidence_items, _ = await extract_evidence_with_metrics(normalized_brief, source_document)
+    return evidence_items
 
 
 def deterministic_report(normalized_brief: dict[str, Any], diff_summary: dict[str, Any], evidence_items: list[dict[str, Any]]) -> tuple[FinalReportDraft, list[ReportSectionDraft]]:
@@ -283,11 +321,16 @@ def deterministic_report(normalized_brief: dict[str, Any], diff_summary: dict[st
     return report, sections
 
 
-async def write_report(normalized_brief: dict[str, Any], diff_summary: dict[str, Any], evidence_items: list[dict[str, Any]]) -> tuple[FinalReportDraft, list[ReportSectionDraft]]:
+async def write_report_with_metrics(
+    normalized_brief: dict[str, Any],
+    diff_summary: dict[str, Any],
+    evidence_items: list[dict[str, Any]],
+) -> tuple[FinalReportDraft, list[ReportSectionDraft], dict[str, Any] | None]:
     if not ai_orchestrator.has_configured_api_key():
-        return deterministic_report(normalized_brief, diff_summary, evidence_items)
+        report, sections = deterministic_report(normalized_brief, diff_summary, evidence_items)
+        return report, sections, None
 
-    payload = await ai_orchestrator.run_json_task(
+    result = await ai_orchestrator.run_json_task_with_metadata(
         "research_report_writer",
         build_report_prompt(
             normalized_brief=normalized_brief,
@@ -297,6 +340,7 @@ async def write_report(normalized_brief: dict[str, Any], diff_summary: dict[str,
         metadata={"surface": "research_radar", "evidence_count": len(evidence_items)},
         max_tokens=3000,
     )
+    payload = result.payload
     sections = [ReportSectionDraft.model_validate(section) for section in payload.get("sections", [])]
     report = FinalReportDraft(
         title=payload["title"],
@@ -310,6 +354,11 @@ async def write_report(normalized_brief: dict[str, Any], diff_summary: dict[str,
         new_findings_count=len(diff_summary.get("new_findings", [])),
         changed_findings_count=len(diff_summary.get("changed_findings", [])),
     )
+    return report, sections, _task_call_metric(result)
+
+
+async def write_report(normalized_brief: dict[str, Any], diff_summary: dict[str, Any], evidence_items: list[dict[str, Any]]) -> tuple[FinalReportDraft, list[ReportSectionDraft]]:
+    report, sections, _ = await write_report_with_metrics(normalized_brief, diff_summary, evidence_items)
     return report, sections
 
 
@@ -339,11 +388,15 @@ def deterministic_verification(report_sections: list[dict[str, Any]], evidence_i
     )
 
 
-async def verify_report(normalized_brief: dict[str, Any], report_sections: list[dict[str, Any]], evidence_items: list[dict[str, Any]]) -> VerificationResult:
+async def verify_report_with_metrics(
+    normalized_brief: dict[str, Any],
+    report_sections: list[dict[str, Any]],
+    evidence_items: list[dict[str, Any]],
+) -> tuple[VerificationResult, dict[str, Any] | None]:
     if not ai_orchestrator.has_configured_api_key():
-        return deterministic_verification(report_sections, evidence_items)
+        return deterministic_verification(report_sections, evidence_items), None
 
-    payload = await ai_orchestrator.run_json_task(
+    result = await ai_orchestrator.run_json_task_with_metadata(
         "research_report_verifier",
         build_verification_prompt(
             normalized_brief=normalized_brief,
@@ -353,4 +406,9 @@ async def verify_report(normalized_brief: dict[str, Any], report_sections: list[
         metadata={"surface": "research_radar", "section_count": len(report_sections)},
         max_tokens=1200,
     )
-    return VerificationResult.model_validate(payload)
+    return VerificationResult.model_validate(result.payload), _task_call_metric(result)
+
+
+async def verify_report(normalized_brief: dict[str, Any], report_sections: list[dict[str, Any]], evidence_items: list[dict[str, Any]]) -> VerificationResult:
+    verification_result, _ = await verify_report_with_metrics(normalized_brief, report_sections, evidence_items)
+    return verification_result

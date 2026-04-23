@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from backend.services.research_radar.config import DEPTH_TASK_LIMITS
-from backend.services.research_radar.llm import normalize_brief
+from backend.services.research_radar.llm import normalize_brief_with_metrics
 
 
 async def normalize_research_brief(state):
     tracker = state["tracker"]
     user_context = state["user_context"]
-    normalized = await normalize_brief(tracker, user_context)
+    normalized, llm_call = await normalize_brief_with_metrics(tracker, user_context)
     normalized_dict = normalized.model_dump()
     if not normalized_dict["ideal_role_titles"] and user_context.get("role_interest_labels"):
         normalized_dict["ideal_role_titles"] = user_context["role_interest_labels"][:6]
@@ -15,7 +15,10 @@ async def normalize_research_brief(state):
         normalized_dict["target_locations"] = user_context["preferred_locations"][:6]
     if not normalized_dict["remote_preferences"] and user_context.get("preferred_remote_type"):
         normalized_dict["remote_preferences"] = [user_context["preferred_remote_type"]]
-    return {"normalized_brief": normalized_dict}
+    result = {"normalized_brief": normalized_dict}
+    if llm_call:
+        result["_llm_calls"] = [llm_call]
+    return result
 
 
 async def validate_brief(state):

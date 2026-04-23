@@ -8,11 +8,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.celery_app import celery_app
+from backend.metrics import observe_research_failure, observe_research_run, observe_research_step
 from backend.services.opportunity_radar.action_generator import generate_actions
 from backend.services.opportunity_radar.brief_generator import generate_briefs
 from backend.services.opportunity_radar.signal_extractor import extract_signals
 from backend.services.opportunity_radar.signal_scorer import score_signal
 from backend.services.opportunity_radar.sources import collect_internal_sources
+from backend.services.research_radar.observability import build_trace_payload, emit_langsmith_run_trace
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +88,7 @@ async def _mark_step(
     status: str,
     output_json: dict | None = None,
     error_message: str | None = None,
+    mode: str | None = None,
 ) -> None:
     step.status = status
     if output_json is not None:
@@ -95,6 +98,15 @@ async def _mark_step(
     if step.started_at is None:
         step.started_at = datetime.now(timezone.utc)
     step.completed_at = datetime.now(timezone.utc)
+    duration_seconds = max((step.completed_at - step.started_at).total_seconds(), 0.0)
+    observe_research_step(
+        mode=mode,
+        step_name=step.step_name,
+        outcome="success" if status == "succeeded" else "failure" if status == "failed" else status,
+        duration_seconds=duration_seconds,
+    )
+    if status == "failed":
+        observe_research_failure(mode=mode, step_name=step.step_name)
     await db.flush()
 
 
@@ -172,6 +184,7 @@ async def _execute_internal_mode(db: AsyncSession, run, profile, *, finalize_run
         collect_step,
         status="succeeded",
         output_json={"source_count": len(source_items)},
+        mode=run.mode,
     )
 
     run.current_step = "process_internal_signals"
@@ -275,6 +288,7 @@ async def _execute_internal_mode(db: AsyncSession, run, profile, *, finalize_run
             "signal_counts": signal_counter,
             "action_count": action_count,
         },
+        mode=run.mode,
     )
     await db.commit()
 
@@ -340,6 +354,7 @@ async def execute_research_run(db: AsyncSession, run_id: UUID) -> None:
                 status="failed",
                 error_message=str(exc),
                 output_json=pending_step.output_json or {},
+                mode=run.mode,
             )
 
         failed_step_name = pending_step.step_name if pending_step else (run.status_detail or {}).get("failed_step") or run.current_step
@@ -359,7 +374,63 @@ async def execute_research_run(db: AsyncSession, run_id: UUID) -> None:
             action_url=_alert_action_url("/radar", profile_id=str(run.profile_id)),
         )
         await db.commit()
+        duration_seconds = 0.0
+        if run.started_at and run.completed_at:
+            duration_seconds = max((run.completed_at - run.started_at).total_seconds(), 0.0)
+        observe_research_run(
+            mode=run.mode,
+            trigger=run.trigger_reason or run.run_type,
+            outcome=run.status,
+            duration_seconds=duration_seconds,
+        )
+        steps = (
+            await db.execute(
+                select(ResearchRunStep)
+                .where(ResearchRunStep.run_id == run.id)
+                .order_by(ResearchRunStep.step_order.asc(), ResearchRunStep.created_at.asc())
+            )
+        ).scalars().all()
+        trace_payload = build_trace_payload(run, steps)
+        emit_langsmith_run_trace(
+            run_id=str(run.id),
+            profile_id=str(run.profile_id),
+            user_id=str(run.user_id),
+            input_payload={"mode": run.mode, "trigger": run.trigger_reason or run.run_type},
+            output_payload=trace_payload,
+            error_message=run.error_message,
+            metadata={"status": run.status},
+        )
         logger.exception("Research run %s failed", run_id)
+        return
+
+    run, profile = await _load_run_and_profile(db, run_id)
+    if run:
+        duration_seconds = 0.0
+        if run.started_at and run.completed_at:
+            duration_seconds = max((run.completed_at - run.started_at).total_seconds(), 0.0)
+        observe_research_run(
+            mode=run.mode,
+            trigger=run.trigger_reason or run.run_type,
+            outcome=run.status,
+            duration_seconds=duration_seconds,
+        )
+        steps = (
+            await db.execute(
+                select(ResearchRunStep)
+                .where(ResearchRunStep.run_id == run.id)
+                .order_by(ResearchRunStep.step_order.asc(), ResearchRunStep.created_at.asc())
+            )
+        ).scalars().all()
+        trace_payload = build_trace_payload(run, steps)
+        emit_langsmith_run_trace(
+            run_id=str(run.id),
+            profile_id=str(run.profile_id),
+            user_id=str(run.user_id),
+            input_payload={"mode": run.mode, "trigger": run.trigger_reason or run.run_type},
+            output_payload=trace_payload,
+            error_message=None,
+            metadata={"status": run.status},
+        )
 
 
 async def execute_research_run_with_new_session(run_id: UUID) -> None:
