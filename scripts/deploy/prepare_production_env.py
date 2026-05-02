@@ -40,7 +40,9 @@ def read_env_file(path: Path) -> dict[str, str]:
 def merge_sources() -> dict[str, str]:
     merged: dict[str, str] = {}
     for source_file in SOURCE_FILES:
-        merged.update(read_env_file(source_file))
+        for key, value in read_env_file(source_file).items():
+            if value:
+                merged[key] = value
     return merged
 
 
