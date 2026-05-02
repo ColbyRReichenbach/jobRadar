@@ -1,7 +1,7 @@
 """add ai experiments
 
 Revision ID: 044_add_ai_experiments
-Revises: 043_add_copilot_tables
+Revises: 043
 Create Date: 2026-05-02
 """
 
@@ -11,7 +11,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "044_add_ai_experiments"
-down_revision = "043_add_copilot_tables"
+down_revision = "043"
 branch_labels = None
 depends_on = None
 
