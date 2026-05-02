@@ -198,7 +198,7 @@ Evidence:
 
 - `dashboardv2/Dockerfile` defaults `VITE_API_URL` to `http://localhost:8000`, so a container production build can silently point at localhost if the build arg is omitted.
 - `dashboardv2/package.json` is still named `react-example`.
-- `.env.example` documents `ANTHROPIC_API_KEY` and Supabase service-role values, while current runtime AI paths use `OPENAI_API_KEY`.
+- `.env.example` now documents Neon/Postgres and `OPENAI_API_KEY`; earlier Anthropic/Supabase environment guidance has been removed.
 - `npm audit --omit=dev --audit-level=high` exits cleanly, but still reports a moderate PostCSS advisory in production dependencies.
 
 Impact:
@@ -211,7 +211,7 @@ Required fix:
 
 - Remove the localhost Docker default or fail the Docker build when `VITE_API_URL` is not supplied for production.
 - Rename the package to `apptrail-dashboard`.
-- Update `.env.example` to include `OPENAI_API_KEY` and remove/mark obsolete Anthropic/Supabase service-role guidance if unused.
+- Keep `.env.example` aligned with the active provider stack when deployment providers change.
 - Run `npm audit fix` or document why the PostCSS advisory is not exploitable.
 
 ## Follow-Up Verification Snapshot
