@@ -9,6 +9,8 @@
 *.cert
 *.p12
 secrets/
+.deploy.secrets.local
+.deploy.generated.env
 
 # ─── Python ───────────────────────────────────────────────────────────────────
 __pycache__/
