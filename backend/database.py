@@ -3,14 +3,18 @@ import os
 from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from backend.database_url import normalize_asyncpg_database_url
+
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+DATABASE_URL, connect_args = normalize_asyncpg_database_url(os.getenv("DATABASE_URL"))
 DATABASE_URL_LOWER = (DATABASE_URL or "").lower()
 
 engine_kwargs: dict[str, object] = {
     "echo": os.getenv("SQLALCHEMY_ECHO", "false").lower() == "true",
 }
+if connect_args:
+    engine_kwargs["connect_args"] = connect_args
 
 if DATABASE_URL_LOWER and not DATABASE_URL_LOWER.startswith("sqlite"):
     engine_kwargs.update(

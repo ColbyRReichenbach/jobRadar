@@ -13,10 +13,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 load_dotenv()
 
+from backend.database_url import normalize_asyncpg_database_url
 from backend.models import Base
 
 config = context.config
-config.set_main_option("sqlalchemy.url", os.getenv("DATABASE_URL"))
+database_url, connect_args = normalize_asyncpg_database_url(os.getenv("DATABASE_URL"))
+config.set_main_option("sqlalchemy.url", database_url or "")
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
@@ -47,6 +49,7 @@ async def run_async_migrations():
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        connect_args=connect_args,
     )
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
