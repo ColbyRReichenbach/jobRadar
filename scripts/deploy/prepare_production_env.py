@@ -71,12 +71,18 @@ def first_present(values: dict[str, str], *keys: str) -> str:
 
 def main() -> int:
     source = merge_sources()
+    deploy_source = {
+        key: value
+        for key, value in read_env_file(ROOT / ".deploy.secrets.local").items()
+        if value
+    }
     existing = existing_generated_values()
 
-    api_url = first_present(source, "API_URL")
-    google_redirect_uri = first_present(source, "GOOGLE_REDIRECT_URI")
+    api_url = first_present(deploy_source, "API_URL")
+    google_redirect_uri = first_present(deploy_source, "GOOGLE_REDIRECT_URI")
     if not google_redirect_uri and api_url:
         google_redirect_uri = api_url.rstrip("/") + "/api/auth/google/callback"
+    dashboard_url = first_present(deploy_source, "DASHBOARD_URL")
 
     database_url = first_present(source, "NEON_DATABASE_URL", "DATABASE_URL")
     output = {
@@ -94,7 +100,7 @@ def main() -> int:
         "METRICS_BEARER_TOKEN": first_present(source, "METRICS_BEARER_TOKEN")
         or existing.get("METRICS_BEARER_TOKEN", "")
         or secrets.token_urlsafe(32),
-        "DASHBOARD_URL": first_present(source, "DASHBOARD_URL"),
+        "DASHBOARD_URL": dashboard_url,
         "API_URL": api_url,
         "GOOGLE_REDIRECT_URI": google_redirect_uri,
         "GMAIL_CLIENT_ID": first_present(source, "GMAIL_CLIENT_ID"),
