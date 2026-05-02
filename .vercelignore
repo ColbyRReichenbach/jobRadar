@@ -1,0 +1,10 @@
+.env
+.env.*
+dashboardv2/.env
+dashboardv2/.env.*
+.deploy.secrets.local
+.deploy.generated.env
+docs/ai-copilot-search-eval-plan.md
+node_modules
+dashboardv2/node_modules
+dashboardv2/dist
