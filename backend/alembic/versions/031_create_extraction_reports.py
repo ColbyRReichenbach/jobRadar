@@ -16,8 +16,8 @@ depends_on = None
 def upgrade() -> None:
     op.create_table(
         "extraction_reports",
-        sa.Column("id", sa.Text, primary_key=True, server_default=sa.text("gen_random_uuid()::text")),
-        sa.Column("user_id", sa.Text, sa.ForeignKey("users.id", ondelete="SET NULL"), nullable=True),
+        sa.Column("id", sa.Uuid(), primary_key=True, server_default=sa.text("gen_random_uuid()")),
+        sa.Column("user_id", sa.Uuid(), sa.ForeignKey("users.id", ondelete="SET NULL"), nullable=True),
         sa.Column("report_type", sa.Text, nullable=False),
         sa.Column("url", sa.Text, nullable=False),
         sa.Column("domain", sa.Text, nullable=True),

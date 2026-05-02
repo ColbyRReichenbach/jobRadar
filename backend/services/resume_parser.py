@@ -1,7 +1,5 @@
 """Resume parsing: PDF text extraction + LLM structured extraction."""
 
-import json
-import os
 from typing import Any
 
 from backend.services import ai_orchestrator
@@ -43,11 +41,12 @@ Resume text:
 {text[:8000]}"""
 
     try:
-        return await ai_orchestrator.run_json_task(
+        result = await ai_orchestrator.run_json_task(
             "resume_parser",
             prompt,
             metadata={"surface": "resume_parser"},
         )
+        return _normalize_parse_result(result)
     except Exception:
         ai_orchestrator.record_fallback("resume_parser", "task_failure", {"surface": "resume_parser"})
 
@@ -67,4 +66,68 @@ def _fallback_parse(text: str) -> dict[str, Any]:
         "experience_years": None,
         "tools": [],
         "certifications": [],
+    }
+
+
+def _string_list(value: object) -> list[str]:
+    if isinstance(value, str):
+        return [value.strip()] if value.strip() else []
+    if not isinstance(value, list):
+        return []
+    cleaned: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        if not isinstance(item, str):
+            continue
+        text = item.strip()
+        if not text:
+            continue
+        lowered = text.lower()
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        cleaned.append(text)
+    return cleaned
+
+
+def _normalize_education(value: object) -> list[dict[str, str | None]]:
+    if not isinstance(value, list):
+        return []
+    normalized: list[dict[str, str | None]] = []
+    for item in value:
+        if isinstance(item, str):
+            text = item.strip()
+            if text:
+                normalized.append({"institution": text, "degree": None, "field": None, "year": None})
+            continue
+        if not isinstance(item, dict):
+            continue
+        normalized.append(
+            {
+                "institution": item.get("institution") if isinstance(item.get("institution"), str) else None,
+                "degree": item.get("degree") if isinstance(item.get("degree"), str) else None,
+                "field": item.get("field") if isinstance(item.get("field"), str) else None,
+                "year": str(item["year"]) if item.get("year") is not None else None,
+            }
+        )
+    return normalized
+
+
+def _normalize_experience_years(value: object) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        years = int(float(value))
+    except (TypeError, ValueError):
+        return None
+    return max(0, min(80, years))
+
+
+def _normalize_parse_result(result: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "skills": _string_list(result.get("skills")),
+        "education": _normalize_education(result.get("education")),
+        "experience_years": _normalize_experience_years(result.get("experience_years")),
+        "tools": _string_list(result.get("tools")),
+        "certifications": _string_list(result.get("certifications")),
     }

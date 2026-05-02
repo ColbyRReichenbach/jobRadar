@@ -2,10 +2,16 @@
 
 from datetime import datetime, timezone
 
-from sqlalchemy import func, select, case
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.models import Application, AtsBehavior, Company, EmailEvent
+from backend.models import Application, AtsBehavior, Company
+from backend.services.aggregate_privacy import (
+    aggregate_min_users,
+    bucket_count,
+    distinct_ats_user_count,
+    has_enough_contributors,
+)
 
 
 async def compute_ats_metrics(db: AsyncSession) -> list[dict]:
@@ -29,7 +35,9 @@ async def compute_ats_metrics(db: AsyncSession) -> list[dict]:
     metrics = []
 
     for platform, total_apps in platform_counts.items():
-        if total_apps < 1:
+        distinct_user_count = await distinct_ats_user_count(db, platform)
+        if not has_enough_contributors(distinct_user_count):
+            await db.execute(delete(AtsBehavior).where(AtsBehavior.platform == platform))
             continue
 
         # Rejection rate
@@ -120,7 +128,20 @@ async def compute_ats_metrics(db: AsyncSession) -> list[dict]:
 
 async def get_platform_profile(db: AsyncSession, platform: str) -> dict:
     """Get the behavioral profile for a specific ATS platform."""
-    stmt = select(AtsBehavior).where(AtsBehavior.platform == platform)
+    distinct_user_count = await distinct_ats_user_count(db, platform)
+    if not has_enough_contributors(distinct_user_count):
+        return {
+            "platform": platform,
+            "metrics": {},
+            "insights": [],
+            "aggregate_status": "insufficient_data",
+            "minimum_user_count": aggregate_min_users(),
+        }
+
+    stmt = select(AtsBehavior).where(
+        AtsBehavior.platform == platform,
+        AtsBehavior.sample_size >= aggregate_min_users(),
+    )
     result = await db.execute(stmt)
     behaviors = result.scalars().all()
 
@@ -128,7 +149,8 @@ async def get_platform_profile(db: AsyncSession, platform: str) -> dict:
     for b in behaviors:
         metrics[b.metric_name] = {
             "value": b.metric_value,
-            "sample_size": b.sample_size,
+            "sample_size_bucket": bucket_count(b.sample_size),
+            "contributor_bucket": bucket_count(distinct_user_count),
             "last_updated": b.last_updated.isoformat() if b.last_updated else None,
         }
 
@@ -139,7 +161,8 @@ async def get_platform_profile(db: AsyncSession, platform: str) -> dict:
         insights.append(f"{platform} companies typically respond in {days} days")
     if "rejection_rate" in metrics:
         rate = metrics["rejection_rate"]["value"]
-        insights.append(f"{rate}% rejection rate across {metrics['rejection_rate']['sample_size']} applications")
+        sample_bucket = metrics["rejection_rate"]["sample_size_bucket"]
+        insights.append(f"{rate}% rejection rate across {sample_bucket} applications")
     if "ghosting_rate" in metrics:
         rate = metrics["ghosting_rate"]["value"]
         if rate > 50:
@@ -149,4 +172,6 @@ async def get_platform_profile(db: AsyncSession, platform: str) -> dict:
         "platform": platform,
         "metrics": metrics,
         "insights": insights,
+        "aggregate_status": "available",
+        "minimum_user_count": aggregate_min_users(),
     }

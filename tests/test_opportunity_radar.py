@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from backend.models import (
+    DataConsent,
     OpportunityScore,
     ResearchProfile,
     ResearchEvidenceItem,
@@ -171,6 +172,42 @@ async def test_report_tracker_requires_consent_before_create_or_run(client):
     assert run_resp.status_code == 400
     assert "ai_processing" in run_resp.json()["detail"]
     assert "web_research" in run_resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_radar_can_be_disabled_globally(client, monkeypatch):
+    monkeypatch.setenv("RADAR_ENABLED", "false")
+
+    response = await client.get('/api/research/profiles', headers=AUTH_HEADER)
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Radar is disabled"
+
+
+@pytest.mark.asyncio
+async def test_radar_research_flag_blocks_report_modes_only(client, monkeypatch):
+    monkeypatch.setenv("RADAR_RESEARCH_ENABLED", "false")
+    await _grant_research_consent(client)
+
+    blocked = await client.post(
+        '/api/research/profiles',
+        json={
+            "name": "Blocked Research Tracker",
+            "mode": "research",
+            "selected_roles": ["Platform Engineer"],
+        },
+        headers=AUTH_HEADER,
+    )
+    assert blocked.status_code == 403
+    assert blocked.json()["detail"] == "Radar web research is disabled"
+
+    internal = await client.post(
+        '/api/research/profiles',
+        json={"name": "Internal Tracker", "mode": "internal", "frequency": "daily"},
+        headers=AUTH_HEADER,
+    )
+    assert internal.status_code == 201
+    assert internal.json()["include_public_web_research"] is False
 
 
 @pytest.mark.asyncio
@@ -492,6 +529,83 @@ async def test_dispatch_due_profiles_skips_duplicate_inflight_runs(db_engine, mo
     assert first_dispatch == 1
     assert second_dispatch == 0
     assert len(queued_run_ids) == 1
+
+
+@pytest.mark.asyncio
+async def test_dispatch_due_profiles_respects_global_radar_flag(db_engine, monkeypatch):
+    from backend.tasks.run_research_radar import dispatch_due_research_profiles_async
+
+    session_factory = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
+    queued_run_ids: list[str] = []
+
+    monkeypatch.setenv("RADAR_ENABLED", "false")
+    monkeypatch.setattr("backend.database.async_session_factory", session_factory, raising=False)
+    monkeypatch.setattr("backend.tasks.run_research_radar.run_research_radar.delay", lambda run_id: queued_run_ids.append(run_id))
+
+    async with session_factory() as session:
+        profile = ResearchProfile(
+            user_id=TEST_USER_ID,
+            name="Scheduled Internal Tracker",
+            mode="internal",
+            frequency="daily",
+            active=True,
+            next_run_at=datetime.now(timezone.utc) - timedelta(minutes=5),
+        )
+        session.add(profile)
+        await session.commit()
+
+    dispatched = await dispatch_due_research_profiles_async()
+
+    assert dispatched == 0
+    assert queued_run_ids == []
+
+
+@pytest.mark.asyncio
+async def test_dispatch_due_profiles_respects_research_flag(db_engine, monkeypatch):
+    from backend.tasks.run_research_radar import dispatch_due_research_profiles_async
+
+    session_factory = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
+    queued_run_ids: list[str] = []
+
+    monkeypatch.setenv("RADAR_RESEARCH_ENABLED", "false")
+    monkeypatch.setattr("backend.database.async_session_factory", session_factory, raising=False)
+    monkeypatch.setattr("backend.tasks.run_research_radar.run_research_radar.delay", lambda run_id: queued_run_ids.append(run_id))
+
+    async with session_factory() as session:
+        for consent_type in ("core", "ai_processing", "web_research"):
+            session.add(
+                DataConsent(
+                    user_id=TEST_USER_ID,
+                    consent_type=consent_type,
+                    granted=True,
+                    granted_at=datetime.now(timezone.utc),
+                )
+            )
+        profile = ResearchProfile(
+            user_id=TEST_USER_ID,
+            name="Scheduled Research Tracker",
+            mode="research",
+            frequency="daily",
+            active=True,
+            next_run_at=datetime.now(timezone.utc) - timedelta(minutes=5),
+        )
+        session.add(profile)
+        await session.commit()
+        profile_id = profile.id
+
+    dispatched = await dispatch_due_research_profiles_async()
+
+    assert dispatched == 0
+    assert queued_run_ids == []
+
+    async with session_factory() as session:
+        profile = await session.get(ResearchProfile, profile_id)
+        assert profile is not None
+        assert profile.next_run_at is not None
+        next_run_at = profile.next_run_at
+        if next_run_at.tzinfo is None:
+            next_run_at = next_run_at.replace(tzinfo=timezone.utc)
+        assert next_run_at > datetime.now(timezone.utc)
 
 
 @pytest.mark.asyncio

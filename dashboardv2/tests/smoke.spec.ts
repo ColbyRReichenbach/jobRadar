@@ -88,6 +88,10 @@ async function mockLoggedOutApi(page: Page) {
 }
 
 async function mockLoggedInApi(page: Page, initialState: MockState = {}) {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('apptrail-auth-session', 'true');
+  });
+
   const state = {
     user: {
       id: '00000000-0000-0000-0000-000000000001',
@@ -96,6 +100,7 @@ async function mockLoggedInApi(page: Page, initialState: MockState = {}) {
       picture: '',
       gmail_connected: true,
       calendar_connected: false,
+      data_consent_accepted_at: '2026-03-12T12:00:00Z',
     },
     jobs: [] as any[],
     emails: [] as any[],
@@ -129,11 +134,55 @@ async function mockLoggedInApi(page: Page, initialState: MockState = {}) {
       return;
     }
 
+    if (path === '/api/auth/exchange' && method === 'POST') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ access_token: 'test-access-token', token_type: 'bearer' }),
+      });
+      return;
+    }
+
     if (path === '/api/auth/me' && method === 'GET') {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify(state.user),
+      });
+      return;
+    }
+
+    if (path === '/api/consent' && method === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          consents: {
+            core: true,
+            ai_processing: true,
+            third_party_enrichment: true,
+            web_research: false,
+          },
+          accepted_at: '2026-03-12T12:00:00Z',
+        }),
+      });
+      return;
+    }
+
+    if (path === '/api/consent' && method === 'PUT') {
+      const body = await json();
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          consents: {
+            core: body?.core ?? true,
+            ai_processing: body?.ai_processing ?? true,
+            third_party_enrichment: body?.third_party_enrichment ?? true,
+            web_research: body?.web_research ?? false,
+          },
+          accepted_at: '2026-03-12T12:00:00Z',
+        }),
       });
       return;
     }
@@ -476,12 +525,33 @@ test.describe('desktop app flows', () => {
     await expect(page.getByText('Track and manage your active job applications.')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Inbox' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Conversations' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Classifier Audit' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Extraction Reports' })).toHaveCount(0);
     await expect(page.getByText('Test User')).toBeVisible();
+  });
+
+  test('shows admin navigation only for admin users', async ({ page }) => {
+    await mockLoggedInApi(page, {
+      user: {
+        id: '00000000-0000-0000-0000-000000000001',
+        email: 'admin@apptrail.test',
+        name: 'Admin User',
+        picture: '',
+        gmail_connected: true,
+        calendar_connected: false,
+        data_consent_accepted_at: '2026-03-12T12:00:00Z',
+        is_admin: true,
+      },
+    });
+    await page.goto('/');
+
+    await expect(page.getByRole('button', { name: 'Classifier Audit' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Extraction Reports' })).toBeVisible();
   });
 
   test('auth callback route bootstraps back into the app shell', async ({ page }) => {
     await mockLoggedInApi(page);
-    await page.goto('/auth/callback');
+    await page.goto('/auth/callback?code=test-auth-code');
 
     await expect(page).toHaveURL(/\/$/);
     await expect(page.getByRole('heading', { name: 'Pipeline' })).toBeVisible();

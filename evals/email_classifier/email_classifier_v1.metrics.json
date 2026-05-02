@@ -1,0 +1,387 @@
+{
+  "dataset_path": "evals/email_classifier/email_classifier_v1.jsonl",
+  "dataset_version": "email_classifier_v1",
+  "decision_note": "Recall is weighted above precision because a missed job email is higher risk than extra review noise.",
+  "variants": {
+    "fallback_rules_v1": {
+      "description": "Current deterministic fallback used when model calls are disabled or invalid.",
+      "metrics": {
+        "category_accuracy": 0.8333,
+        "confusion_matrix": {
+          "action_item": {
+            "action_item": 1,
+            "conversation": 0,
+            "interview_request": 1,
+            "job_update": 0,
+            "not_relevant": 0,
+            "offer": 0,
+            "rejection": 0
+          },
+          "conversation": {
+            "action_item": 0,
+            "conversation": 0,
+            "interview_request": 0,
+            "job_update": 0,
+            "not_relevant": 1,
+            "offer": 0,
+            "rejection": 0
+          },
+          "interview_request": {
+            "action_item": 0,
+            "conversation": 0,
+            "interview_request": 1,
+            "job_update": 0,
+            "not_relevant": 0,
+            "offer": 0,
+            "rejection": 0
+          },
+          "job_update": {
+            "action_item": 0,
+            "conversation": 0,
+            "interview_request": 0,
+            "job_update": 2,
+            "not_relevant": 0,
+            "offer": 0,
+            "rejection": 0
+          },
+          "not_relevant": {
+            "action_item": 0,
+            "conversation": 0,
+            "interview_request": 0,
+            "job_update": 0,
+            "not_relevant": 3,
+            "offer": 0,
+            "rejection": 0
+          },
+          "offer": {
+            "action_item": 0,
+            "conversation": 0,
+            "interview_request": 0,
+            "job_update": 0,
+            "not_relevant": 0,
+            "offer": 1,
+            "rejection": 0
+          },
+          "rejection": {
+            "action_item": 0,
+            "conversation": 0,
+            "interview_request": 0,
+            "job_update": 0,
+            "not_relevant": 0,
+            "offer": 0,
+            "rejection": 2
+          }
+        },
+        "cost": {
+          "cost_per_1000_emails_cents": 0.0,
+          "total_cost_cents": 0
+        },
+        "example_count": 12,
+        "job_related": {
+          "accuracy": 0.9167,
+          "f1": 0.9412,
+          "fn": 1,
+          "fp": 0,
+          "precision": 1.0,
+          "recall": 0.8889,
+          "tn": 3,
+          "tp": 8
+        },
+        "latency": {
+          "avg_ms": 0.063,
+          "p50_ms": 0.036,
+          "p95_ms": 0.301
+        },
+        "stage_accuracy": 0.7778
+      },
+      "predictions": [
+        {
+          "classification": "job_update",
+          "cost_estimate_cents": 0,
+          "example_id": "job-update-001",
+          "job_related": true,
+          "latency_ms": 0.301,
+          "stage": "applied"
+        },
+        {
+          "classification": "interview_request",
+          "cost_estimate_cents": 0,
+          "example_id": "interview-001",
+          "job_related": true,
+          "latency_ms": 0.075,
+          "stage": "interview"
+        },
+        {
+          "classification": "action_item",
+          "cost_estimate_cents": 0,
+          "example_id": "assessment-001",
+          "job_related": true,
+          "latency_ms": 0.046,
+          "stage": "assessment"
+        },
+        {
+          "classification": "offer",
+          "cost_estimate_cents": 0,
+          "example_id": "offer-001",
+          "job_related": true,
+          "latency_ms": 0.039,
+          "stage": "offer"
+        },
+        {
+          "classification": "rejection",
+          "cost_estimate_cents": 0,
+          "example_id": "rejection-001",
+          "job_related": true,
+          "latency_ms": 0.027,
+          "stage": "rejection"
+        },
+        {
+          "classification": "not_relevant",
+          "cost_estimate_cents": 0,
+          "example_id": "conversation-001",
+          "job_related": false,
+          "latency_ms": 0.07,
+          "stage": "unknown"
+        },
+        {
+          "classification": "not_relevant",
+          "cost_estimate_cents": 0,
+          "example_id": "noise-001",
+          "job_related": false,
+          "latency_ms": 0.034,
+          "stage": "unknown"
+        },
+        {
+          "classification": "not_relevant",
+          "cost_estimate_cents": 0,
+          "example_id": "noise-002",
+          "job_related": false,
+          "latency_ms": 0.029,
+          "stage": "unknown"
+        },
+        {
+          "classification": "job_update",
+          "cost_estimate_cents": 0,
+          "example_id": "job-update-002",
+          "job_related": true,
+          "latency_ms": 0.035,
+          "stage": "applied"
+        },
+        {
+          "classification": "rejection",
+          "cost_estimate_cents": 0,
+          "example_id": "rejection-002",
+          "job_related": true,
+          "latency_ms": 0.036,
+          "stage": "rejection"
+        },
+        {
+          "classification": "interview_request",
+          "cost_estimate_cents": 0,
+          "example_id": "action-002",
+          "job_related": true,
+          "latency_ms": 0.036,
+          "stage": "interview"
+        },
+        {
+          "classification": "not_relevant",
+          "cost_estimate_cents": 0,
+          "example_id": "noise-003",
+          "job_related": false,
+          "latency_ms": 0.026,
+          "stage": "unknown"
+        }
+      ]
+    },
+    "subject_only_baseline_v1": {
+      "description": "Cheap alternate baseline using only subject-line keywords.",
+      "metrics": {
+        "category_accuracy": 0.6667,
+        "confusion_matrix": {
+          "action_item": {
+            "action_item": 1,
+            "conversation": 0,
+            "interview_request": 0,
+            "job_update": 0,
+            "not_relevant": 1,
+            "offer": 0,
+            "rejection": 0
+          },
+          "conversation": {
+            "action_item": 0,
+            "conversation": 0,
+            "interview_request": 0,
+            "job_update": 0,
+            "not_relevant": 1,
+            "offer": 0,
+            "rejection": 0
+          },
+          "interview_request": {
+            "action_item": 0,
+            "conversation": 0,
+            "interview_request": 1,
+            "job_update": 0,
+            "not_relevant": 0,
+            "offer": 0,
+            "rejection": 0
+          },
+          "job_update": {
+            "action_item": 0,
+            "conversation": 0,
+            "interview_request": 0,
+            "job_update": 2,
+            "not_relevant": 0,
+            "offer": 0,
+            "rejection": 0
+          },
+          "not_relevant": {
+            "action_item": 0,
+            "conversation": 0,
+            "interview_request": 0,
+            "job_update": 0,
+            "not_relevant": 3,
+            "offer": 0,
+            "rejection": 0
+          },
+          "offer": {
+            "action_item": 0,
+            "conversation": 0,
+            "interview_request": 0,
+            "job_update": 0,
+            "not_relevant": 0,
+            "offer": 1,
+            "rejection": 0
+          },
+          "rejection": {
+            "action_item": 0,
+            "conversation": 0,
+            "interview_request": 0,
+            "job_update": 1,
+            "not_relevant": 1,
+            "offer": 0,
+            "rejection": 0
+          }
+        },
+        "cost": {
+          "cost_per_1000_emails_cents": 0.0,
+          "total_cost_cents": 0
+        },
+        "example_count": 12,
+        "job_related": {
+          "accuracy": 0.75,
+          "f1": 0.8,
+          "fn": 3,
+          "fp": 0,
+          "precision": 1.0,
+          "recall": 0.6667,
+          "tn": 3,
+          "tp": 6
+        },
+        "latency": {
+          "avg_ms": 0.003,
+          "p50_ms": 0.003,
+          "p95_ms": 0.006
+        },
+        "stage_accuracy": 0.5556
+      },
+      "predictions": [
+        {
+          "classification": "job_update",
+          "cost_estimate_cents": 0,
+          "example_id": "job-update-001",
+          "job_related": true,
+          "latency_ms": 0.006,
+          "stage": "applied"
+        },
+        {
+          "classification": "interview_request",
+          "cost_estimate_cents": 0,
+          "example_id": "interview-001",
+          "job_related": true,
+          "latency_ms": 0.001,
+          "stage": "interview"
+        },
+        {
+          "classification": "action_item",
+          "cost_estimate_cents": 0,
+          "example_id": "assessment-001",
+          "job_related": true,
+          "latency_ms": 0.003,
+          "stage": "assessment"
+        },
+        {
+          "classification": "offer",
+          "cost_estimate_cents": 0,
+          "example_id": "offer-001",
+          "job_related": true,
+          "latency_ms": 0.002,
+          "stage": "offer"
+        },
+        {
+          "classification": "job_update",
+          "cost_estimate_cents": 0,
+          "example_id": "rejection-001",
+          "job_related": true,
+          "latency_ms": 0.003,
+          "stage": "applied"
+        },
+        {
+          "classification": "not_relevant",
+          "cost_estimate_cents": 0,
+          "example_id": "conversation-001",
+          "job_related": false,
+          "latency_ms": 0.003,
+          "stage": "unknown"
+        },
+        {
+          "classification": "not_relevant",
+          "cost_estimate_cents": 0,
+          "example_id": "noise-001",
+          "job_related": false,
+          "latency_ms": 0.003,
+          "stage": "unknown"
+        },
+        {
+          "classification": "not_relevant",
+          "cost_estimate_cents": 0,
+          "example_id": "noise-002",
+          "job_related": false,
+          "latency_ms": 0.003,
+          "stage": "unknown"
+        },
+        {
+          "classification": "job_update",
+          "cost_estimate_cents": 0,
+          "example_id": "job-update-002",
+          "job_related": true,
+          "latency_ms": 0.003,
+          "stage": "applied"
+        },
+        {
+          "classification": "not_relevant",
+          "cost_estimate_cents": 0,
+          "example_id": "rejection-002",
+          "job_related": false,
+          "latency_ms": 0.003,
+          "stage": "unknown"
+        },
+        {
+          "classification": "not_relevant",
+          "cost_estimate_cents": 0,
+          "example_id": "action-002",
+          "job_related": false,
+          "latency_ms": 0.003,
+          "stage": "unknown"
+        },
+        {
+          "classification": "not_relevant",
+          "cost_estimate_cents": 0,
+          "example_id": "noise-003",
+          "job_related": false,
+          "latency_ms": 0.003,
+          "stage": "unknown"
+        }
+      ]
+    }
+  }
+}

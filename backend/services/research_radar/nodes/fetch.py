@@ -10,13 +10,13 @@ from sqlalchemy import select
 
 from backend.models import ResearchSourceItem
 from backend.services.research_radar.config import DEFAULT_FETCH_USER_AGENT, FETCH_TIMEOUT_SECONDS
+from backend.services.url_safety import fetch_public_https
 
 
 async def fetch_document(url: str) -> tuple[str, str]:
     headers = {"User-Agent": DEFAULT_FETCH_USER_AGENT}
-    async with httpx.AsyncClient(timeout=FETCH_TIMEOUT_SECONDS, headers=headers, follow_redirects=True) as client:
-        response = await client.get(url)
-        response.raise_for_status()
+    response = await fetch_public_https(url, timeout=FETCH_TIMEOUT_SECONDS, headers=headers)
+    response.raise_for_status()
     html = response.text
     soup = BeautifulSoup(html, "html.parser")
     text = soup.get_text(" ", strip=True)
@@ -36,7 +36,7 @@ async def fetch_documents(state):
             fetch_error = None
             try:
                 raw_html, raw_text = await fetch_document(candidate["url"])
-            except httpx.HTTPError as exc:
+            except (httpx.HTTPError, ValueError) as exc:
                 raw_html = ""
                 raw_text = " ".join(
                     part.strip()

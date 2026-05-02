@@ -140,3 +140,6 @@ dashboardv2/dist/
 *.pid.lock
 .hypothesis/
 *.docx
+
+# Local/private planning notes
+docs/ai-copilot-search-eval-plan.md

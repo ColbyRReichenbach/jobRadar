@@ -17,7 +17,7 @@ def upgrade() -> None:
     # Changelog table
     op.create_table(
         "extraction_changelog",
-        sa.Column("id", sa.Text, primary_key=True, server_default=sa.text("gen_random_uuid()::text")),
+        sa.Column("id", sa.Uuid(), primary_key=True, server_default=sa.text("gen_random_uuid()")),
         sa.Column("version", sa.Text, nullable=False, unique=True),
         sa.Column("description", sa.Text, nullable=False),
         sa.Column("platforms_affected", sa.JSON, nullable=True),

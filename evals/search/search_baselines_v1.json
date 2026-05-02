@@ -1,0 +1,53 @@
+{
+  "dataset_version": "search_eval_v1",
+  "strategies": [
+    {
+      "name": "title_keyword_v1",
+      "type": "keyword_title",
+      "description": "Cheap title and subtitle keyword baseline."
+    },
+    {
+      "name": "full_text_keyword_v1",
+      "type": "keyword_full_text",
+      "description": "Current portable lexical retrieval shape: title, subtitle, body, and keywords."
+    },
+    {
+      "name": "semantic_expansion_v1",
+      "type": "semantic_expansion",
+      "description": "Deterministic synonym expansion proxy for semantic retrieval when embeddings are unavailable in CI."
+    },
+    {
+      "name": "hybrid_plus_boost_v1",
+      "type": "hybrid_plus_boost",
+      "description": "Full-text retrieval plus semantic expansion and source-aware boosts."
+    },
+    {
+      "name": "vector_embedding_v1",
+      "type": "vector",
+      "enabled": false,
+      "skip_reason": "Embeddings are not provisioned in CI; keep this explicit instead of pretending vector search ran."
+    }
+  ],
+  "semantic_aliases": {
+    "ai": ["assistant", "llm", "model", "erica"],
+    "assistant": ["chat", "voice", "erica", "virtual"],
+    "machine": ["ml", "model", "llm"],
+    "learning": ["ml", "model", "llm"],
+    "ml": ["machine", "learning", "model", "llm"],
+    "evaluation": ["evals", "metrics", "observability", "responsible"],
+    "portfolio": ["applied", "role", "application"],
+    "signals": ["radar", "hiring"],
+    "recruiter": ["contact", "interview"],
+    "cost": ["finops", "spend", "forecasting"],
+    "governed": ["responsible", "metrics", "evaluation"],
+    "white": ["observability", "responsible"],
+    "box": ["observability", "metrics"],
+    "workflow": ["evaluation", "observability"]
+  },
+  "source_boosts": {
+    "application": 1.15,
+    "radar_report": 1.1,
+    "email": 1.0,
+    "contact": 0.95
+  }
+}

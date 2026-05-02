@@ -7,6 +7,8 @@ import uuid as _uuid
 from sqlalchemy import select
 
 from backend.models import Company, RecommendedAction, ResearchEvidenceItem, ResearchReport, ResearchReportSection, ResearchRun
+from backend.services.research_radar.lineage import record_radar_report_artifact
+from backend.services.search.indexer import index_record
 
 
 async def persist_report_node(state):
@@ -113,6 +115,8 @@ async def persist_report_node(state):
     run.report_id = report.id
     run.status = final_report.get("status", "published")
     run.completed_at = datetime.now(timezone.utc)
+    await index_record(db, report)
+    await record_radar_report_artifact(db, report=report, run=run)
     await db.flush()
 
     return {

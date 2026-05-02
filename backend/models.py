@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -53,13 +53,16 @@ class RoleUmbrella(Base):
 
 class Application(Base):
     __tablename__ = "applications"
+    __table_args__ = (
+        UniqueConstraint("user_id", "job_url", name="uq_applications_user_job_url"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
     user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
     company: Mapped[str] = mapped_column(Text, nullable=False)
     role_title: Mapped[str] = mapped_column(Text, nullable=False)
     department: Mapped[str | None] = mapped_column(Text, nullable=True)
-    job_url: Mapped[str | None] = mapped_column(Text, unique=True, nullable=True)
+    job_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     source: Mapped[str | None] = mapped_column(Text, nullable=True)
     description_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     salary: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -152,12 +155,15 @@ class ContactDistinctDecision(Base):
 
 class EmailEvent(Base):
     __tablename__ = "email_events"
+    __table_args__ = (
+        UniqueConstraint("user_id", "gmail_message_id", name="uq_email_events_user_gmail_message_id"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
     user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
     application_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("applications.id", ondelete="SET NULL"), nullable=True)
     contact_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("contacts.id"), nullable=True)
-    gmail_message_id: Mapped[str | None] = mapped_column(Text, unique=True, nullable=True)
+    gmail_message_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     thread_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     sender: Mapped[str | None] = mapped_column(Text, nullable=True)
     sender_email: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -246,6 +252,7 @@ class User(Base):
     api_key_last4: Mapped[str | None] = mapped_column(String(4), nullable=True)
     api_key_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     api_key_last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     # Sprint 6: Onboarding
@@ -783,4 +790,296 @@ class ResearchFeedback(Base):
     feedback_scope: Mapped[str] = mapped_column(Text, default="signal")
     rating: Mapped[str] = mapped_column(Text, nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class SearchDocument(Base):
+    __tablename__ = "search_documents"
+    __table_args__ = (
+        UniqueConstraint("user_id", "source_type", "source_id", name="uq_search_documents_user_source"),
+        Index("ix_search_documents_user_type_indexed", "user_id", "source_type", "indexed_at"),
+        Index("ix_search_documents_user_indexed", "user_id", "indexed_at"),
+        Index("ix_search_documents_source", "source_type", "source_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    source_type: Mapped[str] = mapped_column(Text, nullable=False)
+    source_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    subtitle: Mapped[str | None] = mapped_column(Text, nullable=True)
+    body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    keywords: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    search_text: Mapped[str] = mapped_column(Text, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    indexed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class CopilotConversation(Base):
+    __tablename__ = "copilot_conversations"
+    __table_args__ = (
+        Index("ix_copilot_conversations_user_updated", "user_id", "updated_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    title: Mapped[str] = mapped_column(Text, default="New conversation")
+    status: Mapped[str] = mapped_column(Text, default="active")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    last_message_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class CopilotMessage(Base):
+    __tablename__ = "copilot_messages"
+    __table_args__ = (
+        Index("ix_copilot_messages_conversation_created", "conversation_id", "created_at"),
+        Index("ix_copilot_messages_user_created", "user_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    conversation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("copilot_conversations.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    role: Mapped[str] = mapped_column(Text, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    citations: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    suggested_actions: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    model_call_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("ai_model_calls.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class CopilotFeedback(Base):
+    __tablename__ = "copilot_feedback"
+    __table_args__ = (
+        UniqueConstraint("user_id", "message_id", name="uq_copilot_feedback_user_message"),
+        Index("ix_copilot_feedback_user_created", "user_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    message_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("copilot_messages.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    rating: Mapped[str] = mapped_column(Text, nullable=False)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class AiExperiment(Base):
+    __tablename__ = "ai_experiments"
+    __table_args__ = (
+        UniqueConstraint("experiment_key", name="uq_ai_experiments_key"),
+        Index("ix_ai_experiments_surface_task_status", "surface", "task_name", "status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    experiment_key: Mapped[str] = mapped_column(Text, nullable=False)
+    surface: Mapped[str] = mapped_column(Text, nullable=False)
+    task_name: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, default="draft")
+    control_variant: Mapped[str] = mapped_column(Text, default="control")
+    candidate_variants: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    traffic_allocation: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    guardrail_thresholds: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class AiExperimentAssignment(Base):
+    __tablename__ = "ai_experiment_assignments"
+    __table_args__ = (
+        UniqueConstraint("experiment_id", "user_id", name="uq_ai_experiment_assignment_user"),
+        Index("ix_ai_experiment_assignments_variant", "experiment_id", "variant"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    experiment_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("ai_experiments.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    variant: Mapped[str] = mapped_column(Text, nullable=False)
+    assigned_by: Mapped[str] = mapped_column(Text, default="deterministic_hash")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class AiFeedbackRewardEvent(Base):
+    __tablename__ = "ai_feedback_reward_events"
+    __table_args__ = (
+        UniqueConstraint("feedback_id", name="uq_ai_feedback_reward_feedback"),
+        Index("ix_ai_feedback_reward_model_call", "model_call_id", "created_at"),
+        Index("ix_ai_feedback_reward_variant", "experiment_key", "variant", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    feedback_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("copilot_feedback.id", ondelete="CASCADE"), nullable=False)
+    message_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("copilot_messages.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    model_call_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("ai_model_calls.id", ondelete="SET NULL"), nullable=True)
+    experiment_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    variant: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rating: Mapped[str] = mapped_column(Text, nullable=False)
+    reward_score: Mapped[float] = mapped_column(Float, nullable=False)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class AiShadowRun(Base):
+    __tablename__ = "ai_shadow_runs"
+    __table_args__ = (
+        Index("ix_ai_shadow_runs_experiment_created", "experiment_id", "created_at"),
+        Index("ix_ai_shadow_runs_status_created", "status", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    experiment_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("ai_experiments.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    production_model_call_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("ai_model_calls.id", ondelete="SET NULL"), nullable=True)
+    candidate_variant: Mapped[str] = mapped_column(Text, nullable=False)
+    input_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(Text, default="queued")
+    visible_to_user: Mapped[bool] = mapped_column(Boolean, default=False)
+    output_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cost_estimate_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class AiPromotionReport(Base):
+    __tablename__ = "ai_promotion_reports"
+    __table_args__ = (
+        Index("ix_ai_promotion_reports_experiment_created", "experiment_id", "created_at"),
+        Index("ix_ai_promotion_reports_status_created", "status", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    experiment_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("ai_experiments.id", ondelete="CASCADE"), nullable=False)
+    status: Mapped[str] = mapped_column(Text, default="pending_review")
+    recommendation: Mapped[str] = mapped_column(Text, nullable=False)
+    report_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    generated_after_calls: Mapped[int] = mapped_column(Integer, default=0)
+    generated_after_feedback: Mapped[int] = mapped_column(Integer, default=0)
+    reviewed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class AiModelPricing(Base):
+    __tablename__ = "ai_model_pricing"
+    __table_args__ = (
+        UniqueConstraint("provider", "model", "effective_at", name="uq_ai_model_pricing_provider_model_effective"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    provider: Mapped[str] = mapped_column(Text, default="openai")
+    model: Mapped[str] = mapped_column(Text, nullable=False)
+    input_token_cents_per_1m: Mapped[float] = mapped_column(Float, default=0.0)
+    output_token_cents_per_1m: Mapped[float] = mapped_column(Float, default=0.0)
+    cached_input_token_cents_per_1m: Mapped[float | None] = mapped_column(Float, nullable=True)
+    reasoning_token_cents_per_1m: Mapped[float | None] = mapped_column(Float, nullable=True)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    effective_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class AiModelCard(Base):
+    __tablename__ = "ai_model_cards"
+    __table_args__ = (
+        UniqueConstraint("task_name", "model", "prompt_version", name="uq_ai_model_card_task_model_prompt"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    task_name: Mapped[str] = mapped_column(Text, nullable=False)
+    model: Mapped[str] = mapped_column(Text, nullable=False)
+    prompt_version: Mapped[str] = mapped_column(Text, nullable=False)
+    intended_use: Mapped[str] = mapped_column(Text, nullable=False)
+    prohibited_use: Mapped[str | None] = mapped_column(Text, nullable=True)
+    limitations: Mapped[str | None] = mapped_column(Text, nullable=True)
+    eval_dataset_version: Mapped[str | None] = mapped_column(Text, nullable=True)
+    primary_metrics: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    guardrail_metrics: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    approval_status: Mapped[str] = mapped_column(Text, default="draft")
+    approved_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    rollback_plan: Mapped[str | None] = mapped_column(Text, nullable=True)
+    review_cadence: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class AiModelCall(Base):
+    __tablename__ = "ai_model_calls"
+    __table_args__ = (
+        Index("ix_ai_model_calls_user_created", "user_id", "created_at"),
+        Index("ix_ai_model_calls_surface_task_created", "surface", "task_name", "created_at"),
+        Index("ix_ai_model_calls_model_prompt_created", "model", "prompt_version", "created_at"),
+        Index("ix_ai_model_calls_variant_created", "variant", "created_at"),
+        Index("ix_ai_model_calls_status_created", "status", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    surface: Mapped[str] = mapped_column(Text, nullable=False)
+    task_name: Mapped[str] = mapped_column(Text, nullable=False)
+    provider: Mapped[str] = mapped_column(Text, default="openai")
+    model: Mapped[str] = mapped_column(Text, nullable=False)
+    prompt_version: Mapped[str] = mapped_column(Text, nullable=False)
+    variant: Mapped[str | None] = mapped_column(Text, nullable=True)
+    release_version: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    validation_result: Mapped[str | None] = mapped_column(Text, nullable=True)
+    fallback_used: Mapped[bool] = mapped_column(Boolean, default=False)
+    fallback_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0)
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    context_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tool_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cached_input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reasoning_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    billable_input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    billable_output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cost_estimate_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cost_breakdown: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    request_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    response_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    error_class: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    model_card_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("ai_model_cards.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class AiArtifact(Base):
+    __tablename__ = "ai_artifacts"
+    __table_args__ = (
+        Index("ix_ai_artifacts_user_created", "user_id", "created_at"),
+        Index("ix_ai_artifacts_call_created", "model_call_id", "created_at"),
+        Index("ix_ai_artifacts_type_ref", "artifact_type", "artifact_ref_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    model_call_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("ai_model_calls.id", ondelete="SET NULL"), nullable=True)
+    artifact_type: Mapped[str] = mapped_column(Text, nullable=False)
+    artifact_ref_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class AiAdminAccessLog(Base):
+    __tablename__ = "ai_admin_access_logs"
+    __table_args__ = (
+        Index("ix_ai_admin_access_logs_admin_created", "admin_user_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    admin_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    action: Mapped[str] = mapped_column(Text, nullable=False)
+    target_type: Mapped[str] = mapped_column(Text, nullable=False)
+    target_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

@@ -19,6 +19,7 @@ os.environ.setdefault("APPTRAIL_GMAIL_TOKEN_ENCRYPTION_KEY", "9gesi-IgHlO6wRffB6
 os.environ.setdefault("JWT_SECRET", "test-jwt-secret-for-testing")
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-key")
 os.environ.setdefault("OPENAI_API_KEY", "test-key")
+os.environ.setdefault("APPTRAIL_ADMIN_EMAILS", "test-user@apptrail.test")
 
 from backend.database import get_db
 from backend.dependencies import create_jwt
@@ -59,6 +60,15 @@ _USER_SCOPED_MODELS = {
     "OpportunityBrief",
     "RecommendedAction",
     "ResearchFeedback",
+    "SearchDocument",
+    "CopilotConversation",
+    "CopilotMessage",
+    "CopilotFeedback",
+    "AiExperimentAssignment",
+    "AiFeedbackRewardEvent",
+    "AiShadowRun",
+    "AiModelCall",
+    "AiArtifact",
 }
 
 
@@ -82,6 +92,7 @@ async def db_engine():
                 google_id="test-google-id",
                 email=TEST_USER_EMAIL,
                 name="Test User",
+                is_admin=True,
             )
         )
         await session.commit()

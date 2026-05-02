@@ -12,6 +12,7 @@ import { fetchJobs, fetchEmails } from './lib/api';
 import { AuthProvider, useAuth } from './lib/AuthContext';
 import { AddJobModal } from './components/AddJobModal';
 import { ConsentModal } from './components/ConsentModal';
+import { CopilotLauncher } from './components/copilot/CopilotLauncher';
 
 // Lazy-loaded route components for code splitting
 const KanbanBoard = lazy(() => import('./components/KanbanBoard').then(m => ({ default: m.KanbanBoard })));
@@ -25,7 +26,11 @@ const Radar = lazy(() => import('./components/Radar').then(m => ({ default: m.Ra
 const Settings = lazy(() => import('./components/Settings').then(m => ({ default: m.Settings })));
 const ClassifierAudit = lazy(() => import('./components/ClassifierAudit').then(m => ({ default: m.ClassifierAudit })));
 const ExtractionReports = lazy(() => import('./components/ExtractionReports').then(m => ({ default: m.ExtractionReports })));
+const AiOps = lazy(() => import('./components/admin/AiOps').then(m => ({ default: m.AiOps })));
 const ProfilePage = lazy(() => import('./components/ProfilePage').then(m => ({ default: m.ProfilePage })));
+
+const AI_OPS_ENABLED = import.meta.env.VITE_ADMIN_AI_OPS_ENABLED === 'true'
+  || (import.meta.env.DEV && import.meta.env.VITE_ADMIN_AI_OPS_ENABLED !== 'false');
 
 const TAB_TITLES: Record<string, string> = {
   dashboard: 'Dashboard',
@@ -40,8 +45,10 @@ const TAB_TITLES: Record<string, string> = {
   settings: 'Settings',
   audit: 'Classifier Audit',
   'extraction-reports': 'Extraction Reports',
+  ...(AI_OPS_ENABLED ? { 'ai-ops': 'AI Ops' } : {}),
   emails: 'Inbox',
 };
+const ADMIN_TABS = new Set(['audit', 'extraction-reports', ...(AI_OPS_ENABLED ? ['ai-ops'] : [])]);
 
 function LazyFallback() {
   return (
@@ -52,6 +59,7 @@ function LazyFallback() {
 }
 
 const USE_API = true;
+const COPILOT_ENABLED = import.meta.env.VITE_COPILOT_ENABLED === 'true';
 
 function AppContent() {
   const { user, loading: authLoading, needsConsent, signOut, refreshUser } = useAuth();
@@ -139,6 +147,12 @@ function AppContent() {
     setIsMobileMenuOpen(false);
   }, [activeTab]);
 
+  useEffect(() => {
+    if (user && ADMIN_TABS.has(activeTab) && !user.is_admin) {
+      setActiveTab('dashboard');
+    }
+  }, [activeTab, user]);
+
   const handleOpenEmail = useCallback((email: any) => {
     const emailKind = email.email_type || email.type;
     const tab = emailKind === 'conversation' ? 'conversations' : 'emails';
@@ -164,12 +178,14 @@ function AppContent() {
     const signalId = resolved.searchParams.get('signal_id') || undefined;
     const reportId = resolved.searchParams.get('report_id') || undefined;
 
-    if (resolved.pathname === '/network' && email) {
+    if (resolved.pathname === '/network') {
       setActiveTab('network');
-      setNetworkFocusRequest({
-        email,
-        token: Date.now(),
-      });
+      if (email) {
+        setNetworkFocusRequest({
+          email,
+          token: Date.now(),
+        });
+      }
       return;
     }
 
@@ -353,8 +369,9 @@ function AppContent() {
               {activeTab === 'calendar' && <Calendar focusRequest={calendarFocusRequest} />}
               {activeTab === 'profile' && <ProfilePage />}
               {activeTab === 'settings' && <Settings />}
-              {activeTab === 'audit' && <ClassifierAudit />}
-              {activeTab === 'extraction-reports' && <ExtractionReports />}
+              {activeTab === 'audit' && user?.is_admin && <ClassifierAudit />}
+              {activeTab === 'extraction-reports' && user?.is_admin && <ExtractionReports />}
+              {AI_OPS_ENABLED && activeTab === 'ai-ops' && user?.is_admin && <AiOps />}
               {activeTab === 'emails' && (
                 <div className="flex-1 flex overflow-hidden">
                   <EmailFeed
@@ -368,7 +385,7 @@ function AppContent() {
                   />
                 </div>
               )}
-              {!(activeTab in TAB_TITLES) && (
+              {(!(activeTab in TAB_TITLES) || (ADMIN_TABS.has(activeTab) && !user?.is_admin)) && (
                 <div className="flex flex-1 flex-col items-center justify-center gap-4 text-slate-500">
                   <p className="text-lg font-serif">Page not found</p>
                   <button
@@ -411,6 +428,10 @@ function AppContent() {
           />
         )}
       </AnimatePresence>
+
+      {COPILOT_ENABLED && user && (
+        <CopilotLauncher onNavigate={handleNotificationNavigate} />
+      )}
     </div>
   );
 }

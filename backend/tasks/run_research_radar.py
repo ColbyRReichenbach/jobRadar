@@ -13,10 +13,12 @@ from backend.services.opportunity_radar.action_generator import generate_actions
 from backend.services.opportunity_radar.brief_generator import generate_briefs
 from backend.services.opportunity_radar.signal_extractor import extract_signals
 from backend.services.opportunity_radar.signal_scorer import score_signal
+from backend.services.feature_flags import radar_enabled, radar_research_enabled
 from backend.services.opportunity_radar.sources import collect_internal_sources
 from backend.services.research_radar.observability import build_trace_payload, emit_langsmith_run_trace
 
 logger = logging.getLogger(__name__)
+REPORT_CAPABLE_MODES = {"research", "hybrid"}
 
 
 def _run_async(coro):
@@ -58,6 +60,17 @@ async def _load_run_and_profile(db: AsyncSession, run_id: UUID):
         await db.execute(select(ResearchProfile).where(ResearchProfile.id == run.profile_id))
     ).scalars().first()
     return run, profile
+
+
+async def _mark_run_feature_blocked(db: AsyncSession, run, *, reason: str, message: str) -> None:
+    now = datetime.now(timezone.utc)
+    run.status = "failed"
+    run.current_step = "feature_flag"
+    run.error_message = message
+    run.status_detail = {"blocked_by": reason}
+    run.started_at = run.started_at or now
+    run.completed_at = now
+    await db.commit()
 
 
 async def _create_step(
@@ -317,9 +330,26 @@ async def execute_research_run(db: AsyncSession, run_id: UUID) -> None:
     if run.status not in {"queued", "retrying"}:
         logger.info("Research run %s already in terminal/non-queue state %s", run_id, run.status)
         return
+    run_mode = run.mode or profile.mode
+    if not radar_enabled():
+        await _mark_run_feature_blocked(
+            db,
+            run,
+            reason="RADAR_ENABLED",
+            message="Radar is disabled by feature flag.",
+        )
+        return
+    if run_mode in REPORT_CAPABLE_MODES and not radar_research_enabled():
+        await _mark_run_feature_blocked(
+            db,
+            run,
+            reason="RADAR_RESEARCH_ENABLED",
+            message="Radar web research is disabled by feature flag.",
+        )
+        return
 
     run.status = "running"
-    run.mode = run.mode or profile.mode
+    run.mode = run_mode
     run.started_at = run.started_at or datetime.now(timezone.utc)
     run.current_step = "dispatch"
     run.error_message = None
@@ -456,6 +486,9 @@ async def dispatch_due_research_profiles_async() -> int:
     from backend.database import async_session_factory
     from backend.models import DataConsent, ResearchProfile, ResearchRun
 
+    if not radar_enabled():
+        return 0
+
     async with async_session_factory() as db:
         now = datetime.now(timezone.utc)
         due_profiles = (
@@ -483,7 +516,13 @@ async def dispatch_due_research_profiles_async() -> int:
             if inflight_run:
                 continue
 
-            if profile.mode in {"research", "hybrid"}:
+            if profile.mode in REPORT_CAPABLE_MODES and not radar_research_enabled():
+                delta = _next_run_delta(profile.frequency)
+                profile.next_run_at = now + delta if delta and profile.active else None
+                state_changed = True
+                continue
+
+            if profile.mode in REPORT_CAPABLE_MODES:
                 consent_rows = (
                     await db.execute(
                         select(DataConsent.consent_type, DataConsent.granted).where(

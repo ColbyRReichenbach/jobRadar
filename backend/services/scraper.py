@@ -49,7 +49,8 @@ def _is_allowed_job_host(hostname: str) -> bool:
 def _is_disallowed_ip(value: str) -> bool:
     ip = ipaddress.ip_address(value)
     return (
-        ip.is_private
+        not ip.is_global
+        or ip.is_private
         or ip.is_loopback
         or ip.is_link_local
         or ip.is_multicast
@@ -67,7 +68,7 @@ async def validate_job_parse_url(url: str) -> str:
         raise ValueError("Invalid job URL")
 
     hostname = parsed.hostname.lower().rstrip(".")
-    if hostname == "localhost":
+    if hostname == "localhost" or hostname.endswith(".localhost"):
         raise ValueError("Local or private network addresses are not allowed")
 
     try:

@@ -1,15 +1,19 @@
-name: Test
+name: CI
 
 on:
   pull_request:
+  push:
+    branches:
+      - main
+      - ai-platform
 
 permissions:
   contents: read
 
 jobs:
-  backend-tests:
+  backend-checks:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -23,8 +27,13 @@ jobs:
       - name: Install backend dependencies
         run: pip install -r requirements.txt
 
-      - name: Run backend test suite
-        run: pytest
+      - name: Audit backend dependencies
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements.txt
+
+      - name: Run backend checks
+        run: bash scripts/ci/run_backend_checks.sh
 
   backend-migrations-postgres:
     runs-on: ubuntu-latest
@@ -48,6 +57,8 @@ jobs:
       JWT_SECRET: ci-jwt-secret
       APPTRAIL_GMAIL_TOKEN_ENCRYPTION_KEY: 9gesi-IgHlO6wRffB63j5cbQhIXnGGCKuxr0IFnAcaM=
       ANTHROPIC_API_KEY: test-key
+      OPENAI_API_KEY: test-key
+      ENVIRONMENT: test
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -61,15 +72,15 @@ jobs:
       - name: Install backend dependencies
         run: pip install -r requirements.txt
 
+      - name: Validate Alembic has one head
+        run: test "$(alembic heads --verbose | grep -c '^Rev:')" -eq 1
+
       - name: Run Alembic migrations on Postgres
         run: alembic upgrade head
 
-  dashboard-build:
+  dashboard-checks:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    defaults:
-      run:
-        working-directory: dashboardv2
+    timeout-minutes: 25
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -77,71 +88,87 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "18"
+          node-version: "20"
           cache: "npm"
           cache-dependency-path: dashboardv2/package-lock.json
 
       - name: Install dashboard dependencies
+        working-directory: dashboardv2
         run: npm ci --include=optional
+
+      - name: Audit dashboard production dependencies
+        working-directory: dashboardv2
+        run: npm audit --omit=dev --audit-level=high
 
       - name: Restore Tailwind native binding
-        run: |
-          TAILWIND_OXIDE_VERSION=$(node -p "require('./package-lock.json').packages['node_modules/@tailwindcss/oxide'].version")
-          npm install --no-save "@tailwindcss/oxide-linux-x64-gnu@${TAILWIND_OXIDE_VERSION}"
-
-      - name: Build dashboard
-        run: npm run build
-
-  dashboard-typecheck:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    defaults:
-      run:
         working-directory: dashboardv2
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "18"
-          cache: "npm"
-          cache-dependency-path: dashboardv2/package-lock.json
-
-      - name: Install dashboard dependencies
-        run: npm ci --include=optional
-
-      - name: Run frontend typecheck
-        run: npm run lint
-
-  dashboard-smoke:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    defaults:
-      run:
-        working-directory: dashboardv2
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "18"
-          cache: "npm"
-          cache-dependency-path: dashboardv2/package-lock.json
-
-      - name: Install dashboard dependencies
-        run: npm ci --include=optional
-
-      - name: Restore Tailwind native binding
         run: |
           TAILWIND_OXIDE_VERSION=$(node -p "require('./package-lock.json').packages['node_modules/@tailwindcss/oxide'].version")
           npm install --no-save "@tailwindcss/oxide-linux-x64-gnu@${TAILWIND_OXIDE_VERSION}"
 
       - name: Install Playwright Chromium
+        working-directory: dashboardv2
         run: npx playwright install --with-deps chromium
 
-      - name: Run dashboard smoke tests
-        run: npm run test:smoke
+      - name: Run dashboard checks
+        run: bash scripts/ci/run_dashboard_checks.sh
+
+  ai-feature-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: dashboardv2/package-lock.json
+
+      - name: Install backend dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install dashboard dependencies
+        working-directory: dashboardv2
+        run: npm ci --include=optional
+
+      - name: Install Playwright Chromium
+        working-directory: dashboardv2
+        run: npx playwright install --with-deps chromium
+
+      - name: Run targeted AI feature checks
+        run: bash scripts/ci/run_ai_feature_checks.sh
+
+  diff-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check diff whitespace
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          CURRENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            git diff --check "$PR_BASE_SHA" "$PR_HEAD_SHA"
+          elif [ -n "$PUSH_BEFORE_SHA" ] && [ "$PUSH_BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
+            git diff --check "$PUSH_BEFORE_SHA" "$CURRENT_SHA"
+          else
+            git diff --check HEAD~1 HEAD
+          fi

@@ -128,6 +128,7 @@ For policy details, see:
 
 - [TECHNICAL.md](TECHNICAL.md): architecture, tradeoffs, and implementation details
 - [docs/radar-research-spec.md](docs/radar-research-spec.md): full implementation spec for the next Radar research system
+- [docs/production-readiness-audit.md](docs/production-readiness-audit.md): current launch-readiness audit with blocking and non-blocking production gaps
 - [SECURITY.md](SECURITY.md): auth, secrets, consent, extension security, and operational safeguards
 - [docs/deployment-checklist.md](docs/deployment-checklist.md): deployment and rollout checklist
 - [docs/privacy-policy.md](docs/privacy-policy.md): product privacy policy

@@ -27,7 +27,23 @@ load_dotenv(override=os.getenv("TESTING") != "1")
 os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
 
 from backend.database import async_session_factory, get_db
-from backend.dependencies import verify_api_key, create_jwt, create_refresh_token, decode_jwt, decode_refresh_token, get_current_user, set_refresh_cookie, clear_refresh_cookie, blacklist_token, REFRESH_COOKIE_NAME, generate_api_key, hash_api_key, store_auth_code, consume_auth_code
+from backend.dependencies import (
+    REFRESH_COOKIE_NAME,
+    blacklist_token,
+    clear_refresh_cookie,
+    consume_auth_code,
+    create_jwt,
+    create_refresh_token,
+    decode_jwt,
+    decode_refresh_token,
+    generate_api_key,
+    get_current_user,
+    hash_api_key,
+    require_admin_user,
+    set_refresh_cookie,
+    store_auth_code,
+    verify_api_key,
+)
 from backend.gmail_token_crypto import decrypt_gmail_token, encrypt_gmail_token, is_gmail_token_encrypted, validate_gmail_token_encryption_config
 from backend.logging_config import configure_logging
 from backend.metrics import (
@@ -79,8 +95,11 @@ from backend.services.ai_orchestrator import get_metrics_snapshot
 from backend.monitoring import configure_sentry
 from backend.services.hunter import find_contacts, generate_linkedin_search_url
 from backend.services.notification_preferences import is_alert_enabled, serialize_notification_preferences
+from backend.services.feature_flags import radar_enabled, radar_research_enabled
 from backend.services.research_radar.observability import build_trace_payload
 from backend.services.scraper import extract_job, validate_job_parse_url
+from backend.routes.admin_ai import router as admin_ai_router
+from backend.routes.copilot import router as copilot_router
 import structlog
 
 configure_logging()
@@ -88,26 +107,72 @@ configure_sentry()
 validate_gmail_token_encryption_config()
 
 app = FastAPI(title="AppTrail API")
+app.include_router(admin_ai_router)
+app.include_router(copilot_router)
 request_logger = structlog.get_logger("backend.request")
-LOCAL_DEV_AUTH_ENABLED = os.getenv("LOCAL_DEV_AUTH", "").lower() in {"1", "true", "yes", "on"}
 
-_cors_origins = [
-    "http://localhost:3000",
-    "http://localhost:5173",
-    "http://127.0.0.1:3000",
-    "http://127.0.0.1:5173",
-]
-_dashboard_url = os.getenv("DASHBOARD_URL")
-if _dashboard_url:
-    _cors_origins.append(_dashboard_url.rstrip("/"))
 
-_VERCEL_PREVIEW_ORIGIN_RE = re.compile(r"^https://apptrail[a-z0-9-]*\.vercel\.app$")
-_LOCAL_FRONTEND_ORIGIN_RE = re.compile(r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$")
+def _env_flag(name: str) -> bool:
+    return os.getenv(name, "").lower() in {"1", "true", "yes", "on"}
+
+
+def _is_development_environment() -> bool:
+    return os.getenv("ENVIRONMENT", "development").lower() == "development" or os.getenv("TESTING") == "1"
+
+
+def _local_dev_auth_enabled() -> bool:
+    return _env_flag("LOCAL_DEV_AUTH") and _is_development_environment()
+
+
+def _split_env_list(value: str | None) -> list[str]:
+    return [item.strip() for item in (value or "").split(",") if item.strip()]
+
+
+def _normalize_origin(origin: str | None) -> str | None:
+    if not origin:
+        return None
+    parsed = urlparse(origin)
+    if parsed.scheme not in {"http", "https", "chrome-extension"} or not parsed.netloc:
+        return None
+    if parsed.scheme == "chrome-extension":
+        return f"{parsed.scheme}://{parsed.netloc}"
+    return f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
+
+
+def _configured_cors_origins() -> list[str]:
+    origins = set()
+    if _is_development_environment():
+        origins.update({
+            "http://localhost:3000",
+            "http://localhost:5173",
+            "http://127.0.0.1:3000",
+            "http://127.0.0.1:5173",
+        })
+    for value in [
+        os.getenv("DASHBOARD_URL"),
+        *_split_env_list(os.getenv("CORS_ALLOWED_ORIGINS")),
+        *_split_env_list(os.getenv("VERCEL_PREVIEW_ORIGINS")),
+    ]:
+        normalized = _normalize_origin(value)
+        if normalized:
+            origins.add(normalized)
+
+    chrome_extension_id = os.getenv("CHROME_EXTENSION_ID", "").strip()
+    if chrome_extension_id:
+        origins.add(f"chrome-extension://{chrome_extension_id}")
+    for value in _split_env_list(os.getenv("CHROME_EXTENSION_ORIGINS")):
+        normalized = _normalize_origin(value)
+        if normalized and normalized.startswith("chrome-extension://"):
+            origins.add(normalized)
+
+    return sorted(origins)
+
+
+_cors_origins = _configured_cors_origins()
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
-    allow_origin_regex=r"^(chrome-extension://.*|https://apptrail[a-z0-9-]*\.vercel\.app|https?://(localhost|127\.0\.0\.1)(:\d+)?)$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -124,21 +189,8 @@ def _get_request_ip(request: Request) -> str:
 
 
 def _is_allowed_frontend_origin(origin: str | None) -> bool:
-    if not origin:
-        return False
-
-    parsed = urlparse(origin)
-    normalized = f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        return False
-
-    if normalized in _cors_origins:
-        return True
-
-    if _LOCAL_FRONTEND_ORIGIN_RE.fullmatch(normalized):
-        return True
-
-    return bool(_VERCEL_PREVIEW_ORIGIN_RE.fullmatch(normalized))
+    normalized = _normalize_origin(origin)
+    return bool(normalized and normalized in _configured_cors_origins())
 
 
 def _resolve_frontend_origin(frontend_origin: str | None, request: Request) -> str:
@@ -157,6 +209,19 @@ def _resolve_frontend_origin(frontend_origin: str | None, request: Request) -> s
             return normalized
 
     return os.getenv("DASHBOARD_URL", "http://localhost:5173").rstrip("/")
+
+
+def _request_browser_origin(request: Request) -> str | None:
+    return _normalize_origin(request.headers.get("origin")) or _normalize_origin(request.headers.get("referer"))
+
+
+def _require_allowed_browser_origin(request: Request) -> None:
+    origin = _request_browser_origin(request)
+    if origin and _is_allowed_frontend_origin(origin):
+        return
+    if os.getenv("TESTING") == "1" and not origin:
+        return
+    raise HTTPException(status_code=403, detail="Origin is not allowed")
 
 
 def _build_frontend_callback_url(frontend_url: str, auth_code: str) -> str:
@@ -521,19 +586,30 @@ import uuid as _uuid
 
 
 def _get_user_id(auth: dict) -> _uuid.UUID | None:
-    """Extract user_id from auth context. Returns None for API-key auth."""
+    """Extract user_id from auth context."""
     uid = auth.get("user_id")
     if uid:
         return _uuid.UUID(uid) if isinstance(uid, str) else uid
     return None
 
 
-def _require_user_id(auth: dict) -> _uuid.UUID:
-    """Require a JWT-authenticated user context for user-owned routes."""
+def _require_any_user_id(auth: dict) -> _uuid.UUID:
+    """Require an authenticated user context from either dashboard JWT or extension API key."""
     user_id = _get_user_id(auth)
     if not user_id:
-        raise HTTPException(status_code=401, detail="JWT authentication required")
+        raise HTTPException(status_code=401, detail="Authentication required")
     return user_id
+
+
+def _require_user_id(auth: dict) -> _uuid.UUID:
+    """Require a dashboard JWT for user-owned dashboard routes."""
+    if auth.get("auth_type") != "jwt":
+        raise HTTPException(status_code=403, detail="Dashboard session required")
+    return _require_any_user_id(auth)
+
+
+def _is_api_key_auth(auth: dict) -> bool:
+    return auth.get("auth_type") == "api_key"
 
 
 def _infer_logo_domain_from_url(url: str | None) -> str | None:
@@ -984,12 +1060,84 @@ def _serialize_contact(contact_row: Contact) -> dict:
 
 # --- Routes ---
 
+async def _check_redis(component_status: dict, *, require_configured: bool) -> bool:
+    redis_url = os.getenv("REDIS_URL")
+    if not redis_url:
+        component_status["redis"] = {"status": "not_configured"}
+        return not require_configured
+
+    import redis.asyncio as redis
+
+    redis_client = redis.from_url(redis_url)
+    try:
+        await redis_client.ping()
+        component_status["redis"] = {"status": "ok"}
+        return True
+    except Exception as exc:
+        component_status["redis"] = {"status": "error", "detail": str(exc)}
+        return False
+    finally:
+        await redis_client.aclose()
+
+
+async def _check_celery_readiness(component_status: dict) -> bool:
+    if os.getenv("READINESS_REQUIRE_CELERY", "").lower() not in {"1", "true", "yes", "on"}:
+        component_status["celery_worker"] = {"status": "not_required"}
+        component_status["celery_beat"] = {"status": "not_required"}
+        return True
+
+    ok = True
+    try:
+        from backend.celery_app import celery_app
+
+        replies = celery_app.control.ping(timeout=float(os.getenv("CELERY_READINESS_TIMEOUT_SECONDS", "1.0"))) or []
+        if replies:
+            component_status["celery_worker"] = {"status": "ok", "workers": len(replies)}
+        else:
+            component_status["celery_worker"] = {"status": "error", "detail": "No Celery workers replied"}
+            ok = False
+    except Exception as exc:
+        component_status["celery_worker"] = {"status": "error", "detail": str(exc)}
+        ok = False
+
+    redis_url = os.getenv("REDIS_URL")
+    if not redis_url:
+        component_status["celery_beat"] = {"status": "error", "detail": "REDIS_URL is required for beat freshness"}
+        return False
+
+    import redis.asyncio as redis
+
+    redis_client = redis.from_url(redis_url, decode_responses=True)
+    try:
+        raw_last_seen = await redis_client.get("apptrail:celery:beat:last_seen")
+        if not raw_last_seen:
+            component_status["celery_beat"] = {"status": "error", "detail": "No beat heartbeat recorded"}
+            return False
+        last_seen = datetime.fromisoformat(raw_last_seen)
+        max_age = int(os.getenv("CELERY_BEAT_MAX_AGE_SECONDS", "180"))
+        age_seconds = (datetime.now(timezone.utc) - last_seen).total_seconds()
+        if age_seconds <= max_age:
+            component_status["celery_beat"] = {"status": "ok", "age_seconds": round(age_seconds, 2)}
+        else:
+            component_status["celery_beat"] = {
+                "status": "error",
+                "detail": f"Beat heartbeat is stale ({round(age_seconds, 2)}s)",
+            }
+            ok = False
+    except Exception as exc:
+        component_status["celery_beat"] = {"status": "error", "detail": str(exc)}
+        ok = False
+    finally:
+        await redis_client.aclose()
+
+    return ok
+
+
 @app.get("/api/health")
 async def health(db: AsyncSession = Depends(get_db)):
     component_status = {
         "api": {"status": "ok"},
         "database": {"status": "ok"},
-        "redis": {"status": "not_configured"},
     }
     overall_status = "ok"
 
@@ -999,35 +1147,70 @@ async def health(db: AsyncSession = Depends(get_db)):
         component_status["database"] = {"status": "error", "detail": str(exc)}
         overall_status = "degraded"
 
-    redis_url = os.getenv("REDIS_URL")
-    if redis_url:
-        import redis.asyncio as redis
+    if not await _check_redis(component_status, require_configured=False):
+        overall_status = "degraded"
 
-        redis_client = redis.from_url(redis_url)
-        try:
-            await redis_client.ping()
-            component_status["redis"] = {"status": "ok"}
-        except Exception as exc:
-            component_status["redis"] = {"status": "error", "detail": str(exc)}
-            overall_status = "degraded"
-        finally:
-            await redis_client.aclose()
-
-    return {
+    payload = {
         "status": overall_status,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "checks": component_status,
     }
+    return JSONResponse(payload, status_code=200 if overall_status == "ok" else 503)
+
+
+@app.get("/api/live")
+async def live():
+    return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
+
+
+@app.get("/api/ready")
+async def ready(db: AsyncSession = Depends(get_db)):
+    component_status = {
+        "api": {"status": "ok"},
+        "database": {"status": "ok"},
+    }
+    ok = True
+
+    try:
+        await db.execute(text("SELECT 1"))
+        try:
+            result = await db.execute(text("SELECT version_num FROM alembic_version LIMIT 1"))
+            version = result.scalar_one_or_none()
+            component_status["migrations"] = {"status": "ok", "version": version}
+        except Exception as exc:
+            component_status["migrations"] = {"status": "error", "detail": str(exc)}
+            ok = False
+    except Exception as exc:
+        component_status["database"] = {"status": "error", "detail": str(exc)}
+        ok = False
+
+    if not await _check_redis(component_status, require_configured=os.getenv("ENVIRONMENT") == "production"):
+        ok = False
+
+    if not await _check_celery_readiness(component_status):
+        ok = False
+
+    payload = {
+        "status": "ok" if ok else "degraded",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "checks": component_status,
+    }
+    return JSONResponse(payload, status_code=200 if ok else 503)
 
 
 @app.get("/metrics")
-async def prometheus_metrics():
+async def prometheus_metrics(authorization: str | None = Header(None)):
+    required_token = os.getenv("METRICS_BEARER_TOKEN")
+    if required_token:
+        if authorization != f"Bearer {required_token}":
+            raise HTTPException(status_code=401, detail="Metrics token required")
+    elif os.getenv("ENVIRONMENT", "development") == "production":
+        raise HTTPException(status_code=403, detail="Metrics are not publicly exposed")
     return Response(content=metrics_payload(), headers=metrics_headers())
 
 
 @app.get("/api/ai/metrics")
-async def ai_metrics(auth: dict = Depends(verify_api_key)):
-    _require_user_id(auth)
+async def ai_metrics(_admin: User = Depends(require_admin_user)):
     return get_metrics_snapshot()
 
 
@@ -1045,7 +1228,7 @@ async def parse_job(request: Request, req: JobParseRequest):
 
 @app.post("/api/jobs", status_code=201)
 async def create_application(payload: ApplicationCreate, auth: dict = Depends(verify_api_key), db: AsyncSession = Depends(get_db)):
-    user_id = _require_user_id(auth)
+    user_id = _require_any_user_id(auth)
     existing_job, normalized_job_url = await _find_job_url_duplicate_for_user(db, user_id, payload.job_url)
 
     # Check for duplicate job_url
@@ -1123,6 +1306,10 @@ async def create_application(payload: ApplicationCreate, auth: dict = Depends(ve
                     category=t["category"],
                 ))
         await db.commit()
+
+    from backend.services.search.indexer import index_record
+    await index_record(db, new_app)
+    await db.commit()
 
     return _serialize_app(new_app)
 
@@ -1249,14 +1436,42 @@ async def update_application(
     if payload.job_url is not None:
         app_row.job_url = _normalize_job_url(payload.job_url)
 
+    await db.flush()
+    from backend.services.search.indexer import index_record
+    await index_record(db, app_row)
     await db.commit()
     await db.refresh(app_row)
     return _serialize_app(app_row)
 
 
 @app.get("/api/contacts")
-async def list_contacts(auth: dict = Depends(verify_api_key)):
-    return []
+async def list_contacts(
+    q: Optional[str] = Query(None),
+    limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    user_id = _require_user_id(auth)
+    from sqlalchemy import or_, func
+
+    stmt = (
+        select(Contact)
+        .options(selectinload(Contact.application), selectinload(Contact.company_ref))
+        .where(Contact.user_id == user_id)
+    )
+    if q:
+        search = _contains_like(q)
+        stmt = stmt.where(
+            or_(
+                func.lower(Contact.name).like(search, escape="\\"),
+                func.lower(Contact.email).like(search, escape="\\"),
+                func.lower(Contact.company_name).like(search, escape="\\"),
+            )
+        )
+    stmt = stmt.order_by(Contact.id).offset(offset).limit(limit)
+    result = await db.execute(stmt)
+    return [_serialize_contact(contact) for contact in result.scalars().all()]
 
 
 @app.post("/api/contacts/find")
@@ -1267,7 +1482,7 @@ async def find_contacts_endpoint(
     db: AsyncSession = Depends(get_db),
     auth: dict = Depends(verify_api_key),
 ):
-    user_id = _require_user_id(auth)
+    user_id = _require_any_user_id(auth)
     from backend.dependencies import check_enrichment_consent
 
     app_id = _uuid.UUID(req.application_id)
@@ -1356,8 +1571,17 @@ async def update_contact(
     db: AsyncSession = Depends(get_db),
     auth: dict = Depends(verify_api_key),
 ):
-    user_id = _require_user_id(auth)
+    user_id = _require_any_user_id(auth)
     from datetime import datetime, timezone
+
+    if _is_api_key_auth(auth):
+        allowed_api_key_fields = {"reached_out", "reached_out_at"}
+        requested_fields = set(payload.model_fields_set)
+        if not requested_fields or requested_fields - allowed_api_key_fields:
+            raise HTTPException(
+                status_code=403,
+                detail="API key can only update contact outreach status",
+            )
 
     cid = _uuid.UUID(contact_id)
     stmt = select(Contact).where(
@@ -1414,6 +1638,9 @@ async def update_contact(
         if ignored_contact:
             await db.delete(ignored_contact)
 
+    await db.flush()
+    from backend.services.search.indexer import index_record
+    await index_record(db, contact)
     await db.commit()
     contact_stmt = (
         select(Contact)
@@ -1466,6 +1693,9 @@ async def create_contact(
         if ignored_contact:
             await db.delete(ignored_contact)
 
+    await db.flush()
+    from backend.services.search.indexer import index_record
+    await index_record(db, contact)
     await db.commit()
     contact_stmt = (
         select(Contact)
@@ -2218,6 +2448,7 @@ async def get_me(current_user: User = Depends(get_current_user)):
         "email": current_user.email,
         "name": current_user.name,
         "picture": current_user.picture,
+        "is_admin": current_user.is_admin,
         "gmail_connected": current_user.gmail_connected,
         "calendar_connected": current_user.calendar_connected,
         "data_consent_accepted_at": current_user.data_consent_accepted_at.isoformat() if current_user.data_consent_accepted_at else None,
@@ -2231,6 +2462,7 @@ async def refresh_access_token(request: Request, db: AsyncSession = Depends(get_
     refresh = request.cookies.get(REFRESH_COOKIE_NAME)
     if not refresh:
         raise HTTPException(status_code=401, detail="No refresh token")
+    _require_allowed_browser_origin(request)
 
     payload = decode_refresh_token(refresh)
     user_id_str = payload["sub"]
@@ -2259,6 +2491,7 @@ class LocalAuthRequest(BaseModel):
 @limiter.limit(_auth_rate_limit, error_message="Too many auth requests. Try again in a minute.")
 async def exchange_auth_code(request: Request, body: AuthCodeExchangeRequest):
     """Exchange a one-time auth code (from OAuth callback) for access + refresh tokens."""
+    _require_allowed_browser_origin(request)
     payload_json = consume_auth_code(body.code)
     if not payload_json:
         raise HTTPException(status_code=400, detail="Invalid or expired auth code")
@@ -2284,7 +2517,7 @@ async def local_dev_login(
     db: AsyncSession = Depends(get_db),
 ):
     """Create or reuse a dev-only local account and return JWT session tokens."""
-    if not LOCAL_DEV_AUTH_ENABLED:
+    if not _local_dev_auth_enabled():
         raise HTTPException(status_code=404, detail="Local development auth is disabled")
 
     email = (body.email if body else None) or os.getenv("LOCAL_DEV_AUTH_EMAIL", "me@apptrail.local")
@@ -2401,7 +2634,7 @@ async def create_or_rotate_api_key(
 @limiter.limit(_auth_rate_limit, error_message="Too many auth requests. Try again in a minute.")
 async def validate_api_key(request: Request, auth: dict = Depends(verify_api_key), db: AsyncSession = Depends(get_db)):
     """Validate an extension API key and return the owning user metadata."""
-    user_id = _require_user_id(auth)
+    user_id = _require_any_user_id(auth)
     stmt = select(User).where(User.id == user_id)
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
@@ -2493,6 +2726,7 @@ async def sync_gmail(
     ai_enabled = await check_ai_consent(user_id, db)
     from backend.dependencies import check_enrichment_consent
     enrichment_enabled = await check_enrichment_consent(user_id, db)
+    from backend.services.search.indexer import index_record
 
     # Get feedback blocklist
     feedback_stmt = (
@@ -2648,6 +2882,7 @@ async def sync_gmail(
         )
         db.add(email_event)
         await db.flush()
+        await index_record(db, email_event)
 
         action_path = "/conversations" if email_event.email_type == "conversation" else "/emails"
         action_tab = "conversations" if email_event.email_type == "conversation" else "emails"
@@ -2924,6 +3159,44 @@ async def global_search(
     return {"applications": apps, "contacts": contacts, "emails": emails}
 
 
+@app.get("/api/search/documents")
+@limiter.limit(_global_search_rate_limit, error_message="Too many search requests. Try again in a minute.")
+async def search_documents_endpoint(
+    request: Request,
+    q: str = Query(""),
+    types: Optional[str] = Query(None),
+    limit: int = Query(10, ge=1, le=25),
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    user_id = _require_user_id(auth)
+    if not q or len(q.strip()) < 2:
+        return {"results": []}
+
+    source_types = [item.strip() for item in types.split(",") if item.strip()] if types else None
+    from backend.services.search.indexer import search_user_documents
+
+    results = await search_user_documents(
+        db,
+        user_id=user_id,
+        query=q,
+        source_types=source_types,
+        limit=limit,
+    )
+    return {"results": [result.to_dict() for result in results]}
+
+
+@app.get("/api/search/documents/health")
+async def search_documents_health(
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    user_id = _require_user_id(auth)
+    from backend.services.search.indexer import search_backend_health
+
+    return await search_backend_health(db, user_id=user_id)
+
+
 # --- Sprint 2: Company Endpoints ---
 
 @app.get("/api/companies")
@@ -3021,8 +3294,9 @@ async def get_company(domain: str, db: AsyncSession = Depends(get_db), auth: dic
 
 # --- Sprint 3: Umbrella Endpoints ---
 
-@app.get("/api/umbrellas", dependencies=[Depends(verify_api_key)])
-async def list_umbrellas(db: AsyncSession = Depends(get_db)):
+@app.get("/api/umbrellas")
+async def list_umbrellas(db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    _require_user_id(auth)
     result = await db.execute(select(RoleUmbrella).order_by(RoleUmbrella.name))
     return [
         {"id": str(u.id), "name": u.name, "aliases": u.aliases}
@@ -3032,13 +3306,31 @@ async def list_umbrellas(db: AsyncSession = Depends(get_db)):
 
 # --- Sprint 4: Company Tech Endpoint ---
 
-@app.get("/api/companies/{domain}/tech", dependencies=[Depends(verify_api_key)])
-async def get_company_tech(domain: str, db: AsyncSession = Depends(get_db)):
+@app.get("/api/companies/{domain}/tech")
+async def get_company_tech(domain: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+    _require_user_id(auth)
+    from backend.services.aggregate_privacy import (
+        aggregate_min_users,
+        bucket_count,
+        distinct_company_user_count,
+        has_enough_contributors,
+    )
+
     stmt = select(Company).where(Company.domain == domain)
     result = await db.execute(stmt)
     company = result.scalar_one_or_none()
     if not company:
         raise HTTPException(status_code=404, detail="Company not found")
+
+    contributor_count = await distinct_company_user_count(db, company.id)
+    if not has_enough_contributors(contributor_count):
+        return {
+            "company": company.name,
+            "domain": company.domain,
+            "tech_stack": [],
+            "aggregate_status": "insufficient_data",
+            "minimum_user_count": aggregate_min_users(),
+        }
 
     tech_stmt = select(CompanyTechProfile).where(
         CompanyTechProfile.company_id == company.id
@@ -3053,10 +3345,12 @@ async def get_company_tech(domain: str, db: AsyncSession = Depends(get_db)):
             {
                 "name": p.tech_name,
                 "category": p.category,
-                "mentions": p.mention_count,
+                "mention_bucket": bucket_count(p.mention_count),
             }
             for p in profiles
         ],
+        "aggregate_status": "available",
+        "minimum_user_count": aggregate_min_users(),
     }
 
 
@@ -3382,15 +3676,16 @@ async def get_preferences(
 
 # --- Sprint 8: ATS Intelligence ---
 
-@app.get("/api/intelligence/ats/{platform}", dependencies=[Depends(verify_api_key)])
-async def get_ats_intelligence(platform: str, db: AsyncSession = Depends(get_db)):
+@app.get("/api/intelligence/ats/{platform}")
+async def get_ats_intelligence(platform: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
     """Get behavioral profile for an ATS platform."""
+    _require_user_id(auth)
     from backend.services.ats_intelligence import get_platform_profile
     return await get_platform_profile(db, platform)
 
 
-@app.post("/api/intelligence/ats/compute", dependencies=[Depends(verify_api_key)])
-async def compute_ats_intelligence(db: AsyncSession = Depends(get_db)):
+@app.post("/api/intelligence/ats/compute")
+async def compute_ats_intelligence(db: AsyncSession = Depends(get_db), _admin: User = Depends(require_admin_user)):
     """Trigger ATS metrics computation."""
     from backend.services.ats_intelligence import compute_ats_metrics
     metrics = await compute_ats_metrics(db)
@@ -4685,7 +4980,7 @@ class CompanyVisitPayload(BaseModel):
 @app.post("/api/company-visits", status_code=201)
 async def record_company_visit(payload: CompanyVisitPayload, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
     """Record or update a career page visit from the extension."""
-    user_id = _require_user_id(auth)
+    user_id = _require_any_user_id(auth)
     stmt = select(CompanyVisit).where(
         CompanyVisit.domain == payload.domain,
         CompanyVisit.user_id == user_id,
@@ -4776,7 +5071,7 @@ async def record_submission_detection(payload: SubmissionPayload, db: AsyncSessi
     """
     from sqlalchemy import func
 
-    user_id = _require_user_id(auth)
+    user_id = _require_any_user_id(auth)
 
     # Find matching application by company domain
     app_stmt = (
@@ -5381,6 +5676,21 @@ RESEARCH_TRACKER_NOTIFICATION_MODES = {"in_app", "email_digest"}
 REPORT_CAPABLE_MODES = {"research", "hybrid"}
 
 
+def _require_radar_enabled() -> None:
+    if not radar_enabled():
+        raise HTTPException(status_code=404, detail="Radar is disabled")
+
+
+def _require_radar_research_enabled() -> None:
+    if not radar_research_enabled():
+        raise HTTPException(status_code=403, detail="Radar web research is disabled")
+
+
+def _require_radar_api_auth(auth: dict = Depends(verify_api_key)) -> dict:
+    _require_radar_enabled()
+    return auth
+
+
 def _validate_research_tracker_value(field_name: str, value: str, allowed: set[str]) -> str:
     if value not in allowed:
         raise HTTPException(status_code=422, detail=f"Invalid {field_name}: {value}")
@@ -5430,6 +5740,7 @@ async def _load_consent_flags(user_id: _uuid.UUID, db: AsyncSession) -> dict[str
 async def _ensure_research_tracker_consents(user_id: _uuid.UUID, db: AsyncSession, *, mode: str) -> None:
     if mode not in REPORT_CAPABLE_MODES:
         return
+    _require_radar_research_enabled()
     consent_flags = await _load_consent_flags(user_id, db)
     missing = [consent_type for consent_type in ("core", "ai_processing", "web_research") if not consent_flags.get(consent_type)]
     if missing:
@@ -5512,7 +5823,7 @@ async def _apply_research_profile_update(
 async def create_research_profile(
     payload: ResearchProfileCreate,
     db: AsyncSession = Depends(get_db),
-    auth: dict = Depends(verify_api_key),
+    auth: dict = Depends(_require_radar_api_auth),
 ):
     user_id = _require_user_id(auth)
     data = await _normalize_research_profile_create(user_id, db, payload)
@@ -5529,7 +5840,7 @@ async def list_research_profiles(
     limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
-    auth: dict = Depends(verify_api_key),
+    auth: dict = Depends(_require_radar_api_auth),
 ):
     user_id = _require_user_id(auth)
     stmt = (
@@ -5542,7 +5853,7 @@ async def list_research_profiles(
 
 
 @app.get("/api/research/profiles/{profile_id}")
-async def get_research_profile(profile_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+async def get_research_profile(profile_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(_require_radar_api_auth)):
     user_id = _require_user_id(auth)
     try:
         p_uuid = _uuid.UUID(profile_id)
@@ -5556,7 +5867,7 @@ async def get_research_profile(profile_id: str, db: AsyncSession = Depends(get_d
 
 
 @app.patch("/api/research/profiles/{profile_id}")
-async def update_research_profile(profile_id: str, payload: ResearchProfileUpdate, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+async def update_research_profile(profile_id: str, payload: ResearchProfileUpdate, db: AsyncSession = Depends(get_db), auth: dict = Depends(_require_radar_api_auth)):
     user_id = _require_user_id(auth)
     try:
         p_uuid = _uuid.UUID(profile_id)
@@ -5575,7 +5886,7 @@ async def update_research_profile(profile_id: str, payload: ResearchProfileUpdat
 
 
 @app.delete("/api/research/profiles/{profile_id}")
-async def delete_research_profile(profile_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+async def delete_research_profile(profile_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(_require_radar_api_auth)):
     user_id = _require_user_id(auth)
     try:
         p_uuid = _uuid.UUID(profile_id)
@@ -5595,7 +5906,7 @@ def _report_lookup_query(report_uuid: _uuid.UUID, user_id: _uuid.UUID):
 
 
 @app.post("/api/research/profiles/{profile_id}/run", status_code=202)
-async def run_research_profile(profile_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+async def run_research_profile(profile_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(_require_radar_api_auth)):
     user_id = _require_user_id(auth)
     try:
         p_uuid = _uuid.UUID(profile_id)
@@ -5645,7 +5956,7 @@ async def run_research_profile(profile_id: str, db: AsyncSession = Depends(get_d
 
 
 @app.get("/api/research/runs/{run_id}")
-async def get_research_run(run_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+async def get_research_run(run_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(_require_radar_api_auth)):
     user_id = _require_user_id(auth)
     try:
         run_uuid = _uuid.UUID(run_id)
@@ -5660,7 +5971,7 @@ async def get_research_run(run_id: str, db: AsyncSession = Depends(get_db), auth
 
 
 @app.get("/api/research/runs/{run_id}/steps")
-async def list_research_run_steps(run_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+async def list_research_run_steps(run_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(_require_radar_api_auth)):
     user_id = _require_user_id(auth)
     try:
         run_uuid = _uuid.UUID(run_id)
@@ -5682,7 +5993,7 @@ async def list_research_run_steps(run_id: str, db: AsyncSession = Depends(get_db
 
 
 @app.get("/api/research/runs/{run_id}/trace")
-async def get_research_run_trace(run_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+async def get_research_run_trace(run_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(_require_radar_api_auth)):
     user_id = _require_user_id(auth)
     try:
         run_uuid = _uuid.UUID(run_id)
@@ -5714,7 +6025,7 @@ async def list_research_runs(
     limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
-    auth: dict = Depends(verify_api_key),
+    auth: dict = Depends(_require_radar_api_auth),
 ):
     user_id = _require_user_id(auth)
     stmt = select(ResearchRun).where(ResearchRun.user_id == user_id).order_by(ResearchRun.created_at.desc())
@@ -5733,7 +6044,7 @@ async def list_research_reports(
     limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
-    auth: dict = Depends(verify_api_key),
+    auth: dict = Depends(_require_radar_api_auth),
 ):
     user_id = _require_user_id(auth)
     stmt = select(ResearchReport).where(ResearchReport.user_id == user_id).order_by(ResearchReport.report_date.desc())
@@ -5747,7 +6058,7 @@ async def list_research_reports(
 
 
 @app.get("/api/research/reports/{report_id}")
-async def get_research_report(report_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+async def get_research_report(report_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(_require_radar_api_auth)):
     user_id = _require_user_id(auth)
     try:
         report_uuid = _uuid.UUID(report_id)
@@ -5791,7 +6102,7 @@ async def get_research_report(report_id: str, db: AsyncSession = Depends(get_db)
 
 
 @app.get("/api/research/reports/{report_id}/diff")
-async def get_research_report_diff(report_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+async def get_research_report_diff(report_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(_require_radar_api_auth)):
     user_id = _require_user_id(auth)
     try:
         report_uuid = _uuid.UUID(report_id)
@@ -5818,7 +6129,7 @@ async def create_research_report_feedback(
     report_id: str,
     payload: ResearchReportFeedbackCreate,
     db: AsyncSession = Depends(get_db),
-    auth: dict = Depends(verify_api_key),
+    auth: dict = Depends(_require_radar_api_auth),
 ):
     user_id = _require_user_id(auth)
     try:
@@ -5854,7 +6165,7 @@ async def accept_research_report_action(
     report_id: str,
     action_id: str,
     db: AsyncSession = Depends(get_db),
-    auth: dict = Depends(verify_api_key),
+    auth: dict = Depends(_require_radar_api_auth),
 ):
     user_id = _require_user_id(auth)
     try:
@@ -5887,7 +6198,7 @@ async def list_opportunity_signals(
     limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
-    auth: dict = Depends(verify_api_key),
+    auth: dict = Depends(_require_radar_api_auth),
 ):
     user_id = _require_user_id(auth)
     stmt = select(OpportunitySignal).where(OpportunitySignal.user_id == user_id).order_by(OpportunitySignal.created_at.desc())
@@ -5915,7 +6226,7 @@ async def list_opportunity_briefs(
     limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
-    auth: dict = Depends(verify_api_key),
+    auth: dict = Depends(_require_radar_api_auth),
 ):
     user_id = _require_user_id(auth)
     stmt = select(OpportunityBrief).where(OpportunityBrief.user_id == user_id).order_by(OpportunityBrief.created_at.desc())
@@ -5934,7 +6245,7 @@ async def list_recommended_actions(
     limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
-    auth: dict = Depends(verify_api_key),
+    auth: dict = Depends(_require_radar_api_auth),
 ):
     user_id = _require_user_id(auth)
     stmt = (
@@ -5952,7 +6263,7 @@ async def list_recommended_actions(
 
 
 @app.patch("/api/research/actions/{action_id}")
-async def update_recommended_action(action_id: str, payload: RecommendedActionUpdate, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+async def update_recommended_action(action_id: str, payload: RecommendedActionUpdate, db: AsyncSession = Depends(get_db), auth: dict = Depends(_require_radar_api_auth)):
     user_id = _require_user_id(auth)
     try:
         a_uuid = _uuid.UUID(action_id)
@@ -5977,12 +6288,12 @@ async def update_recommended_action(action_id: str, payload: RecommendedActionUp
 
 
 @app.post("/api/research/actions/{action_id}/accept")
-async def accept_recommended_action(action_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+async def accept_recommended_action(action_id: str, db: AsyncSession = Depends(get_db), auth: dict = Depends(_require_radar_api_auth)):
     return await update_recommended_action(action_id, RecommendedActionUpdate(status="accepted"), db, auth)
 
 
 @app.post("/api/research/feedback", status_code=201)
-async def create_research_feedback(payload: ResearchFeedbackCreate, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+async def create_research_feedback(payload: ResearchFeedbackCreate, db: AsyncSession = Depends(get_db), auth: dict = Depends(_require_radar_api_auth)):
     user_id = _require_user_id(auth)
 
     def _to_uuid(value: str | None):
@@ -6022,7 +6333,7 @@ async def create_research_feedback(payload: ResearchFeedbackCreate, db: AsyncSes
 
 
 @app.get("/api/research/feedback/stats")
-async def research_feedback_stats(db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
+async def research_feedback_stats(db: AsyncSession = Depends(get_db), auth: dict = Depends(_require_radar_api_auth)):
     user_id = _require_user_id(auth)
     stmt = (
         select(ResearchFeedback)
@@ -6070,7 +6381,7 @@ def _ensure_audit_dir():
 
 
 @app.get("/api/audit/runs")
-async def list_audit_runs(auth: dict = Depends(verify_api_key)):
+async def list_audit_runs(_admin: User = Depends(require_admin_user)):
     """List all audit runs with summary metrics."""
     _ensure_audit_dir()
     runs = []
@@ -6083,7 +6394,7 @@ async def list_audit_runs(auth: dict = Depends(verify_api_key)):
 
 
 @app.get("/api/audit/runs/{run_id}")
-async def get_audit_run(run_id: str, auth: dict = Depends(verify_api_key)):
+async def get_audit_run(run_id: str, _admin: User = Depends(require_admin_user)):
     """Get run details including all email rows."""
     meta_path = os.path.join(AUDIT_RUNS_DIR, f"{run_id}_meta.json")
     data_path = os.path.join(AUDIT_RUNS_DIR, f"{run_id}_data.csv")
@@ -6112,7 +6423,7 @@ async def create_audit_run(
     model: str = Form("unknown"),
     prompt_version: str = Form("v1"),
     notes: str = Form(""),
-    auth: dict = Depends(verify_api_key),
+    _admin: User = Depends(require_admin_user),
 ):
     """Upload a reviewed CSV and create a new audit run."""
     from backend.services.audit_metrics import compute_run_metrics, parse_audit_csv
@@ -6163,7 +6474,7 @@ async def create_audit_run(
 @app.get("/api/audit/compare")
 async def compare_audit_runs(
     run_ids: Optional[str] = Query(None),
-    auth: dict = Depends(verify_api_key),
+    _admin: User = Depends(require_admin_user),
 ):
     """Compare metrics across runs. Pass comma-separated run_ids or omit for all."""
     from backend.services.audit_metrics import compare_runs
@@ -6183,7 +6494,7 @@ async def compare_audit_runs(
 
 
 @app.delete("/api/audit/runs/{run_id}")
-async def delete_audit_run(run_id: str, auth: dict = Depends(verify_api_key)):
+async def delete_audit_run(run_id: str, _admin: User = Depends(require_admin_user)):
     """Delete a run and its data."""
     meta_path = os.path.join(AUDIT_RUNS_DIR, f"{run_id}_meta.json")
     data_path = os.path.join(AUDIT_RUNS_DIR, f"{run_id}_data.csv")
@@ -6203,7 +6514,7 @@ async def update_audit_email_review(
     run_id: str,
     email_idx: int,
     body: dict,
-    auth: dict = Depends(verify_api_key),
+    _admin: User = Depends(require_admin_user),
 ):
     """Update review columns for a single email row, recompute metrics."""
     from backend.services.audit_metrics import compute_run_metrics
@@ -6277,16 +6588,14 @@ class ExtractionReportCreate(BaseModel):
 async def create_extraction_report(
     body: ExtractionReportCreate,
     db: AsyncSession = Depends(get_db),
-    _user=Depends(verify_api_key),
+    auth: dict = Depends(verify_api_key),
 ):
     """Submit an extraction report from the extension."""
     valid_types = {"missing_data", "undetected_site", "false_positive", "wrong_data"}
     if body.report_type not in valid_types:
         raise HTTPException(400, f"report_type must be one of {valid_types}")
 
-    user_id = None
-    if hasattr(_user, "id"):
-        user_id = _user.id
+    user_id = _require_any_user_id(auth)
 
     report = ExtractionReport(
         user_id=user_id,
@@ -6324,7 +6633,7 @@ async def list_extraction_reports(
     limit: int = Query(default=100, le=500),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
-    _user=Depends(verify_api_key),
+    _admin: User = Depends(require_admin_user),
 ):
     """List extraction reports with filters (admin view)."""
     q = select(ExtractionReport).order_by(ExtractionReport.created_at.desc())
@@ -6365,7 +6674,7 @@ async def list_extraction_reports(
 @app.get("/api/extraction-reports/stats")
 async def extraction_report_stats(
     db: AsyncSession = Depends(get_db),
-    _user=Depends(verify_api_key),
+    _admin: User = Depends(require_admin_user),
 ):
     """Aggregate stats for the admin dashboard."""
     from sqlalchemy import func
@@ -6420,7 +6729,7 @@ async def update_extraction_report(
     report_id: str,
     body: dict,
     db: AsyncSession = Depends(get_db),
-    _user=Depends(verify_api_key),
+    _admin: User = Depends(require_admin_user),
 ):
     """Mark a report as resolved or add admin notes."""
     import uuid as _uuid
@@ -6452,7 +6761,7 @@ async def update_extraction_report(
 async def create_changelog_entry(
     body: dict,
     db: AsyncSession = Depends(get_db),
-    _user=Depends(verify_api_key),
+    _admin: User = Depends(require_admin_user),
 ):
     """Create a new extraction/classifier changelog entry."""
     version = body.get("version")
@@ -6492,7 +6801,7 @@ async def create_changelog_entry(
 @app.get("/api/extraction-changelog")
 async def list_changelog_entries(
     db: AsyncSession = Depends(get_db),
-    _user=Depends(verify_api_key),
+    _admin: User = Depends(require_admin_user),
 ):
     """List all changelog entries ordered by creation date desc."""
     result = await db.execute(
@@ -6518,7 +6827,7 @@ async def update_changelog_entry(
     entry_id: str,
     body: dict,
     db: AsyncSession = Depends(get_db),
-    _user=Depends(verify_api_key),
+    _admin: User = Depends(require_admin_user),
 ):
     """Update a changelog entry."""
     import uuid as _uuid
@@ -6552,7 +6861,7 @@ async def update_changelog_entry(
 @app.get("/api/extraction-reports/version-stats")
 async def extraction_version_stats(
     db: AsyncSession = Depends(get_db),
-    _user=Depends(verify_api_key),
+    _admin: User = Depends(require_admin_user),
 ):
     """Group extraction reports by extractor_version and compute per-field accuracy.
 

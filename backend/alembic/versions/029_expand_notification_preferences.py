@@ -1,7 +1,7 @@
 """Expand notification preferences.
 
-Revision ID: 029_expand_notification_preferences
-Revises: 028_add_notifications_started_at_to_users
+Revision ID: 029
+Revises: 028
 Create Date: 2026-03-12
 """
 
@@ -9,8 +9,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "029_expand_notification_preferences"
-down_revision = "028_add_notifications_started_at_to_users"
+revision = "029"
+down_revision = "028"
 branch_labels = None
 depends_on = None
 

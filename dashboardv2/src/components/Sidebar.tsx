@@ -1,5 +1,5 @@
 import { motion } from 'motion/react';
-import { LayoutDashboard, Mail, Search, Download, BarChart2, MessageSquare, LogOut, RefreshCw, Users, CalendarDays, Settings, FlaskConical, Bug, Radar as RadarIcon } from 'lucide-react';
+import { LayoutDashboard, Mail, Search, Download, BarChart2, MessageSquare, LogOut, RefreshCw, Users, CalendarDays, Settings, FlaskConical, Bug, Radar as RadarIcon, BrainCircuit } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Logo } from './Logo';
 import { useAuth } from '../lib/AuthContext';
@@ -11,6 +11,9 @@ interface SidebarProps {
   setActiveTab: (tab: string) => void;
   onGmailSync?: () => void;
 }
+
+const AI_OPS_ENABLED = import.meta.env.VITE_ADMIN_AI_OPS_ENABLED === 'true'
+  || (import.meta.env.DEV && import.meta.env.VITE_ADMIN_AI_OPS_ENABLED !== 'false');
 
 export function Sidebar({ activeTab, setActiveTab, onGmailSync }: SidebarProps) {
   const { user, signIn, signOut, connectGmail } = useAuth();
@@ -28,10 +31,12 @@ export function Sidebar({ activeTab, setActiveTab, onGmailSync }: SidebarProps) 
     { id: 'search', label: 'Job Search', icon: Search },
     { id: 'analytics', label: 'Analytics', icon: BarChart2 },
     { id: 'export', label: 'Export Data', icon: Download },
-    { id: 'audit', label: 'Classifier Audit', icon: FlaskConical },
-    { id: 'extraction-reports', label: 'Extraction Reports', icon: Bug },
+    { id: 'audit', label: 'Classifier Audit', icon: FlaskConical, adminOnly: true },
+    { id: 'extraction-reports', label: 'Extraction Reports', icon: Bug, adminOnly: true },
+    ...(AI_OPS_ENABLED ? [{ id: 'ai-ops', label: 'AI Ops', icon: BrainCircuit, adminOnly: true }] : []),
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
+  const visibleNavItems = navItems.filter((item) => !item.adminOnly || user?.is_admin);
 
   const handleSyncGmail = async () => {
     setSyncing(true);
@@ -70,7 +75,7 @@ export function Sidebar({ activeTab, setActiveTab, onGmailSync }: SidebarProps) 
       </motion.div>
 
       <nav className="flex-1 flex flex-col gap-1">
-        {navItems.map((item) => {
+        {visibleNavItems.map((item) => {
           const isActive = activeTab === item.id;
           return (
             <button

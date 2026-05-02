@@ -21,12 +21,14 @@ celery_app = Celery(
     broker=REDIS_URL,
     backend=REDIS_URL,
     include=[
+        "backend.tasks.health",
         "backend.tasks.poll_gmail",
         "backend.tasks.check_followups",
         "backend.tasks.check_dead_apps",
         "backend.tasks.compute_ats_metrics",
         "backend.tasks.send_weekly_digest",
         "backend.tasks.run_research_radar",
+        "backend.tasks.index_search_documents",
     ],
 )
 
@@ -70,6 +72,10 @@ celery_app.conf.update(
         "dispatch-due-research-profiles": {
             "task": "backend.tasks.run_research_radar.dispatch_due_research_profiles",
             "schedule": 900.0,  # every 15 minutes
+        },
+        "record-beat-heartbeat": {
+            "task": "backend.tasks.health.record_beat_heartbeat",
+            "schedule": 60.0,
         },
     },
 )

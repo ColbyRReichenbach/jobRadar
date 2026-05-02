@@ -7,12 +7,15 @@ import json
 import logging
 import os
 import time
+import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
 import openai
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.metrics import observe_ai_fallback, observe_ai_task
+from backend.services.ai_usage import TokenUsage, record_model_call
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +54,7 @@ class AiTaskRunResult:
     tokens_in: int | None = None
     tokens_out: int | None = None
     cost_estimate_cents: int | None = None
+    model_call_id: uuid.UUID | None = None
 
 
 AI_TASKS: dict[str, AiTaskConfig] = {
@@ -332,6 +336,25 @@ Return only valid JSON describing unsupported claims, citation coverage, tracker
             PromptChangelogEntry("2026-04-22", "v1", "Initial research report verifier", "Radar Research graph launch"),
         ),
     ),
+    "copilot_answer": AiTaskConfig(
+        name="copilot_answer",
+        model=os.getenv("COPILOT_MODEL", "gpt-5.1"),
+        max_tokens=1200,
+        prompt_version="copilot_v1",
+        service_path="backend/services/copilot/orchestrator.py",
+        purpose="Answer job-search questions using only backend-retrieved, user-owned context with citations.",
+        fallback_behavior="Search-only answer using the top retrieved documents and no model call.",
+        user_prompt_template="See `backend/services/copilot/orchestrator.py::build_copilot_prompt`.",
+        system_prompt="""You are AppTrail Copilot, a read-only job-search assistant.
+Use only the provided retrieved context.
+Do not claim access to records not listed in the context.
+Every factual claim based on user data must cite retrieved document IDs.
+Do not perform mutations, send emails, apply to jobs, or change records.
+Return only valid JSON with answer, citations, and suggested_actions.""",
+        changelog=(
+            PromptChangelogEntry("2026-05-02", "copilot_v1", "Initial cited Copilot answer prompt", "Copilot backend launch"),
+        ),
+    ),
 }
 
 
@@ -533,6 +556,8 @@ async def run_json_task_with_metadata(
     *,
     metadata: dict[str, Any] | None = None,
     max_tokens: int | None = None,
+    db_session: AsyncSession | None = None,
+    user_id: str | None = None,
 ) -> AiTaskRunResult:
     if not has_configured_api_key():
         raise RuntimeError("OPENAI_API_KEY is not configured")
@@ -577,6 +602,26 @@ async def run_json_task_with_metadata(
                 duration_ms,
                 metadata or {},
             )
+            model_call_id = None
+            if db_session is not None:
+                model_call = await record_model_call(
+                    db_session,
+                    user_id=user_id or (metadata or {}).get("user_id"),
+                    surface=str((metadata or {}).get("surface") or task_config.service_path),
+                    task_name=task_config.name,
+                    model=task_config.model,
+                    prompt_version=task_config.prompt_version,
+                    status="success",
+                    latency_ms=duration_ms,
+                    retry_count=retry_count,
+                    token_usage=TokenUsage(
+                        prompt_tokens=tokens_in,
+                        output_tokens=tokens_out,
+                    ),
+                    request_metadata=metadata,
+                    response_metadata={"response_format": "json_object"},
+                )
+                model_call_id = model_call.id
             return AiTaskRunResult(
                 payload=parsed,
                 task=task_config.name,
@@ -586,6 +631,7 @@ async def run_json_task_with_metadata(
                 retries=retry_count,
                 tokens_in=tokens_in,
                 tokens_out=tokens_out,
+                model_call_id=model_call_id,
             )
         except Exception as exc:  # noqa: BLE001
             last_error = exc
@@ -614,6 +660,21 @@ async def run_json_task_with_metadata(
         metadata or {},
         repr(last_error),
     )
+    if db_session is not None:
+        await record_model_call(
+            db_session,
+            user_id=user_id or (metadata or {}).get("user_id"),
+            surface=str((metadata or {}).get("surface") or task_config.service_path),
+            task_name=task_config.name,
+            model=task_config.model,
+            prompt_version=task_config.prompt_version,
+            status="failure",
+            latency_ms=duration_ms,
+            retry_count=retry_count,
+            request_metadata=metadata,
+            error_class=last_error.__class__.__name__ if last_error else "UnknownError",
+            error_message=str(last_error) if last_error else None,
+        )
     raise RuntimeError(f"AI task failed: {task_config.name}") from last_error
 
 
@@ -623,6 +684,8 @@ async def run_json_task(
     *,
     metadata: dict[str, Any] | None = None,
     max_tokens: int | None = None,
+    db_session: AsyncSession | None = None,
+    user_id: str | None = None,
 ) -> dict[str, Any]:
     return (
         await run_json_task_with_metadata(
@@ -630,5 +693,7 @@ async def run_json_task(
             user_message,
             metadata=metadata,
             max_tokens=max_tokens,
+            db_session=db_session,
+            user_id=user_id,
         )
     ).payload

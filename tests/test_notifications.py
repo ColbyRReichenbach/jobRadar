@@ -3,7 +3,7 @@
 import pytest
 from datetime import datetime, timezone, timedelta
 from unittest.mock import patch, AsyncMock
-from tests.conftest import AUTH_HEADER
+from tests.conftest import AUTH_HEADER, TEST_USER_ID
 
 
 @pytest.mark.asyncio
@@ -185,6 +185,29 @@ async def test_create_alert_no_sms_when_disabled(client, db_session):
     )
     assert resp.status_code == 201
     assert resp.json()["sms_sent"] is False
+
+
+@pytest.mark.asyncio
+async def test_radar_alert_volume_limit(monkeypatch, db_session):
+    from backend.services.alerts import create_user_alert
+
+    monkeypatch.setenv("RADAR_ALERT_MAX_PER_USER_PER_DAY", "1")
+
+    first = await create_user_alert(
+        db_session,
+        user_id=TEST_USER_ID,
+        alert_type="research_report_ready",
+        title="Radar report ready",
+    )
+    assert first is not None
+
+    second = await create_user_alert(
+        db_session,
+        user_id=TEST_USER_ID,
+        alert_type="research_run_failed",
+        title="Radar run failed",
+    )
+    assert second is None
 
 
 @pytest.mark.asyncio

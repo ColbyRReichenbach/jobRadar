@@ -9,6 +9,7 @@ from bs4 import BeautifulSoup
 
 from backend.services.research_radar.config import DEFAULT_FETCH_USER_AGENT, SEARCH_TIMEOUT_SECONDS
 from backend.services.research_radar.schemas import SearchCandidate
+from backend.services.url_safety import validate_public_https_url
 
 
 def _clean_search_url(url: str) -> str:
@@ -48,7 +49,9 @@ async def search_public_web(query: str, max_results: int) -> list[SearchCandidat
         if not href or not title:
             continue
         clean_url = _clean_search_url(href)
-        if not clean_url.startswith("http"):
+        try:
+            clean_url = await validate_public_https_url(clean_url)
+        except ValueError:
             continue
         block = anchor.find_parent("div", class_="result")
         snippet_node = block.select_one(".result__snippet") if block else None

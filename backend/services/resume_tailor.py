@@ -4,7 +4,6 @@ Generates tailored resume versions per job application.
 Critical: never invents experience, only reframes existing content.
 """
 
-import json
 import logging
 
 from backend.services import ai_orchestrator
@@ -73,11 +72,11 @@ Remember: DO NOT invent any new experience or skills. Only reframe and reorder e
             metadata={"surface": "resume_tailor", "company": company, "role": role},
         )
 
-        return {
-            "tailored_text": result.get("tailored_text", ""),
-            "changes_summary": result.get("changes_summary", ""),
-            "match_improvements": result.get("match_improvements", ""),
-        }
+        normalized = _normalize_tailor_result(result)
+        if normalized is None:
+            ai_orchestrator.record_fallback(TAILOR_TASK, "invalid_payload", {"surface": "resume_tailor", "company": company, "role": role})
+            return _fallback_tailor(original_text, role, company)
+        return normalized
 
     except Exception as e:
         logger.warning("Resume tailoring failed: %s", e)
@@ -92,4 +91,21 @@ def _fallback_tailor(original_text: str, role: str = "", company: str = "") -> d
         "changes_summary": f"Unable to generate AI tailoring for {role} at {company}. Showing original resume.",
         "match_improvements": "",
         "is_fallback": True,
+    }
+
+
+def _clean_text(value: object) -> str:
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _normalize_tailor_result(result: dict) -> dict | None:
+    tailored_text = _clean_text(result.get("tailored_text"))
+    if not tailored_text:
+        logger.warning("Resume tailor returned invalid payload with tailored_text missing")
+        return None
+
+    return {
+        "tailored_text": tailored_text,
+        "changes_summary": _clean_text(result.get("changes_summary")),
+        "match_improvements": _clean_text(result.get("match_improvements")),
     }

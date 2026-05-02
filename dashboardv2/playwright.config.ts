@@ -11,6 +11,12 @@ export default defineConfig({
   },
   webServer: {
     command: 'npm run build && npm run preview -- --host 127.0.0.1 --port 4173',
+    env: {
+      ...process.env,
+      VITE_COPILOT_ENABLED: process.env.VITE_COPILOT_ENABLED || 'true',
+      VITE_LOCAL_DEV_AUTH: 'false',
+      VITE_ADMIN_AI_OPS_ENABLED: 'true',
+    },
     port: 4173,
     reuseExistingServer: !process.env.CI,
     timeout: 120000,

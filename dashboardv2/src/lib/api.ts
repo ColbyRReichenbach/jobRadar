@@ -169,6 +169,7 @@ export interface UserProfile {
   email: string;
   name: string;
   picture: string;
+  is_admin?: boolean;
   gmail_connected: boolean;
   calendar_connected: boolean;
   data_consent_accepted_at: string | null;

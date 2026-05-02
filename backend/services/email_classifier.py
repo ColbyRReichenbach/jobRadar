@@ -30,6 +30,16 @@ logger = logging.getLogger(__name__)
 CLASSIFIER_TASK = ai_orchestrator.get_task("email_classifier")
 CLASSIFIER_MODEL = CLASSIFIER_TASK.model
 SYSTEM_PROMPT = CLASSIFIER_TASK.system_prompt or ""
+VALID_CATEGORIES = {
+    "interview_request",
+    "rejection",
+    "offer",
+    "action_item",
+    "job_update",
+    "conversation",
+    "not_relevant",
+}
+VALID_SENDER_ROLES = {"recruiter", "hiring_manager", "hr", "automated", "unknown"}
 
 
 async def classify_email(
@@ -70,14 +80,11 @@ Subject: {subject}
             metadata={"surface": "email_classifier"},
         )
 
-        valid_categories = {
-            "interview_request", "rejection", "offer",
-            "action_item", "job_update", "conversation", "not_relevant",
-        }
-        if result.get("classification") not in valid_categories:
-            result["classification"] = "job_update"
-
-        return result
+        normalized_result = _normalize_model_result(result, subject, sender_email, sender)
+        if normalized_result is None:
+            ai_orchestrator.record_fallback(CLASSIFIER_TASK, "invalid_classification", {"surface": "email_classifier"})
+            return _fallback_classify(subject, body, sender_email, sender=sender)
+        return normalized_result
     except Exception as e:
         logger.error("Classifier unexpected error: %s", e)
         ai_orchestrator.record_fallback(CLASSIFIER_TASK, "task_failure", {"surface": "email_classifier"})
@@ -181,6 +188,68 @@ def should_create_network_contact(sender: str, sender_email: str, classification
 
 def _contains_any(combined: str, phrases: set[str]) -> bool:
     return any(phrase in combined for phrase in phrases)
+
+
+def _as_bool(value: object, *, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "yes", "1"}:
+            return True
+        if normalized in {"false", "no", "0"}:
+            return False
+    return default
+
+
+def _as_optional_string(value: object) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        cleaned = value.strip()
+        return cleaned or None
+    return None
+
+
+def _clamp_confidence(value: object, *, default: float = 0.5) -> float:
+    try:
+        confidence = float(value)
+    except (TypeError, ValueError):
+        confidence = default
+    return max(0.0, min(1.0, confidence))
+
+
+def _normalize_model_result(
+    result: dict,
+    subject: str,
+    sender_email: str,
+    sender: str,
+) -> dict | None:
+    classification = _as_optional_string(result.get("classification"))
+    if classification not in VALID_CATEGORIES:
+        logger.warning("Classifier returned invalid classification: %r", classification)
+        return None
+
+    is_human = is_likely_person_sender(sender, sender_email)
+    default_action_needed = classification in {"offer", "action_item"}
+    action_needed = _as_bool(result.get("action_needed"), default=default_action_needed)
+    if classification == "not_relevant":
+        action_needed = False
+
+    sender_role = _as_optional_string(result.get("sender_role"))
+    if sender_role not in VALID_SENDER_ROLES:
+        sender_role = infer_sender_role(sender, sender_email, is_human)
+
+    return {
+        "classification": classification,
+        "confidence": _clamp_confidence(result.get("confidence")),
+        "company_name": _as_optional_string(result.get("company_name")),
+        "sender_role": sender_role,
+        "key_sentence": _as_optional_string(result.get("key_sentence")) or subject,
+        "summary": _as_optional_string(result.get("summary")) or f"Email from {sender_email}: {subject}",
+        "action_needed": action_needed,
+        "is_automated": _as_bool(result.get("is_automated"), default=not is_human),
+    }
 
 
 def _fallback_classify(subject: str, body: str, sender_email: str, sender: str = "") -> dict:

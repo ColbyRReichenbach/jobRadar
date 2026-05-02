@@ -188,6 +188,14 @@ def decode_refresh_token(token: str) -> dict:
     return payload
 
 
+def decode_access_token(token: str) -> dict:
+    """Decode and validate a dashboard access token specifically."""
+    payload = decode_jwt(token)
+    if payload.get("type") != "access":
+        raise HTTPException(status_code=401, detail="Invalid access token")
+    return payload
+
+
 # --- Auth Dependencies ---
 
 async def verify_api_key(
@@ -207,7 +215,7 @@ async def verify_api_key(
 
     # Try JWT (dashboard auth)
     try:
-        payload = decode_jwt(token)
+        payload = decode_access_token(token)
         return {"auth_type": "jwt", "user_id": payload["sub"]}
     except HTTPException:
         pass
@@ -234,7 +242,7 @@ async def get_current_user(authorization: str = Header(...), db: AsyncSession = 
         raise HTTPException(status_code=401, detail="Missing Bearer token")
 
     token = authorization[7:]
-    payload = decode_jwt(token)
+    payload = decode_access_token(token)
 
     from backend.models import User
     user_id = uuid.UUID(payload["sub"])
@@ -244,6 +252,45 @@ async def get_current_user(authorization: str = Header(...), db: AsyncSession = 
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
     return user
+
+
+def _admin_email_set() -> set[str]:
+    raw = os.getenv("APPTRAIL_ADMIN_EMAILS", "")
+    return {
+        item.strip().lower()
+        for item in raw.split(",")
+        if item.strip()
+    }
+
+
+async def require_admin_user(
+    auth: dict = Depends(verify_api_key),
+    db: AsyncSession = Depends(get_db),
+):
+    """Require an authenticated user with admin privileges."""
+    from backend.models import User
+
+    if auth.get("auth_type") != "jwt":
+        raise HTTPException(status_code=403, detail="Dashboard session required")
+
+    user_id = auth.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Missing user context")
+
+    try:
+        user_uuid = uuid.UUID(str(user_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail="Invalid user context") from exc
+
+    result = await db.execute(select(User).where(User.id == user_uuid))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    if user.is_admin or user.email.lower() in _admin_email_set():
+        return user
+
+    raise HTTPException(status_code=403, detail="Admin access required")
 
 
 def set_refresh_cookie(response, refresh_token: str) -> None:

@@ -164,6 +164,9 @@ async def create_email_event(
         summary=classification.get("summary"),
     )
     db.add(event)
+    await db.flush()
+    from backend.services.search.indexer import index_record
+    await index_record(db, event)
     await db.commit()
     await db.refresh(event)
     return event
@@ -202,4 +205,6 @@ async def update_application_status(
         from datetime import timedelta
         app.archived_at = datetime.now(timezone.utc) + timedelta(days=30)
 
+    from backend.services.search.indexer import index_record
+    await index_record(db, app)
     await db.commit()
