@@ -18,7 +18,7 @@ def normalize_asyncpg_database_url(database_url: str | None) -> tuple[str | None
         return database_url, {}
 
     parts = urlsplit(database_url)
-    if parts.scheme != "postgresql+asyncpg":
+    if parts.scheme not in {"postgresql", "postgresql+asyncpg"}:
         return database_url, {}
 
     query_items = parse_qsl(parts.query, keep_blank_values=True)
@@ -39,7 +39,7 @@ def normalize_asyncpg_database_url(database_url: str | None) -> tuple[str | None
 
     normalized_url = urlunsplit(
         (
-            parts.scheme,
+            "postgresql+asyncpg",
             parts.netloc,
             parts.path,
             urlencode(cleaned_query_items, doseq=True),

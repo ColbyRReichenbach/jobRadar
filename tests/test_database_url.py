@@ -13,9 +13,21 @@ def test_normalize_asyncpg_database_url_converts_neon_ssl_params_to_connect_args
     assert connect_args == {"ssl": True}
 
 
+def test_normalize_asyncpg_database_url_converts_plain_postgres_urls_for_async_engine():
+    url = (
+        "postgresql://user:pass@example.neon.tech/db"
+        "?sslmode=require&channel_binding=require"
+    )
+
+    normalized_url, connect_args = normalize_asyncpg_database_url(url)
+
+    assert normalized_url == "postgresql+asyncpg://user:pass@example.neon.tech/db"
+    assert connect_args == {"ssl": True}
+
+
 def test_normalize_asyncpg_database_url_preserves_other_query_params():
     url = (
-        "postgresql+asyncpg://user:pass@example.neon.tech/db"
+        "postgresql://user:pass@example.neon.tech/db"
         "?sslmode=require&application_name=apptrail"
     )
 
