@@ -106,7 +106,7 @@ function StatusPill({ status }: { status: string }) {
 
 function SectionShell({ title, icon: Icon, children }: { title: string; icon: typeof Activity; children: ReactNode }) {
   return (
-    <section className="rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm md:p-5">
+    <section className="min-w-0 rounded-2xl border border-slate-200/70 bg-white p-4 shadow-sm md:p-5">
       <div className="mb-4 flex items-center gap-2">
         <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
           <Icon className="h-4 w-4" />
@@ -273,10 +273,10 @@ export function AiOps() {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[#F5F5F0] p-4 md:p-6">
-      <div className="mx-auto flex max-w-7xl flex-col gap-5">
-        <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
+    <div className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden bg-[#F5F5F0] p-4 md:p-6">
+      <div className="mx-auto flex w-full max-w-7xl min-w-0 flex-col gap-5">
+        <header className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-end lg:justify-between lg:pr-14 xl:pr-0">
+          <div className="min-w-0">
             <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600 shadow-sm">
               <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
               Admin-only governance
@@ -309,24 +309,26 @@ export function AiOps() {
           </div>
         )}
 
-        <div className="flex gap-2 overflow-x-auto rounded-2xl border border-slate-200/70 bg-white p-1 shadow-sm">
-          {SECTIONS.map((section) => {
-            const Icon = section.icon;
-            const isActive = activeSection === section.id;
-            return (
-              <button
-                key={section.id}
-                onClick={() => setActiveSection(section.id)}
-                className={cn(
-                  'flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition-colors',
-                  isActive ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'
-                )}
-              >
-                <Icon className="h-4 w-4" />
-                {section.label}
-              </button>
-            );
-          })}
+        <div className="max-w-full overflow-x-auto rounded-2xl border border-slate-200/70 bg-white p-1 shadow-sm">
+          <div className="flex w-max min-w-full gap-2">
+            {SECTIONS.map((section) => {
+              const Icon = section.icon;
+              const isActive = activeSection === section.id;
+              return (
+                <button
+                  key={section.id}
+                  onClick={() => setActiveSection(section.id)}
+                  className={cn(
+                    'flex shrink-0 items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition-colors',
+                    isActive ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'
+                  )}
+                >
+                  <Icon className="h-4 w-4" />
+                  {section.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {activeSection === 'overview' && telemetry && (
@@ -337,7 +339,7 @@ export function AiOps() {
               <StatCard label="p95 Latency" value={`${formatNumber(telemetry.overview.p95_latency_ms)} ms`} icon={Clock3} detail={`${formatPercent(telemetry.overview.fallback_rate)} fallback rate`} />
               <StatCard label="Failure Rate" value={formatPercent(telemetry.overview.failure_rate)} icon={AlertTriangle} detail={`${formatNumber(telemetry.overview.failure_count)} failed calls`} />
             </div>
-            <div className="grid gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.6fr)]">
+            <div className="grid gap-5 2xl:grid-cols-[minmax(0,1.4fr)_minmax(320px,0.6fr)]">
               <SectionShell title="Cost And Reliability By Task" icon={Gauge}>
                 {telemetry.by_task.length === 0 ? (
                   <EmptyState label="No model calls have been recorded yet." />
@@ -396,25 +398,25 @@ export function AiOps() {
         )}
 
         {activeSection === 'runs' && (
-          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
+          <div className="grid min-w-0 gap-5 2xl:grid-cols-[minmax(0,1fr)_minmax(360px,420px)]">
             <SectionShell title="Runs" icon={Gauge}>
-              <div className="mb-4 grid gap-2 md:grid-cols-[1fr_1fr_180px]">
+              <div className="mb-4 grid min-w-0 gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(150px,180px)]">
                 <input
                   value={surfaceFilter}
                   onChange={(event) => setSurfaceFilter(event.target.value)}
                   placeholder="Filter surface"
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-slate-400"
+                  className="min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-slate-400"
                 />
                 <input
                   value={taskFilter}
                   onChange={(event) => setTaskFilter(event.target.value)}
                   placeholder="Filter task"
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-slate-400"
+                  className="min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-slate-400"
                 />
                 <select
                   value={statusFilter}
                   onChange={(event) => setStatusFilter(event.target.value)}
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-slate-400"
+                  className="min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-slate-400"
                 >
                   <option value="all">All statuses</option>
                   {runStatuses.map((status) => <option key={status} value={status}>{status}</option>)}
@@ -424,7 +426,7 @@ export function AiOps() {
                 <EmptyState label="No AI runs match the current filters." />
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[820px] text-sm">
+                  <table className="w-full min-w-[760px] text-sm">
                     <thead>
                       <tr className="border-b border-slate-100 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                         <th className="py-2 pr-4">Run</th>

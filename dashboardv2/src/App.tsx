@@ -279,7 +279,8 @@ function AppContent() {
     );
   }
 
-  const showInbox = activeTab !== 'emails' && activeTab !== 'conversations';
+  const isAdminWorkspace = ADMIN_TABS.has(activeTab);
+  const showInbox = !isAdminWorkspace && activeTab !== 'emails' && activeTab !== 'conversations';
   const dockNotificationsInInbox = isDesktop && showInbox && !isInboxCollapsed;
   const notificationClassName = cn(
     'fixed z-40 transition-[right,top] duration-300',

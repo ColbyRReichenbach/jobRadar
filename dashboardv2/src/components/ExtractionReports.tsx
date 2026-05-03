@@ -431,7 +431,8 @@ export function ExtractionReports() {
   }, [reports]);
 
   return (
-    <div className="max-w-7xl mx-auto overflow-x-hidden p-4 sm:p-6">
+    <div className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden bg-[#F5F5F0] p-4 sm:p-6">
+      <div className="mx-auto w-full max-w-7xl min-w-0">
       {error && (
         <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm flex items-center gap-2">
           <AlertTriangle className="w-4 h-4" />
@@ -766,6 +767,7 @@ export function ExtractionReports() {
         </AnimatePresence>
       </div>
       </>}
+      </div>
     </div>
   );
 }

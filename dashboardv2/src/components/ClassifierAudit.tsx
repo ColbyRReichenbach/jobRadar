@@ -116,60 +116,62 @@ export function ClassifierAudit() {
   }, []);
 
   return (
-    <div className="max-w-7xl mx-auto overflow-x-hidden p-4 sm:p-6">
-      {error && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm flex items-center gap-2">
-          <AlertTriangle className="w-4 h-4" />
-          {error}
-          <button onClick={() => setError('')} className="ml-auto text-red-400 hover:text-red-600">×</button>
-        </div>
-      )}
+    <div className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden bg-[#F5F5F0] p-4 sm:p-6">
+      <div className="mx-auto w-full max-w-7xl min-w-0">
+        {error && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4" />
+            {error}
+            <button onClick={() => setError('')} className="ml-auto text-red-400 hover:text-red-600">×</button>
+          </div>
+        )}
 
-      <AnimatePresence mode="wait">
-        {view === 'list' && (
-          <motion.div key="list" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <RunList
-              runs={runs}
-              loading={loading}
-              compareIds={compareIds}
-              onOpenDetail={openDetail}
-              onDelete={handleDelete}
-              onToggleCompare={toggleCompare}
-              onCompare={openCompare}
-              onUpload={() => setShowUpload(true)}
-            />
-          </motion.div>
-        )}
-        {view === 'detail' && selectedRun && (
-          <motion.div key="detail" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <RunDetail
-              run={selectedRun}
-              onBack={() => { setView('list'); setSelectedRun(null); }}
-              onEmailUpdate={async (idx, review) => {
-                await updateAuditEmailReview(selectedRun.meta.id, idx, review);
-                const refreshed = await fetchAuditRun(selectedRun.meta.id);
-                setSelectedRun(refreshed);
-                loadRuns();
-              }}
-            />
-          </motion.div>
-        )}
-        {view === 'compare' && (
-          <motion.div key="compare" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-            <CompareView
-              data={comparison}
-              onBack={() => setView('list')}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
+        <AnimatePresence mode="wait">
+          {view === 'list' && (
+            <motion.div key="list" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <RunList
+                runs={runs}
+                loading={loading}
+                compareIds={compareIds}
+                onOpenDetail={openDetail}
+                onDelete={handleDelete}
+                onToggleCompare={toggleCompare}
+                onCompare={openCompare}
+                onUpload={() => setShowUpload(true)}
+              />
+            </motion.div>
+          )}
+          {view === 'detail' && selectedRun && (
+            <motion.div key="detail" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <RunDetail
+                run={selectedRun}
+                onBack={() => { setView('list'); setSelectedRun(null); }}
+                onEmailUpdate={async (idx, review) => {
+                  await updateAuditEmailReview(selectedRun.meta.id, idx, review);
+                  const refreshed = await fetchAuditRun(selectedRun.meta.id);
+                  setSelectedRun(refreshed);
+                  loadRuns();
+                }}
+              />
+            </motion.div>
+          )}
+          {view === 'compare' && (
+            <motion.div key="compare" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <CompareView
+                data={comparison}
+                onBack={() => setView('list')}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-      {showUpload && (
-        <UploadModal
-          onClose={() => setShowUpload(false)}
-          onUploaded={() => { setShowUpload(false); loadRuns(); }}
-        />
-      )}
+        {showUpload && (
+          <UploadModal
+            onClose={() => setShowUpload(false)}
+            onUploaded={() => { setShowUpload(false); loadRuns(); }}
+          />
+        )}
+      </div>
     </div>
   );
 }

@@ -69,6 +69,54 @@ async function mockApp(page: Page, options: MockOptions = {}) {
       return;
     }
 
+    if (path === '/api/audit/runs' && method === 'GET') {
+      await fulfillJson(route, []);
+      return;
+    }
+
+    if (path === '/api/audit/compare' && method === 'GET') {
+      await fulfillJson(route, []);
+      return;
+    }
+
+    if (path === '/api/emails/feedback/stats' && method === 'GET') {
+      await fulfillJson(route, {
+        total_feedback: 0,
+        not_job_related: 0,
+        job_related: 0,
+        top_blocked_domains: [],
+        original_classifications: {},
+        daily_trend: [],
+      });
+      return;
+    }
+
+    if (path === '/api/extraction-reports/stats' && method === 'GET') {
+      await fulfillJson(route, {
+        total: 0,
+        unresolved: 0,
+        by_type: {},
+        by_platform: {},
+        by_field: {},
+      });
+      return;
+    }
+
+    if (path === '/api/extraction-reports' && method === 'GET') {
+      await fulfillJson(route, []);
+      return;
+    }
+
+    if (path === '/api/extraction-changelog' && method === 'GET') {
+      await fulfillJson(route, []);
+      return;
+    }
+
+    if (path === '/api/extraction-reports/version-stats' && method === 'GET') {
+      await fulfillJson(route, { versions: [], changelog: [] });
+      return;
+    }
+
     if (path === '/api/admin/ai/telemetry' && method === 'GET') {
       await fulfillJson(route, {
         generated_at: '2026-05-02T14:30:00Z',
@@ -324,4 +372,42 @@ test('admin can review AI Ops telemetry, traces, and promotion reports', async (
   await page.getByRole('button', { name: 'Approve' }).click();
   await expect(page.getByText('approved')).toBeVisible();
   await expect(page.getByText('promote candidate')).toBeVisible();
+});
+
+test('admin-only pages use the full desktop workspace and survive sidebar collapse', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await mockApp(page, { isAdmin: true });
+  await page.goto('/');
+
+  for (const pageName of ['Classifier Audit', 'Extraction Reports', 'AI Ops']) {
+    await page.getByRole('button', { name: pageName }).click();
+    await expect(page.getByRole('heading', { name: pageName })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Updates' })).toHaveCount(0);
+    const fitsViewport = await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
+    expect(fitsViewport).toBeTruthy();
+  }
+
+  await page.getByLabel('Collapse navigation sidebar').click();
+  await page.waitForTimeout(400);
+  await expect(page.getByLabel('Expand navigation sidebar')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Access Logs' })).toBeVisible();
+  await page.getByRole('button', { name: 'Runs' }).click();
+  await expect(page.getByPlaceholder('Filter surface')).toBeVisible();
+  await expect(page.getByText('Run Detail')).toBeVisible();
+
+  const collapsedLayout = await page.evaluate(() => {
+    const main = document.querySelector('main')?.getBoundingClientRect();
+    const runFilter = Array.from(document.querySelectorAll('input'))
+      .find((input) => input.getAttribute('placeholder') === 'Filter surface')
+      ?.getBoundingClientRect();
+    return {
+      documentFits: document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      mainWidth: main?.width ?? 0,
+      filterInsideViewport: runFilter ? runFilter.left >= 0 && runFilter.right <= window.innerWidth : false,
+    };
+  });
+
+  expect(collapsedLayout.documentFits).toBeTruthy();
+  expect(collapsedLayout.mainWidth).toBeGreaterThan(1280);
+  expect(collapsedLayout.filterInsideViewport).toBeTruthy();
 });
