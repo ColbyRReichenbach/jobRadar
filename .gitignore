@@ -105,6 +105,8 @@ desktop.ini
 !.vscode/extensions.json
 !.vscode/settings.json
 .idea/
+.claude/settings.local.json
+.claude/projects/
 *.swp
 *.swo
 *~
@@ -145,4 +147,8 @@ dashboardv2/dist/
 
 # Local/private planning notes
 docs/ai-copilot-search-eval-plan.md
+docs/opportunity-radar-logo-mocks.html
+docs/scout-character-concepts.html
+docs/scout-copilot-concepts.html
+docs/logo-app-screenshots/
 .vercel
