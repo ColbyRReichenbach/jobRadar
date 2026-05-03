@@ -9,7 +9,7 @@ async def verify_report_node(state):
         state.get("report_sections", []),
         state.get("evidence_items", []),
         db_session=state.get("db"),
-        user_id=str(state.get("user_id")),
+        user_id=state.get("user_id"),
     )
     final_report = dict(state.get("final_report", {}))
     final_report["status"] = "needs_review" if verification_result.status == "needs_review" else "published"

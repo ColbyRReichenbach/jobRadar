@@ -13,7 +13,7 @@ async def plan_research_tasks_node(state):
         depth,
         max_queries,
         db_session=state.get("db"),
-        user_id=str(state.get("user_id")),
+        user_id=state.get("user_id"),
     )
     task_payloads = [task.model_dump() for task in tasks[:max_queries]]
     result = {

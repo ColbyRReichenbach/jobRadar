@@ -11,7 +11,7 @@ async def normalize_research_brief(state):
         tracker,
         user_context,
         db_session=state.get("db"),
-        user_id=str(state.get("user_id")),
+        user_id=state.get("user_id"),
     )
     normalized_dict = normalized.model_dump()
     if not normalized_dict["ideal_role_titles"] and user_context.get("role_interest_labels"):

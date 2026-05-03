@@ -28,6 +28,7 @@ os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
 
 from backend.database import async_session_factory, get_db
 from backend.dependencies import (
+    AuthCodeStoreUnavailableError,
     REFRESH_COOKIE_NAME,
     blacklist_token,
     clear_refresh_cookie,
@@ -2918,7 +2919,10 @@ async def google_auth_callback(
         "name": user.name,
         "picture": user.picture,
     })
-    store_auth_code(auth_code, code_payload)
+    try:
+        store_auth_code(auth_code, code_payload)
+    except AuthCodeStoreUnavailableError as exc:
+        raise HTTPException(status_code=503, detail="Authentication is temporarily unavailable") from exc
 
     from starlette.responses import RedirectResponse as _RedirectResponse
     redirect_url = _build_frontend_callback_url(frontend_url, auth_code)
@@ -2978,7 +2982,10 @@ class LocalAuthRequest(BaseModel):
 async def exchange_auth_code(request: Request, body: AuthCodeExchangeRequest):
     """Exchange a one-time auth code (from OAuth callback) for access + refresh tokens."""
     _require_allowed_browser_origin(request)
-    payload_json = consume_auth_code(body.code)
+    try:
+        payload_json = consume_auth_code(body.code)
+    except AuthCodeStoreUnavailableError as exc:
+        raise HTTPException(status_code=503, detail="Authentication is temporarily unavailable") from exc
     if not payload_json:
         raise HTTPException(status_code=400, detail="Invalid or expired auth code")
 

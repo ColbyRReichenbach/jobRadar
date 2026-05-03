@@ -12,7 +12,7 @@ async def extract_evidence_node(state):
             normalized_brief,
             source_item,
             db_session=state.get("db"),
-            user_id=str(state.get("user_id")),
+            user_id=state.get("user_id"),
         )
         for item in extracted:
             evidence_items.append(item.model_dump())

@@ -9,7 +9,7 @@ async def write_report_node(state):
         state["diff_summary"],
         state.get("evidence_items", []),
         db_session=state.get("db"),
-        user_id=str(state.get("user_id")),
+        user_id=state.get("user_id"),
     )
     result = {
         "final_report": final_report.model_dump(),

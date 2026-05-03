@@ -5,6 +5,7 @@ import os
 import re
 from datetime import datetime, timezone
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -402,7 +403,7 @@ async def normalize_brief_with_metrics(
     user_context: dict[str, Any],
     *,
     db_session: AsyncSession | None = None,
-    user_id: str | None = None,
+    user_id: UUID | str | None = None,
 ) -> tuple[NormalizedResearchBrief, dict[str, Any] | None]:
     fallback = deterministic_normalized_brief(tracker, user_context)
     if not ai_orchestrator.has_configured_api_key():
@@ -501,7 +502,7 @@ async def plan_research_tasks_with_metrics(
     max_queries: int,
     *,
     db_session: AsyncSession | None = None,
-    user_id: str | None = None,
+    user_id: UUID | str | None = None,
 ) -> tuple[list[ResearchSearchTask], dict[str, Any] | None]:
     fallback = deterministic_research_plan(normalized_brief, depth, max_queries)
     if not ai_orchestrator.has_configured_api_key():
@@ -593,7 +594,7 @@ async def extract_evidence_with_metrics(
     source_document: dict[str, Any],
     *,
     db_session: AsyncSession | None = None,
-    user_id: str | None = None,
+    user_id: UUID | str | None = None,
 ) -> tuple[list[ExtractedEvidence], dict[str, Any] | None]:
     fallback = deterministic_extract_evidence(normalized_brief, source_document)
     if not ai_orchestrator.has_configured_api_key():
@@ -697,7 +698,7 @@ async def write_report_with_metrics(
     evidence_items: list[dict[str, Any]],
     *,
     db_session: AsyncSession | None = None,
-    user_id: str | None = None,
+    user_id: UUID | str | None = None,
 ) -> tuple[FinalReportDraft, list[ReportSectionDraft], dict[str, Any] | None]:
     fallback_report, fallback_sections = deterministic_report(normalized_brief, diff_summary, evidence_items)
     if not ai_orchestrator.has_configured_api_key():
@@ -793,7 +794,7 @@ async def verify_report_with_metrics(
     evidence_items: list[dict[str, Any]],
     *,
     db_session: AsyncSession | None = None,
-    user_id: str | None = None,
+    user_id: UUID | str | None = None,
 ) -> tuple[VerificationResult, dict[str, Any] | None]:
     fallback = deterministic_verification(report_sections, evidence_items)
     if not ai_orchestrator.has_configured_api_key():
