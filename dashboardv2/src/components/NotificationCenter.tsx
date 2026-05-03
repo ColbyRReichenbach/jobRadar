@@ -15,14 +15,6 @@ interface AlertGroup {
   items: AlertItem[];
 }
 
-interface ToastAlert {
-  id: string;
-  title: string;
-  body: string | null;
-  actionUrl: string | null;
-  alertType: string;
-}
-
 function alertMeta(alertType: string) {
   switch (alertType) {
     case 'conversation_message':
@@ -82,12 +74,12 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
   const [error, setError] = useState<string | null>(null);
   const [localPrefs, setLocalPrefs] = useState<LocalNotificationPrefs>(DEFAULT_LOCAL_NOTIFICATION_PREFS);
   const [unreadOnly, setUnreadOnly] = useState(false);
-  const [toasts, setToasts] = useState<ToastAlert[]>([]);
   const [browserPermission, setBrowserPermission] = useState<string | null>(
     typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : null
   );
   const seenAlertIdsRef = useRef<Set<string>>(new Set());
   const hydratedRef = useRef(false);
+  const fetchedOnceRef = useRef(false);
 
   const loadAlerts = async () => {
     try {
@@ -95,6 +87,11 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
         fetchAlerts(),
         getUnreadAlertCount(),
       ]);
+      if (!fetchedOnceRef.current) {
+        seenAlertIdsRef.current = new Set(items.map((alert) => alert.id));
+        fetchedOnceRef.current = true;
+        hydratedRef.current = true;
+      }
       setAlerts(items);
       setUnreadCount(unread);
       setLocalPrefs(loadLocalNotificationPrefs());
@@ -121,6 +118,10 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
   }, []);
 
   useEffect(() => {
+    if (!fetchedOnceRef.current) {
+      return;
+    }
+
     const allIds = new Set(alerts.map((alert) => alert.id));
     if (!hydratedRef.current) {
       seenAlertIdsRef.current = allIds;
@@ -149,7 +150,6 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
     }
 
     if (document.visibilityState === 'visible') {
-      setToasts((prev) => [...nextToasts, ...prev].slice(0, 4));
       return;
     }
 
@@ -171,14 +171,6 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
       });
     }
   }, [alerts, localPrefs, onNavigate]);
-
-  useEffect(() => {
-    if (toasts.length === 0) return;
-    const timers = toasts.map((toast) => window.setTimeout(() => {
-      setToasts((prev) => prev.filter((item) => item.id !== toast.id));
-    }, 5000));
-    return () => timers.forEach((timer) => window.clearTimeout(timer));
-  }, [toasts]);
 
   const unreadAlerts = useMemo(() => alerts.filter((alert) => !alert.read).length, [alerts]);
 
@@ -280,40 +272,6 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
 
   return (
     <div className="relative">
-      {toasts.length > 0 && (
-        <div className="fixed bottom-4 right-4 z-[70] flex w-[360px] max-w-[calc(100vw-2rem)] flex-col gap-2 md:bottom-auto md:top-20">
-          {toasts.map((toast) => {
-            const meta = alertMeta(toast.alertType);
-            const Icon = meta.icon;
-            return (
-              <button
-                key={toast.id}
-                type="button"
-                onClick={() => {
-                  setToasts((prev) => prev.filter((item) => item.id !== toast.id));
-                  onNavigate(toast.actionUrl);
-                }}
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left shadow-xl"
-              >
-                <div className="flex items-start gap-3">
-                  <div className={cn('mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border', meta.tone)}>
-                    <Icon className="w-4 h-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-sm font-semibold text-slate-900 truncate">{toast.title}</div>
-                    {toast.body && (
-                      <div className="mt-1 text-xs text-slate-500 line-clamp-2 [overflow-wrap:anywhere]">
-                        {toast.body}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      )}
-
       <button
         type="button"
         onClick={() => void handleOpen()}

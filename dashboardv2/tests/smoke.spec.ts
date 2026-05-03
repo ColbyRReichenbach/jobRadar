@@ -649,7 +649,16 @@ test.describe('desktop app flows', () => {
       },
     });
 
+    const alertsLoaded = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname === '/api/alerts' && response.request().method() === 'GET';
+    });
+
     await page.goto('/');
+    await alertsLoaded;
+    await expect(page.getByText('Open the contact card to review details.')).toHaveCount(0);
+    await expect(page.getByText('Status update from TestCo')).toHaveCount(0);
+
     await page.getByRole('button', { name: 'Open notifications' }).click();
     await expect(page.getByText('Notifications')).toBeVisible();
     await expect(page.getByText('2 unread')).toBeVisible();
@@ -747,6 +756,53 @@ test.describe('desktop app flows', () => {
 
     const detail = page.getByRole('dialog');
     await expect(detail.getByText('Senior Recruiter')).toBeVisible();
+  });
+
+  test('conversation detail wraps long message bodies without hiding the desktop thread list', async ({ page }) => {
+    const longLinkedInUrl = `https://www.linkedin.com/comm/messaging/thread/${'apptrail-long-token-'.repeat(80)}?midToken=${'AQC'.repeat(120)}`;
+
+    await mockLoggedInApi(page, {
+      emails: [
+        {
+          id: 'conversation-long-body-1',
+          thread_id: 'thread-long-body',
+          application_id: 'job-1',
+          sender: 'Sharron Vogler',
+          sender_email: 'messaging-digest-noreply@linkedin.com',
+          subject: 'Sharron just messaged you',
+          snippet: 'You have 1 new message from Sharron Vogler.',
+          body: `You have 1 new message\n\nView message: ${longLinkedInUrl}\n\nReply from LinkedIn when you are ready.`,
+          received_at: '2026-04-15T16:57:00Z',
+          classification: 'conversation',
+          email_type: 'conversation',
+          action_needed: true,
+          is_from_user: false,
+          company_name: 'LinkedIn',
+          sender_domain: 'linkedin.com',
+          resolved: false,
+        },
+      ],
+      jobs: [
+        {
+          id: 'job-1',
+          company: 'LinkedIn',
+          role_title: 'Data Scientist',
+          status: 'applied',
+          created_at: '2026-04-15T16:57:00Z',
+        },
+      ],
+    });
+
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Conversations' }).click();
+    await page.getByText('Sharron Vogler').first().click();
+
+    await expect(page.getByPlaceholder('Search messages, people, or companies...')).toBeVisible();
+    await expect(page.locator('h2', { hasText: 'Sharron just messaged you' })).toBeVisible();
+    await expect(page.getByText(longLinkedInUrl)).toBeVisible();
+
+    const fitsViewport = await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
+    expect(fitsViewport).toBeTruthy();
   });
 });
 

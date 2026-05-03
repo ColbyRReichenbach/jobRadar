@@ -312,9 +312,9 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
   };
 
   return (
-    <div className="flex-1 h-full flex bg-[#F5F5F0]">
+    <div className="flex-1 h-full min-w-0 overflow-hidden flex bg-[#F5F5F0]">
       {/* List View */}
-      <div className={cn("flex flex-col border-r border-slate-200/60 bg-white transition-all duration-300 shrink-0", selectedThreadId ? "w-full md:w-[400px] lg:w-[450px] hidden md:flex" : "w-full md:w-[400px] lg:w-[450px]")}>
+      <div className={cn("min-w-0 flex flex-col border-r border-slate-200/60 bg-white transition-all duration-300 shrink-0", selectedThreadId ? "w-full md:w-[400px] lg:w-[450px] hidden md:flex" : "w-full md:w-[400px] lg:w-[450px]")}>
         <div className="p-6 border-b border-slate-100">
           <h1 className="text-3xl tracking-tight font-serif font-bold text-slate-900 mb-4">
             Conversations
@@ -565,7 +565,7 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
       </div>
 
       {/* Detail View */}
-      <div className={cn("flex-1 flex min-w-0 flex-col bg-white h-full overflow-hidden", !selectedThreadId && "hidden md:flex")}>
+      <div className={cn("flex-1 flex min-w-0 max-w-full flex-col bg-white h-full overflow-hidden", !selectedThreadId && "hidden md:flex")}>
         {selectedThread ? (
           <>
             <div className="shrink-0 border-b border-slate-100 bg-slate-50/50 p-4 md:p-5">
@@ -593,8 +593,8 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
               </div>
             </div>
 
-                <div className="flex-1 overflow-y-auto p-3 md:p-4 lg:p-5">
-              <div className="mx-auto max-w-[72rem] space-y-3">
+                <div className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-3 md:p-4 lg:p-5">
+              <div className="mx-auto w-full max-w-[72rem] min-w-0 space-y-3">
                 {selectedThread.latest.requiresFollowUp && !selectedThread.resolved && (
                   <div className="flex flex-col gap-3 rounded-xl border border-orange-200 bg-orange-50 p-4 sm:flex-row sm:items-start">
                     <AlertCircle className="w-5 h-5 text-orange-500 shrink-0 mt-0.5" />
@@ -653,7 +653,7 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
                       messageRefs.current[email.id] = node;
                     }}
                     className={cn(
-                      "flex flex-col gap-3 overflow-hidden rounded-2xl border p-3 md:p-4 transition-colors",
+                      "min-w-0 max-w-full flex flex-col gap-3 overflow-hidden rounded-2xl border p-3 md:p-4 transition-colors",
                       selectedMessageId === email.id
                         ? "ring-2 ring-indigo-200 border-indigo-200"
                         : email.isFromUser
@@ -679,7 +679,7 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
                         {format(new Date(email.date), 'MMM d, yyyy • h:mm a')}
                       </span>
                     </div>
-                    <div className="max-w-none text-sm leading-6 whitespace-pre-wrap break-words [overflow-wrap:anywhere] font-sans text-slate-700">
+                    <div className="min-w-0 max-w-full overflow-x-hidden text-sm leading-6 whitespace-pre-wrap break-words [overflow-wrap:anywhere] [word-break:break-word] font-sans text-slate-700">
                       {email.body || email.snippet}
                     </div>
                   </div>
