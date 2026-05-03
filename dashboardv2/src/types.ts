@@ -65,6 +65,50 @@ export interface Email {
   actionUrl?: string;
 }
 
+export interface ApplicationSuggestionEvidence {
+  email_id: string;
+  subject: string | null;
+  sender: string | null;
+  sender_email: string | null;
+  received_at: string | null;
+  snippet: string | null;
+  classification: string | null;
+}
+
+export interface ApplicationSuggestion {
+  suggestion_key: string;
+  company: string;
+  role_title: string;
+  status: JobStatus;
+  source: Job['source'];
+  job_url: string | null;
+  location?: string | null;
+  notes?: string | null;
+  email_ids: string[];
+  email_count: number;
+  latest_email_at: string | null;
+  confidence: number;
+  evidence: ApplicationSuggestionEvidence[];
+  existing_application?: Job | null;
+}
+
+export interface InterviewSuggestion {
+  email_id: string;
+  subject: string | null;
+  sender: string | null;
+  sender_email: string | null;
+  company_name: string | null;
+  role_title: string | null;
+  application_id: string | null;
+  interview_type: string;
+  scheduled_at: string | null;
+  duration_minutes: number | null;
+  location_or_link: string | null;
+  snippet: string | null;
+  received_at: string | null;
+  confidence: number;
+}
+
 export interface ResearchProfile {
   id: string;
   name: string;

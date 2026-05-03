@@ -70,6 +70,8 @@ _USER_SCOPED_MODELS = {
     "AiModelCall",
     "AiArtifact",
     "EmailSyncAudit",
+    "ApplicationSuggestionDecision",
+    "InterviewSuggestionDecision",
 }
 
 

@@ -1,6 +1,8 @@
 import {
+  ApplicationSuggestion,
   Contact,
   Email,
+  InterviewSuggestion,
   Job,
   OpportunityBrief,
   OpportunitySignal,
@@ -650,6 +652,73 @@ export async function checkEmailPipeline(emailId: string): Promise<{
   return await res.json();
 }
 
+function mapApplicationSuggestion(raw: any): ApplicationSuggestion {
+  return {
+    suggestion_key: raw.suggestion_key,
+    company: raw.company,
+    role_title: raw.role_title,
+    status: raw.status || 'applied',
+    source: raw.source || 'other',
+    job_url: raw.job_url || null,
+    location: raw.location || null,
+    notes: raw.notes || null,
+    email_ids: raw.email_ids || [],
+    email_count: raw.email_count || 0,
+    latest_email_at: raw.latest_email_at || null,
+    confidence: raw.confidence ?? 0,
+    evidence: raw.evidence || [],
+    existing_application: raw.existing_application ? mapJob(raw.existing_application) : null,
+  };
+}
+
+export async function fetchApplicationSuggestions(): Promise<ApplicationSuggestion[]> {
+  const res = await apiFetch(`${API_BASE}/api/application-suggestions`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to load application suggestions'));
+  const data = await res.json();
+  return Array.isArray(data) ? data.map(mapApplicationSuggestion) : [];
+}
+
+export async function acceptApplicationSuggestion(suggestion: ApplicationSuggestion): Promise<{
+  application: Job;
+  linked_email_count: number;
+  duplicate: boolean;
+}> {
+  const res = await apiFetch(`${API_BASE}/api/application-suggestions/accept`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({
+      suggestion_key: suggestion.suggestion_key,
+      email_ids: suggestion.email_ids,
+      company: suggestion.company,
+      role_title: suggestion.role_title,
+      status: suggestion.status,
+      source: suggestion.source || 'other',
+      job_url: suggestion.job_url || undefined,
+      location: suggestion.location || undefined,
+      notes: suggestion.notes || undefined,
+    }),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to accept application suggestion'));
+  const data = await res.json();
+  return {
+    application: mapJob(data.application),
+    linked_email_count: data.linked_email_count || 0,
+    duplicate: !!data.duplicate,
+  };
+}
+
+export async function dismissApplicationSuggestion(suggestion: ApplicationSuggestion): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/api/application-suggestions/dismiss`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({
+      suggestion_key: suggestion.suggestion_key,
+      email_ids: suggestion.email_ids,
+    }),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to dismiss application suggestion'));
+}
+
 export async function markEmailResolved(id: string): Promise<void> {
   await apiFetch(`${API_BASE}/api/emails/${id}`, {
     method: 'PATCH',
@@ -974,6 +1043,40 @@ export async function createInterviewFromEmail(emailId: string): Promise<any> {
   });
   if (!res.ok) throw new Error(await readErrorDetail(res, `Failed to create interview: ${res.status}`));
   return await res.json();
+}
+
+export async function fetchInterviewSuggestions(): Promise<InterviewSuggestion[]> {
+  const res = await apiFetch(`${API_BASE}/api/interview-suggestions`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to load interview suggestions'));
+  const data = await res.json();
+  return Array.isArray(data) ? data : [];
+}
+
+export async function acceptInterviewSuggestion(suggestion: InterviewSuggestion): Promise<any> {
+  const res = await apiFetch(`${API_BASE}/api/interview-suggestions/${encodeURIComponent(suggestion.email_id)}/accept`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({
+      application_id: suggestion.application_id || undefined,
+      interview_type: suggestion.interview_type,
+      scheduled_at: suggestion.scheduled_at || undefined,
+      duration_minutes: suggestion.duration_minutes ?? undefined,
+      interviewer_name: suggestion.sender || undefined,
+      interviewer_email: suggestion.sender_email || undefined,
+      location_or_link: suggestion.location_or_link || undefined,
+      notes: suggestion.subject ? `Created from email: ${suggestion.subject}` : undefined,
+    }),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to add interview suggestion'));
+  return await res.json();
+}
+
+export async function dismissInterviewSuggestion(emailId: string): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/api/interview-suggestions/${encodeURIComponent(emailId)}/dismiss`, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to dismiss interview suggestion'));
 }
 
 export async function deleteInterview(interviewId: string): Promise<void> {

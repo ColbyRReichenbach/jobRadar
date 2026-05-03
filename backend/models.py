@@ -210,6 +210,39 @@ class EmailFeedback(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+class ApplicationSuggestionDecision(Base):
+    """User review decision for an email-derived pipeline suggestion."""
+    __tablename__ = "application_suggestion_decisions"
+    __table_args__ = (
+        UniqueConstraint("user_id", "suggestion_key", name="uq_app_suggestion_decision_user_key"),
+        Index("ix_app_suggestion_decisions_user_created", "user_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    suggestion_key: Mapped[str] = mapped_column(Text, nullable=False)
+    decision: Mapped[str] = mapped_column(Text, nullable=False)
+    application_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("applications.id", ondelete="SET NULL"), nullable=True)
+    email_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class InterviewSuggestionDecision(Base):
+    """User review decision for an email-derived interview suggestion."""
+    __tablename__ = "interview_suggestion_decisions"
+    __table_args__ = (
+        UniqueConstraint("user_id", "email_event_id", name="uq_interview_suggestion_decision_user_email"),
+        Index("ix_interview_suggestion_decisions_user_created", "user_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    email_event_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("email_events.id", ondelete="CASCADE"), nullable=False)
+    decision: Mapped[str] = mapped_column(Text, nullable=False)
+    interview_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("interviews.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class EmailSyncAudit(Base):
     """Per-message Gmail sync decision log for user-visible sync diagnostics."""
     __tablename__ = "email_sync_audit"

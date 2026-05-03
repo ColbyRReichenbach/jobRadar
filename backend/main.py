@@ -56,6 +56,7 @@ from backend.metrics import (
 from backend.models import (
     Alert,
     Application,
+    ApplicationSuggestionDecision,
     AtsBehavior,
     Company,
     CompanyTechProfile,
@@ -72,6 +73,7 @@ from backend.models import (
     IgnoredNetworkContact,
     Interview,
     InterviewNote,
+    InterviewSuggestionDecision,
     NotificationPreference,
     OpportunityBrief,
     OpportunityScore,
@@ -455,6 +457,34 @@ class EmailUpdate(BaseModel):
     classification: Optional[str] = Field(None, max_length=MAX_SHORT_TEXT_LEN)
     resolved: Optional[bool] = None
     hidden: Optional[bool] = None
+
+
+class ApplicationSuggestionAccept(BaseModel):
+    suggestion_key: str = Field(..., max_length=MAX_MEDIUM_TEXT_LEN)
+    email_ids: list[str] = Field(default_factory=list)
+    company: str = Field(..., max_length=MAX_NAME_LEN)
+    role_title: str = Field(..., max_length=MAX_NAME_LEN)
+    status: Optional[str] = Field(None, max_length=MAX_STATUS_LEN)
+    source: Optional[str] = Field(None, max_length=MAX_SHORT_TEXT_LEN)
+    job_url: Optional[str] = Field(None, max_length=MAX_URL_LEN)
+    location: Optional[str] = Field(None, max_length=MAX_NAME_LEN)
+    notes: Optional[str] = Field(None, max_length=MAX_LONG_TEXT_LEN)
+
+
+class ApplicationSuggestionDismiss(BaseModel):
+    suggestion_key: str = Field(..., max_length=MAX_MEDIUM_TEXT_LEN)
+    email_ids: list[str] = Field(default_factory=list)
+
+
+class InterviewSuggestionAccept(BaseModel):
+    application_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
+    interview_type: Optional[str] = Field(None, max_length=MAX_SHORT_TEXT_LEN)
+    scheduled_at: Optional[str] = Field(None, max_length=MAX_ID_LEN)
+    duration_minutes: Optional[int] = None
+    interviewer_name: Optional[str] = Field(None, max_length=MAX_NAME_LEN)
+    interviewer_email: Optional[EmailStr] = None
+    location_or_link: Optional[str] = Field(None, max_length=MAX_URL_LEN)
+    notes: Optional[str] = Field(None, max_length=MAX_LONG_TEXT_LEN)
 
 
 class ResearchProfileCreate(BaseModel):
@@ -1007,6 +1037,253 @@ def _serialize_email_event(event: EmailEvent) -> dict:
             "role_title": event.application.role_title,
         } if event.application else None,
     }
+
+
+APPLICATION_SUGGESTION_CLASSIFICATIONS = {
+    "interview_request",
+    "offer",
+    "action_item",
+    "job_update",
+    "rejection",
+}
+APPLICATION_SUGGESTION_STATUS_BY_CLASSIFICATION = {
+    "interview_request": "interviewing",
+    "offer": "offer",
+    "rejection": "rejected",
+    "action_item": "applied",
+    "job_update": "applied",
+}
+GENERIC_COMPANY_DOMAINS = {
+    "gmail.com",
+    "googlemail.com",
+    "outlook.com",
+    "hotmail.com",
+    "yahoo.com",
+    "icloud.com",
+    "greenhouse.io",
+    "lever.co",
+    "myworkday.com",
+    "ashbyhq.com",
+    "icims.com",
+    "jobvite.com",
+    "smartrecruiters.com",
+    "taleo.net",
+}
+
+
+def _compact_text(value: str | None) -> str:
+    return re.sub(r"\s+", " ", (value or "").strip())
+
+
+def _limit_text(value: str | None, max_len: int) -> str | None:
+    text_value = _compact_text(value)
+    if not text_value:
+        return None
+    return text_value[:max_len]
+
+
+def _clean_extracted_name(value: str | None) -> str | None:
+    text_value = _compact_text(value)
+    if not text_value:
+        return None
+    text_value = re.split(
+        r"\b(?:for|with|about|regarding|on|scheduled|team|recruiting|talent|careers|job|role|position)\b",
+        text_value,
+        maxsplit=1,
+        flags=re.I,
+    )[0]
+    text_value = re.sub(r"[\s,.;:!?\-]+$", "", text_value).strip(" -")
+    if len(text_value) < 2:
+        return None
+    return text_value[:MAX_NAME_LEN]
+
+
+def _guess_company_from_domain(domain: str | None) -> str | None:
+    normalized = (domain or "").strip().lower()
+    if not normalized or normalized in GENERIC_COMPANY_DOMAINS:
+        return None
+    label = normalized.split(".")[0]
+    if not label or label in {"mail", "email", "jobs", "careers", "recruiting", "talent"}:
+        return None
+    return label.replace("-", " ").replace("_", " ").title()[:MAX_NAME_LEN]
+
+
+def _extract_company_from_email_event(event: EmailEvent) -> str | None:
+    if event.company_name:
+        return _limit_text(event.company_name, MAX_NAME_LEN)
+
+    candidates = [event.subject, event.summary, event.snippet, event.body]
+    patterns = [
+        r"\b(?:at|with|from)\s+([A-Z][A-Za-z0-9&.'\-, ]{1,80})",
+        r"\b(?:application to|applied to|applying to|candidacy with)\s+([A-Z][A-Za-z0-9&.'\-, ]{1,80})",
+    ]
+    for text_value in candidates:
+        if not text_value:
+            continue
+        for pattern in patterns:
+            match = re.search(pattern, text_value)
+            if match:
+                company = _clean_extracted_name(match.group(1))
+                if company:
+                    return company
+
+    return _guess_company_from_domain(event.sender_domain)
+
+
+def _clean_role_title(value: str | None, company: str | None = None) -> str | None:
+    role = _compact_text(value)
+    if not role:
+        return None
+    if company:
+        role = re.sub(rf"\b(?:at|with)\s+{re.escape(company)}\b.*$", "", role, flags=re.I)
+    role = re.sub(r"\b(?:role|position|job|opening|opportunity)\b.*$", "", role, flags=re.I)
+    role = re.sub(r"^(?:the|a|an)\s+", "", role, flags=re.I)
+    role = re.sub(r"[\s,.;:!?\-]+$", "", role).strip(" -")
+    if len(role) < 3:
+        return None
+    return role[:MAX_NAME_LEN]
+
+
+def _extract_role_from_email_event(event: EmailEvent, company: str | None = None) -> str:
+    candidates = [event.subject, event.summary, event.snippet, event.body]
+    patterns = [
+        r"\b(?:for|regarding|about)\s+(?:the\s+)?([A-Za-z0-9/&,\-+. ]{3,100}?)\s+(?:role|position|job|opening)\b",
+        r"\b([A-Za-z0-9/&,\-+. ]{3,100}?)\s+(?:role|position|job|opening)\b",
+        r"\binterview\s+(?:for|regarding|about)\s+(?:the\s+)?([A-Za-z0-9/&,\-+. ]{3,100})",
+        r"\boffer\s+(?:for|regarding)\s+(?:the\s+)?([A-Za-z0-9/&,\-+. ]{3,100})",
+    ]
+    for text_value in candidates:
+        if not text_value:
+            continue
+        for pattern in patterns:
+            match = re.search(pattern, text_value, flags=re.I)
+            if match:
+                role = _clean_role_title(match.group(1), company)
+                if role:
+                    return role
+
+    fallback = _compact_text(event.subject)
+    fallback = re.sub(r"^(?:re|fw|fwd):\s*", "", fallback, flags=re.I)
+    fallback = re.sub(
+        r"\b(?:application update|status update|thank you for applying|your application|interview scheduled|next steps|following up)\b",
+        "",
+        fallback,
+        flags=re.I,
+    )
+    fallback = _clean_role_title(fallback, company)
+    return fallback or "Role from email update"
+
+
+def _extract_first_url_from_email_event(event: EmailEvent) -> str | None:
+    if event.action_url:
+        return _limit_text(event.action_url, MAX_URL_LEN)
+    text_value = " ".join(part for part in [event.body, event.snippet, event.summary] if part)
+    match = re.search(r"https?://[^\s)>\"']+", text_value)
+    if not match:
+        return None
+    return _limit_text(match.group(0), MAX_URL_LEN)
+
+
+def _application_suggestion_key(company: str, role_title: str) -> str:
+    return f"{_normalize_match_text(company)}|{_normalize_match_text(role_title)}"
+
+
+def _application_suggestion_evidence(event: EmailEvent) -> dict:
+    return {
+        "email_id": str(event.id),
+        "subject": event.subject,
+        "sender": event.sender,
+        "sender_email": event.sender_email,
+        "received_at": event.received_at.isoformat() if event.received_at else None,
+        "snippet": event.snippet or event.summary or event.key_sentence,
+        "classification": event.classification,
+    }
+
+
+async def _find_application_by_company_role(
+    db: AsyncSession,
+    user_id: _uuid.UUID,
+    company: str,
+    role_title: str,
+) -> Application | None:
+    company_key = _normalize_match_text(company)
+    role_key = _normalize_match_text(role_title)
+    result = await db.execute(
+        select(Application)
+        .where(Application.user_id == user_id, Application.archived_at.is_(None))
+        .order_by(Application.applied_at.desc())
+    )
+    for app_row in result.scalars().all():
+        if _normalize_match_text(app_row.company) == company_key and _normalize_match_text(app_row.role_title) == role_key:
+            return app_row
+    return None
+
+
+async def _upsert_application_suggestion_decision(
+    db: AsyncSession,
+    *,
+    user_id: _uuid.UUID,
+    suggestion_key: str,
+    decision: str,
+    email_ids: list[str],
+    application_id: _uuid.UUID | None = None,
+) -> None:
+    existing = (
+        await db.execute(
+            select(ApplicationSuggestionDecision).where(
+                ApplicationSuggestionDecision.user_id == user_id,
+                ApplicationSuggestionDecision.suggestion_key == suggestion_key,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing:
+        existing.decision = decision
+        existing.email_ids = email_ids
+        existing.application_id = application_id
+        existing.created_at = datetime.now(timezone.utc)
+        return
+
+    db.add(
+        ApplicationSuggestionDecision(
+            user_id=user_id,
+            suggestion_key=suggestion_key,
+            decision=decision,
+            email_ids=email_ids,
+            application_id=application_id,
+        )
+    )
+
+
+async def _upsert_interview_suggestion_decision(
+    db: AsyncSession,
+    *,
+    user_id: _uuid.UUID,
+    email_event_id: _uuid.UUID,
+    decision: str,
+    interview_id: _uuid.UUID | None = None,
+) -> None:
+    existing = (
+        await db.execute(
+            select(InterviewSuggestionDecision).where(
+                InterviewSuggestionDecision.user_id == user_id,
+                InterviewSuggestionDecision.email_event_id == email_event_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing:
+        existing.decision = decision
+        existing.interview_id = interview_id
+        existing.created_at = datetime.now(timezone.utc)
+        return
+
+    db.add(
+        InterviewSuggestionDecision(
+            user_id=user_id,
+            email_event_id=email_event_id,
+            decision=decision,
+            interview_id=interview_id,
+        )
+    )
 
 
 def _alert_action_url(path: str, **params: str | None) -> str:
@@ -2188,6 +2465,213 @@ async def check_email_pipeline(
         "sender_domain": event.sender_domain,
         "suggestion": f"I don't see {company_name or event.sender_domain} in your pipeline. Would you like to add it?",
     }
+
+
+@app.get("/api/application-suggestions")
+async def list_application_suggestions(
+    limit: int = Query(20, ge=1, le=50),
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    """Return reviewed application candidates inferred from unmatched job emails."""
+    user_id = _require_user_id(auth)
+
+    event_result = await db.execute(
+        select(EmailEvent)
+        .where(
+            EmailEvent.user_id == user_id,
+            EmailEvent.hidden.is_(False),
+            EmailEvent.application_id.is_(None),
+            EmailEvent.classification.in_(APPLICATION_SUGGESTION_CLASSIFICATIONS),
+        )
+        .order_by(EmailEvent.received_at.desc())
+        .limit(200)
+    )
+    events = event_result.scalars().all()
+
+    groups: dict[str, dict] = {}
+    for event in events:
+        company = _extract_company_from_email_event(event)
+        if not company:
+            continue
+        role_title = _extract_role_from_email_event(event, company)
+        key = _application_suggestion_key(company, role_title)
+        group = groups.setdefault(
+            key,
+            {
+                "suggestion_key": key,
+                "company": company,
+                "role_title": role_title,
+                "status": APPLICATION_SUGGESTION_STATUS_BY_CLASSIFICATION.get(event.classification or "", "applied"),
+                "source": "other",
+                "job_url": _extract_first_url_from_email_event(event),
+                "email_ids": [],
+                "evidence": [],
+                "latest_email_at": event.received_at,
+                "confidence_values": [],
+                "notes": f"Suggested from Gmail updates for {company}.",
+            },
+        )
+        group["email_ids"].append(str(event.id))
+        group["evidence"].append(_application_suggestion_evidence(event))
+        if not group.get("job_url"):
+            group["job_url"] = _extract_first_url_from_email_event(event)
+        if event.received_at and (not group["latest_email_at"] or event.received_at > group["latest_email_at"]):
+            group["latest_email_at"] = event.received_at
+            group["status"] = APPLICATION_SUGGESTION_STATUS_BY_CLASSIFICATION.get(event.classification or "", group["status"])
+        if event.confidence is not None:
+            group["confidence_values"].append(float(event.confidence))
+
+    if not groups:
+        return []
+
+    decision_result = await db.execute(
+        select(ApplicationSuggestionDecision).where(
+            ApplicationSuggestionDecision.user_id == user_id,
+            ApplicationSuggestionDecision.suggestion_key.in_(list(groups.keys())),
+        )
+    )
+    reviewed_keys = {
+        decision.suggestion_key
+        for decision in decision_result.scalars().all()
+        if decision.decision in {"accepted", "dismissed"}
+    }
+
+    suggestions = []
+    for key, group in groups.items():
+        if key in reviewed_keys:
+            continue
+        existing = await _find_application_by_company_role(db, user_id, group["company"], group["role_title"])
+        confidence_values = group.pop("confidence_values")
+        avg_confidence = sum(confidence_values) / len(confidence_values) if confidence_values else 0.72
+        evidence = sorted(
+            group["evidence"],
+            key=lambda item: item.get("received_at") or "",
+            reverse=True,
+        )[:3]
+        suggestions.append({
+            **group,
+            "email_count": len(group["email_ids"]),
+            "latest_email_at": group["latest_email_at"].isoformat() if group["latest_email_at"] else None,
+            "confidence": round(avg_confidence, 2),
+            "evidence": evidence,
+            "existing_application": _serialize_app(existing) if existing else None,
+        })
+
+    suggestions.sort(key=lambda item: item.get("latest_email_at") or "", reverse=True)
+    return suggestions[:limit]
+
+
+@app.post("/api/application-suggestions/accept", status_code=201)
+async def accept_application_suggestion(
+    payload: ApplicationSuggestionAccept,
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    """Create or link a pipeline application from a reviewed Gmail suggestion."""
+    user_id = _require_user_id(auth)
+    if not payload.email_ids:
+        raise HTTPException(status_code=400, detail="At least one source email is required.")
+
+    try:
+        email_uuids = [_uuid.UUID(email_id) for email_id in payload.email_ids]
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid email id.") from exc
+
+    event_result = await db.execute(
+        select(EmailEvent)
+        .where(EmailEvent.user_id == user_id, EmailEvent.id.in_(email_uuids))
+        .order_by(EmailEvent.received_at.desc())
+    )
+    events = event_result.scalars().all()
+    if len(events) != len(set(email_uuids)):
+        raise HTTPException(status_code=404, detail="One or more source emails were not found.")
+
+    normalized_job_url = _normalize_job_url(payload.job_url)
+    app_row = None
+    if normalized_job_url:
+        app_row, normalized_job_url = await _find_job_url_duplicate_for_user(db, user_id, normalized_job_url)
+    if not app_row:
+        app_row = await _find_application_by_company_role(db, user_id, payload.company, payload.role_title)
+
+    if app_row:
+        if payload.status and app_row.status != payload.status:
+            app_row.status = payload.status
+            app_row.status_updated_at = datetime.now(timezone.utc)
+        if payload.notes and not app_row.notes:
+            app_row.notes = payload.notes
+    else:
+        app_row = Application(
+            user_id=user_id,
+            company=payload.company,
+            role_title=payload.role_title,
+            job_url=normalized_job_url,
+            source=payload.source or "other",
+            location=payload.location,
+            status=payload.status or "applied",
+            notes=payload.notes,
+        )
+        db.add(app_row)
+        await db.flush()
+
+        from backend.services.role_classifier import classify_role
+
+        role_result = await classify_role(db, app_row.role_title, app_row.description_text or "")
+        if role_result["umbrella_id"]:
+            app_row.umbrella_id = role_result["umbrella_id"]
+
+    latest_email_at = None
+    for event in events:
+        event.application_id = app_row.id
+        event.resolved = True
+        event.collapsed = True
+        if event.received_at and (latest_email_at is None or event.received_at > latest_email_at):
+            latest_email_at = event.received_at
+    if latest_email_at:
+        app_row.last_email_at = latest_email_at
+
+    await _upsert_application_suggestion_decision(
+        db,
+        user_id=user_id,
+        suggestion_key=payload.suggestion_key,
+        decision="accepted",
+        email_ids=[str(email_id) for email_id in email_uuids],
+        application_id=app_row.id,
+    )
+
+    try:
+        from backend.services.search.indexer import index_record
+
+        await index_record(db, app_row)
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        existing, _ = await _find_job_url_duplicate_for_user(db, user_id, normalized_job_url)
+        if existing:
+            return {"application": _serialize_app(existing), "linked_email_count": 0, "duplicate": True}
+        raise HTTPException(status_code=409, detail="Unable to create application suggestion.") from exc
+
+    await db.refresh(app_row)
+    return {"application": _serialize_app(app_row), "linked_email_count": len(events), "duplicate": False}
+
+
+@app.post("/api/application-suggestions/dismiss")
+async def dismiss_application_suggestion(
+    payload: ApplicationSuggestionDismiss,
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    """Dismiss a reviewed pipeline suggestion without hiding the underlying emails."""
+    user_id = _require_user_id(auth)
+    await _upsert_application_suggestion_decision(
+        db,
+        user_id=user_id,
+        suggestion_key=payload.suggestion_key,
+        decision="dismissed",
+        email_ids=payload.email_ids,
+    )
+    await db.commit()
+    return {"status": "dismissed"}
 
 
 @app.get("/api/auth/gmail")
@@ -4376,6 +4860,12 @@ class InterviewUpdate(BaseModel):
 
 
 def _serialize_interview(i: Interview) -> dict:
+    state = sa_inspect(i)
+    application = None
+    application_value = state.attrs.application.loaded_value
+    if application_value is not NO_VALUE:
+        application = application_value
+
     return {
         "id": str(i.id),
         "application_id": str(i.application_id) if i.application_id else None,
@@ -4389,6 +4879,68 @@ def _serialize_interview(i: Interview) -> dict:
         "outcome": i.outcome,
         "calendar_event_id": i.calendar_event_id,
         "created_at": i.created_at.isoformat() if i.created_at else None,
+        "company_name": application.company if application else None,
+        "role_title": application.role_title if application else None,
+    }
+
+
+def _detect_interview_type_from_email(event: EmailEvent) -> str:
+    text_value = f"{event.subject or ''} {event.summary or ''} {event.snippet or ''} {event.body or ''}".lower()
+    if "technical" in text_value or "coding" in text_value or "case study" in text_value:
+        return "technical"
+    if "onsite" in text_value or "final round" in text_value:
+        return "onsite"
+    if "panel" in text_value:
+        return "panel"
+    if "zoom" in text_value or "teams" in text_value or "google meet" in text_value or "virtual" in text_value:
+        return "virtual"
+    return "phone"
+
+
+def _interview_values_from_email(event: EmailEvent, payload: InterviewSuggestionAccept | None = None) -> dict:
+    from backend.services.calendar_sync import extract_interview_datetime
+
+    extracted = extract_interview_datetime(event.body or "", event.subject or "") or {}
+    scheduled_at = None
+    scheduled_at_value = payload.scheduled_at if payload and payload.scheduled_at else extracted.get("scheduled_at")
+    if scheduled_at_value:
+        from dateutil import parser as dateparser
+        try:
+            scheduled_at = dateparser.parse(scheduled_at_value)
+        except (ValueError, TypeError):
+            scheduled_at = None
+
+    return {
+        "interview_type": payload.interview_type if payload and payload.interview_type else _detect_interview_type_from_email(event),
+        "scheduled_at": scheduled_at,
+        "duration_minutes": payload.duration_minutes if payload and payload.duration_minutes is not None else extracted.get("duration_minutes"),
+        "interviewer_name": payload.interviewer_name if payload and payload.interviewer_name is not None else event.sender,
+        "interviewer_email": str(payload.interviewer_email) if payload and payload.interviewer_email is not None else event.sender_email,
+        "location_or_link": payload.location_or_link if payload and payload.location_or_link is not None else extracted.get("location_or_link"),
+        "notes": payload.notes if payload and payload.notes is not None else f"Created from email: {event.subject}",
+    }
+
+
+def _serialize_interview_suggestion(event: EmailEvent) -> dict:
+    values = _interview_values_from_email(event)
+    application = event.application
+    company_name = application.company if application else _extract_company_from_email_event(event)
+    role_title = application.role_title if application else _extract_role_from_email_event(event, company_name)
+    return {
+        "email_id": str(event.id),
+        "subject": event.subject,
+        "sender": event.sender,
+        "sender_email": event.sender_email,
+        "company_name": company_name,
+        "role_title": role_title,
+        "application_id": str(event.application_id) if event.application_id else None,
+        "interview_type": values["interview_type"],
+        "scheduled_at": values["scheduled_at"].isoformat() if values["scheduled_at"] else None,
+        "duration_minutes": values["duration_minutes"],
+        "location_or_link": values["location_or_link"],
+        "snippet": event.snippet or event.summary or event.key_sentence,
+        "received_at": event.received_at.isoformat() if event.received_at else None,
+        "confidence": event.confidence or 0.72,
     }
 
 
@@ -4444,7 +4996,12 @@ async def list_interviews(
 ):
     """List interviews, optionally filtered by application."""
     user_id = _require_user_id(auth)
-    stmt = select(Interview).where(Interview.user_id == user_id).order_by(Interview.scheduled_at.desc().nullslast())
+    stmt = (
+        select(Interview)
+        .options(selectinload(Interview.application))
+        .where(Interview.user_id == user_id)
+        .order_by(Interview.scheduled_at.desc().nullslast())
+    )
     if application_id:
         stmt = stmt.where(Interview.application_id == _uuid.UUID(application_id))
     stmt = _paginate(stmt, limit, offset)
@@ -4462,7 +5019,7 @@ async def upcoming_interviews(
     """Get upcoming interviews (scheduled in the future)."""
     user_id = _require_user_id(auth)
     now = datetime.now(timezone.utc)
-    stmt = select(Interview).where(
+    stmt = select(Interview).options(selectinload(Interview.application)).where(
         Interview.user_id == user_id,
         Interview.scheduled_at > now,
         Interview.outcome == "pending",
@@ -4581,9 +5138,200 @@ async def create_interview_from_email(
         notes=f"Created from email: {event.subject}",
     )
     db.add(interview)
+    await db.flush()
+    event.resolved = True
+    event.collapsed = True
+    await _upsert_interview_suggestion_decision(
+        db,
+        user_id=user_id,
+        email_event_id=event.id,
+        decision="accepted",
+        interview_id=interview.id,
+    )
     await db.commit()
     await db.refresh(interview)
     return _serialize_interview(interview)
+
+
+@app.get("/api/interview-suggestions")
+async def list_interview_suggestions(
+    limit: int = Query(20, ge=1, le=50),
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    """Return interview candidates inferred from Gmail messages for review."""
+    user_id = _require_user_id(auth)
+    event_result = await db.execute(
+        select(EmailEvent)
+        .options(selectinload(EmailEvent.application))
+        .where(
+            EmailEvent.user_id == user_id,
+            EmailEvent.hidden.is_(False),
+            EmailEvent.classification == "interview_request",
+        )
+        .order_by(EmailEvent.received_at.desc())
+        .limit(100)
+    )
+    events = event_result.scalars().all()
+    if not events:
+        return []
+
+    event_ids = [event.id for event in events]
+    decision_result = await db.execute(
+        select(InterviewSuggestionDecision).where(
+            InterviewSuggestionDecision.user_id == user_id,
+            InterviewSuggestionDecision.email_event_id.in_(event_ids),
+        )
+    )
+    reviewed_email_ids = {
+        decision.email_event_id
+        for decision in decision_result.scalars().all()
+        if decision.decision in {"accepted", "dismissed"}
+    }
+    return [_serialize_interview_suggestion(event) for event in events if event.id not in reviewed_email_ids][:limit]
+
+
+@app.post("/api/interview-suggestions/{email_id}/accept", status_code=201)
+async def accept_interview_suggestion(
+    email_id: str,
+    payload: InterviewSuggestionAccept,
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    """Create an interview record from a reviewed Gmail interview suggestion."""
+    user_id = _require_user_id(auth)
+    try:
+        eid = _uuid.UUID(email_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid email id.") from exc
+
+    event_result = await db.execute(
+        select(EmailEvent).options(selectinload(EmailEvent.application)).where(
+            EmailEvent.id == eid,
+            EmailEvent.user_id == user_id,
+        )
+    )
+    event = event_result.scalar_one_or_none()
+    if not event:
+        raise HTTPException(status_code=404, detail="Email not found")
+    if event.classification != "interview_request":
+        raise HTTPException(status_code=400, detail="Email is not classified as an interview request.")
+
+    existing_decision = (
+        await db.execute(
+            select(InterviewSuggestionDecision).where(
+                InterviewSuggestionDecision.user_id == user_id,
+                InterviewSuggestionDecision.email_event_id == eid,
+                InterviewSuggestionDecision.decision == "accepted",
+            )
+        )
+    ).scalar_one_or_none()
+    if existing_decision and existing_decision.interview_id:
+        existing_interview = (
+            await db.execute(
+                select(Interview).options(selectinload(Interview.application)).where(
+                    Interview.id == existing_decision.interview_id,
+                    Interview.user_id == user_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if existing_interview:
+            return _serialize_interview(existing_interview)
+
+    application_id = None
+    if payload.application_id:
+        application_id = _uuid.UUID(payload.application_id)
+    elif event.application_id:
+        application_id = event.application_id
+
+    if application_id:
+        app_result = await db.execute(
+            select(Application).where(
+                Application.id == application_id,
+                Application.user_id == user_id,
+            )
+        )
+        if not app_result.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Application not found")
+
+    values = _interview_values_from_email(event, payload)
+    duplicate_interview = None
+    if values["scheduled_at"] and values["interviewer_email"]:
+        duplicate_interview = (
+            await db.execute(
+                select(Interview).options(selectinload(Interview.application)).where(
+                    Interview.user_id == user_id,
+                    Interview.scheduled_at == values["scheduled_at"],
+                    Interview.interviewer_email == values["interviewer_email"],
+                )
+            )
+        ).scalar_one_or_none()
+
+    if duplicate_interview:
+        interview = duplicate_interview
+    else:
+        interview = Interview(
+            application_id=application_id,
+            user_id=user_id,
+            interview_type=values["interview_type"],
+            scheduled_at=values["scheduled_at"],
+            duration_minutes=values["duration_minutes"],
+            interviewer_name=values["interviewer_name"],
+            interviewer_email=values["interviewer_email"],
+            location_or_link=values["location_or_link"],
+            notes=values["notes"],
+        )
+        db.add(interview)
+        await db.flush()
+
+    if application_id and not event.application_id:
+        event.application_id = application_id
+    event.resolved = True
+    event.collapsed = True
+    await _upsert_interview_suggestion_decision(
+        db,
+        user_id=user_id,
+        email_event_id=eid,
+        decision="accepted",
+        interview_id=interview.id,
+    )
+    await db.commit()
+    await db.refresh(interview)
+    return _serialize_interview(interview)
+
+
+@app.post("/api/interview-suggestions/{email_id}/dismiss")
+async def dismiss_interview_suggestion(
+    email_id: str,
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    """Dismiss an interview suggestion without hiding the source email."""
+    user_id = _require_user_id(auth)
+    try:
+        eid = _uuid.UUID(email_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid email id.") from exc
+
+    event_exists = (
+        await db.execute(
+            select(EmailEvent.id).where(
+                EmailEvent.id == eid,
+                EmailEvent.user_id == user_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if not event_exists:
+        raise HTTPException(status_code=404, detail="Email not found")
+
+    await _upsert_interview_suggestion_decision(
+        db,
+        user_id=user_id,
+        email_event_id=eid,
+        decision="dismissed",
+    )
+    await db.commit()
+    return {"status": "dismissed"}
 
 
 # ── Sprint 18: Interview Notes / Second Brain ──────────────────────────

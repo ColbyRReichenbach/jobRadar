@@ -411,6 +411,7 @@ function AppContent() {
                     setIsCollapsed={() => {}}
                     forceOpen={true}
                     onOpenAddJob={handleOpenAddJob}
+                    onSuggestionAccepted={loadData}
                     focusRequest={emailFocusRequest?.tab === 'emails' ? emailFocusRequest : null}
                   />
                 </div>
@@ -440,6 +441,7 @@ function AppContent() {
             setIsCollapsed={setIsInboxCollapsed}
             onOpenAddJob={handleOpenAddJob}
             onNavigateToEmail={handleOpenEmail}
+            onSuggestionAccepted={loadData}
             focusRequest={emailFocusRequest?.tab === 'emails' ? emailFocusRequest : null}
             headerAccessory={dockNotificationsInInbox ? <NotificationCenter onNavigate={handleNotificationNavigate} /> : undefined}
           />

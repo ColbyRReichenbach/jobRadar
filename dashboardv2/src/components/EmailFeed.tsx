@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Email, Job } from '../types';
+import { ApplicationSuggestion, Email, Job } from '../types';
 import { format, formatDistanceToNow } from 'date-fns';
 import { cn } from '../lib/utils';
 import {
@@ -22,7 +22,15 @@ import {
   CalendarPlus,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { submitEmailFeedback, checkEmailPipeline, updateEmail, createInterviewFromEmail } from '../lib/api';
+import {
+  acceptApplicationSuggestion,
+  createInterviewFromEmail,
+  checkEmailPipeline,
+  dismissApplicationSuggestion,
+  fetchApplicationSuggestions,
+  submitEmailFeedback,
+  updateEmail,
+} from '../lib/api';
 import { DialogShell } from './DialogShell';
 
 interface EmailFeedProps {
@@ -33,6 +41,7 @@ interface EmailFeedProps {
   forceOpen?: boolean;
   onOpenAddJob?: (draft: Partial<Job>) => void;
   onNavigateToEmail?: (email: Email) => void;
+  onSuggestionAccepted?: () => void | Promise<void>;
   headerAccessory?: React.ReactNode;
   focusRequest?: {
     emailId: string;
@@ -135,6 +144,7 @@ export function EmailFeed({
   forceOpen,
   onOpenAddJob,
   onNavigateToEmail,
+  onSuggestionAccepted,
   headerAccessory,
   focusRequest,
 }: EmailFeedProps) {
@@ -155,6 +165,9 @@ export function EmailFeed({
   const [threadPendingDeletion, setThreadPendingDeletion] = useState<EmailThread | null>(null);
   const [creatingInterview, setCreatingInterview] = useState(false);
   const [interviewStatus, setInterviewStatus] = useState<string | null>(null);
+  const [applicationSuggestions, setApplicationSuggestions] = useState<ApplicationSuggestion[]>([]);
+  const [suggestionStatus, setSuggestionStatus] = useState<string | null>(null);
+  const [busySuggestionKey, setBusySuggestionKey] = useState<string | null>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const collapsed = forceOpen ? false : isCollapsed;
@@ -254,6 +267,19 @@ export function EmailFeed({
   const selectedThread = allThreads.find((thread) => thread.id === selectedThreadId) || null;
   const selectedMessage =
     selectedThread?.emails.find((email) => email.id === selectedMessageId) || selectedThread?.latest || null;
+
+  const refreshApplicationSuggestions = async () => {
+    if (!forceOpen) return;
+    try {
+      setApplicationSuggestions(await fetchApplicationSuggestions());
+    } catch (err) {
+      console.error('Failed to load application suggestions:', err);
+    }
+  };
+
+  useEffect(() => {
+    void refreshApplicationSuggestions();
+  }, [forceOpen, emails.length]);
 
   useEffect(() => {
     if (selectedThread && !allThreads.some((thread) => thread.id === selectedThread.id)) {
@@ -474,6 +500,103 @@ export function EmailFeed({
     } finally {
       setCreatingInterview(false);
     }
+  };
+
+  const handleAcceptApplicationSuggestion = async (suggestion: ApplicationSuggestion) => {
+    setBusySuggestionKey(suggestion.suggestion_key);
+    setSuggestionStatus(null);
+    try {
+      const result = await acceptApplicationSuggestion(suggestion);
+      setApplicationSuggestions((prev) => prev.filter((item) => item.suggestion_key !== suggestion.suggestion_key));
+      setSuggestionStatus(
+        result.duplicate
+          ? `${result.application.company} was already in your pipeline. Source emails were left unchanged.`
+          : `${result.application.company} was added to your pipeline and ${result.linked_email_count} email${result.linked_email_count === 1 ? '' : 's'} were linked.`,
+      );
+      await onSuggestionAccepted?.();
+    } catch (err) {
+      setSuggestionStatus(err instanceof Error ? err.message : 'Could not add this suggestion.');
+    } finally {
+      setBusySuggestionKey(null);
+    }
+  };
+
+  const handleDismissApplicationSuggestion = async (suggestion: ApplicationSuggestion) => {
+    setBusySuggestionKey(suggestion.suggestion_key);
+    setSuggestionStatus(null);
+    try {
+      await dismissApplicationSuggestion(suggestion);
+      setApplicationSuggestions((prev) => prev.filter((item) => item.suggestion_key !== suggestion.suggestion_key));
+      setSuggestionStatus('Suggestion dismissed.');
+    } catch (err) {
+      setSuggestionStatus(err instanceof Error ? err.message : 'Could not dismiss this suggestion.');
+    } finally {
+      setBusySuggestionKey(null);
+    }
+  };
+
+  const renderApplicationSuggestions = () => {
+    if (!forceOpen && applicationSuggestions.length === 0 && !suggestionStatus) return null;
+    if (applicationSuggestions.length === 0 && !suggestionStatus) return null;
+
+    return (
+      <div className="space-y-2 pb-2">
+        <div className="px-1">
+          <h2 className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Suggested applications</h2>
+          <p className="mt-1 text-xs text-slate-500">
+            Review job updates AppTrail found in Gmail before adding them to your pipeline.
+          </p>
+        </div>
+        {suggestionStatus && (
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+            {suggestionStatus}
+          </div>
+        )}
+        {applicationSuggestions.slice(0, 4).map((suggestion) => {
+          const latestEvidence = suggestion.evidence[0];
+          const isBusy = busySuggestionKey === suggestion.suggestion_key;
+          return (
+            <div key={suggestion.suggestion_key} className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-slate-900 truncate">
+                    {suggestion.role_title}
+                  </p>
+                  <p className="text-xs font-medium text-indigo-700 truncate">
+                    {suggestion.company}
+                  </p>
+                </div>
+                <span className="shrink-0 rounded-full bg-white px-2 py-1 text-[10px] font-semibold text-slate-500">
+                  {Math.round(suggestion.confidence * 100)}%
+                </span>
+              </div>
+              <p className="mt-2 line-clamp-2 text-xs text-slate-600">
+                {latestEvidence?.subject || latestEvidence?.snippet || `${suggestion.email_count} related Gmail update${suggestion.email_count === 1 ? '' : 's'}.`}
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleAcceptApplicationSuggestion(suggestion)}
+                  disabled={isBusy}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  {suggestion.existing_application ? 'Link emails' : 'Add to pipeline'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleDismissApplicationSuggestion(suggestion)}
+                  disabled={isBusy}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
   };
 
   const renderThreadCard = (thread: (typeof allThreads)[number], allowExpand = true) => {
@@ -773,7 +896,8 @@ export function EmailFeed({
                 </div>
               ) : (
                 <div className="h-full overflow-y-auto p-4 space-y-2">
-                  {visibleThreads.length === 0 ? (
+                  {renderApplicationSuggestions()}
+                  {visibleThreads.length === 0 && applicationSuggestions.length === 0 ? (
                     <div className="h-full flex flex-col items-center justify-center px-8 text-center text-slate-400">
                       <Mail className="w-10 h-10 mb-3 opacity-30" />
                       <p className="text-base font-serif text-slate-500">No inbox updates found.</p>
