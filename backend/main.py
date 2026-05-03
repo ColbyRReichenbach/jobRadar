@@ -7891,6 +7891,13 @@ async def extraction_version_stats(
 # ---------------------------------------------------------------------------
 
 CONSENT_TYPES = ("core", "ai_processing", "third_party_enrichment", "web_research")
+CONSENT_DISCLOSURES = {
+    "core": "Stores saved jobs, pipeline state, contacts, inbox classifications, calendar items, and account settings so the app can function.",
+    "ai_processing": "Sends selected career data, email text, resume text, and retrieved AppTrail context to OpenAI for classification, Copilot answers, drafts, resume parsing, and Radar summaries. Safety filters redact secrets before provider calls where possible.",
+    "third_party_enrichment": "Sends company domains to enrichment providers for contact discovery and company identity data. Personal Gmail content is not sent for enrichment.",
+    "web_research": "Lets Radar query public sources and save dated reports with citations, deltas, and follow-up actions tied to your profile.",
+    "retention": "AI trace payloads are retained for a limited audit window, then redacted while ledger rows and aggregate metrics are kept for governance.",
+}
 
 
 class ConsentBody(BaseModel):
@@ -7912,6 +7919,7 @@ async def get_consent(
     return {
         "consents": {ct: rows.get(ct, False) for ct in CONSENT_TYPES},
         "accepted_at": current_user.data_consent_accepted_at.isoformat() if current_user.data_consent_accepted_at else None,
+        "disclosures": CONSENT_DISCLOSURES,
     }
 
 
@@ -7973,6 +7981,7 @@ async def update_consent(
     return {
         "consents": mapping,
         "accepted_at": now.isoformat(),
+        "disclosures": CONSENT_DISCLOSURES,
     }
 
 

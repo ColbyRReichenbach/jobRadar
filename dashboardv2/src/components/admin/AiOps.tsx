@@ -42,6 +42,7 @@ import {
   fetchAiTelemetry,
   fetchAiTraceAccessLogs,
   rejectPromotionReport,
+  reviewAiSafetyDecision,
   requestFullTrace,
 } from '../../lib/adminAiApi';
 
@@ -173,6 +174,7 @@ export function AiOps() {
   const [safetyPolicyFilter, setSafetyPolicyFilter] = useState('');
   const [safetyStageFilter, setSafetyStageFilter] = useState('');
   const [safetyMinRiskFilter, setSafetyMinRiskFilter] = useState('');
+  const [safetyReviewBusyId, setSafetyReviewBusyId] = useState<string | null>(null);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -275,6 +277,24 @@ export function AiOps() {
       setError(err instanceof Error ? err.message : `Failed to ${action} promotion report.`);
     } finally {
       setPromotionBusyId(null);
+    }
+  }, []);
+
+  const handleSafetyReview = useCallback(async (decision: AiSafetyDecision, reviewStatus: string) => {
+    setSafetyReviewBusyId(decision.id);
+    setError('');
+    try {
+      const reviewed = await reviewAiSafetyDecision(decision.id, {
+        review_status: reviewStatus,
+        review_notes: reviewStatus === 'confirmed_unsafe'
+          ? 'Reviewed in AI Ops and confirmed unsafe for model processing.'
+          : 'Reviewed in AI Ops.',
+      });
+      setSafetyDecisions((current) => current.map((item) => (item.id === reviewed.id ? reviewed : item)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to review safety decision.');
+    } finally {
+      setSafetyReviewBusyId(null);
     }
   }, []);
 
@@ -415,7 +435,10 @@ export function AiOps() {
                         {formatNumber(telemetry.safety_guardrails.redacted_decisions)} redacted
                       </p>
                       <p className="mt-1 text-xs text-slate-500">
-                        {formatNumber(telemetry.safety_guardrails.blocked_decisions)} blocked before model access
+                        {formatNumber(telemetry.safety_guardrails.blocked_decisions)} blocked, {formatNumber(telemetry.safety_guardrails.quarantined_decisions)} quarantined
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {formatNumber(telemetry.safety_guardrails.unreviewed_decisions)} awaiting admin review
                       </p>
                     </div>
                   )}
@@ -732,16 +755,18 @@ export function AiOps() {
               <EmptyState label="No safety gateway decisions have been recorded yet." />
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[900px] text-sm">
+                <table className="w-full min-w-[1080px] text-sm">
                   <thead>
                     <tr className="border-b border-slate-100 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                       <th className="py-2 pr-4">Time</th>
                       <th className="py-2 pr-4">Surface</th>
                       <th className="py-2 pr-4">Stage</th>
                       <th className="py-2 pr-4">Decision</th>
+                      <th className="py-2 pr-4">Review</th>
                       <th className="py-2 pr-4 text-right">Risk</th>
                       <th className="py-2 pr-4">Redactions</th>
                       <th className="py-2">Reasons</th>
+                      <th className="py-2 pl-4 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -754,6 +779,14 @@ export function AiOps() {
                         </td>
                         <td className="py-3 pr-4 capitalize">{decision.stage}</td>
                         <td className="py-3 pr-4"><StatusPill status={decision.policy_decision} /></td>
+                        <td className="py-3 pr-4">
+                          <StatusPill status={decision.review_status || 'unreviewed'} />
+                          {decision.review_notes && (
+                            <p className="mt-1 max-w-[11rem] truncate text-xs text-slate-500" title={decision.review_notes}>
+                              {decision.review_notes}
+                            </p>
+                          )}
+                        </td>
                         <td className="py-3 pr-4 text-right">
                           <p className="font-medium text-slate-900">{decision.risk_score.toFixed(2)}</p>
                           <p className="text-xs text-slate-500">PI {formatNumber(Math.round((decision.prompt_injection_score ?? 0) * 100))}%</p>
@@ -773,6 +806,28 @@ export function AiOps() {
                               ))
                             )}
                           </div>
+                        </td>
+                        <td className="py-3 pl-4 text-right">
+                          {['quarantine', 'block'].includes(decision.policy_decision) ? (
+                            <div className="flex justify-end gap-2">
+                              <button
+                                onClick={() => void handleSafetyReview(decision, 'confirmed_unsafe')}
+                                disabled={safetyReviewBusyId === decision.id}
+                                className="rounded-xl border border-red-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-red-700 transition-colors hover:bg-red-50 disabled:opacity-50"
+                              >
+                                Confirm unsafe
+                              </button>
+                              <button
+                                onClick={() => void handleSafetyReview(decision, 'false_positive')}
+                                disabled={safetyReviewBusyId === decision.id}
+                                className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
+                              >
+                                Mark safe
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-slate-400">No review needed</span>
+                          )}
                         </td>
                       </tr>
                     ))}

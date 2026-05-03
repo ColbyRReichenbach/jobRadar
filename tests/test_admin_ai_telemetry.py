@@ -177,6 +177,31 @@ async def test_admin_ai_safety_decisions_support_operational_filters(client, db_
 
 
 @pytest.mark.asyncio
+async def test_admin_can_review_safety_decision(client, db_session):
+    await _seed_ai_ops_data(db_session)
+    decision = (
+        await db_session.execute(
+            select(AiSafetyDecision).where(AiSafetyDecision.policy_decision == "allow_redacted")
+        )
+    ).scalar_one()
+
+    response = await client.patch(
+        f"/api/admin/ai/safety-decisions/{decision.id}/review",
+        json={
+            "review_status": "false_positive",
+            "review_notes": "Safe after manual review.",
+        },
+        headers=AUTH_HEADER,
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["review_status"] == "false_positive"
+    assert data["review_notes"] == "Safe after manual review."
+    assert data["reviewed_by_user_id"] == str(TEST_USER_ID)
+
+
+@pytest.mark.asyncio
 async def test_full_trace_access_requires_reason_and_writes_log(client, db_session):
     call = await _seed_ai_ops_data(db_session)
 

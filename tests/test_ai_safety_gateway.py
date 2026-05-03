@@ -3,7 +3,7 @@ import uuid
 import pytest
 from sqlalchemy import select
 
-from backend.models import AiModelCall, AiSafetyDecision
+from backend.models import AiModelCall, AiSafetyDecision, Alert
 
 
 def test_ai_safety_redacts_secrets_and_identity_by_default():
@@ -227,6 +227,8 @@ async def test_ai_safety_records_quarantine_before_provider_call(db_session, mon
     assert row.policy_decision == ai_safety.POLICY_QUARANTINE
     assert row.model_call_id is None
     assert "ignore_prior_instructions" in row.reasons
+    alert = (await db_session.execute(select(Alert).where(Alert.alert_type == "ai_safety_quarantine"))).scalar_one()
+    assert "AI safety quarantine" in alert.title
 
 
 @pytest.mark.asyncio

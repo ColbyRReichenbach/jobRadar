@@ -1133,6 +1133,10 @@ class AiSafetyDecision(Base):
     reasons: Mapped[list | None] = mapped_column(JSON, nullable=True)
     token_estimate: Mapped[int | None] = mapped_column(Integer, nullable=True)
     metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    review_status: Mapped[str] = mapped_column(Text, default="unreviewed")
+    reviewed_by_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    review_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 

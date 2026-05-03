@@ -97,10 +97,10 @@ export function ConsentModal({ onAccepted, onDeclined }: ConsentModalProps) {
             <div className="flex-1">
               <span className="text-sm font-semibold text-slate-900">AI Processing</span>
               <p className="mt-1 text-xs text-slate-500">
-                Send email subjects and bodies to OpenAI to classify emails, generate draft replies, and tailor your resume. No data is stored by OpenAI.
+                Send selected job-search data, email text, resume text, and retrieved AppTrail context to OpenAI for classification, Copilot answers, drafts, resume parsing, resume tailoring, and Radar summaries. Safety filters redact secrets before provider calls where possible.
               </p>
               <p className="mt-1.5 text-xs text-slate-400">
-                If disabled, emails will use rule-based classification and drafts will use templates.
+                If disabled, emails use rule-based classification, drafts use templates, and OpenAI-backed features are unavailable. AI trace payloads are kept only for a limited audit window, then redacted.
               </p>
             </div>
             <input
@@ -144,7 +144,7 @@ export function ConsentModal({ onAccepted, onDeclined }: ConsentModalProps) {
             <div className="flex-1">
               <span className="text-sm font-semibold text-slate-900">Web Research</span>
               <p className="mt-1 text-xs text-slate-500">
-                Allow Radar to search public sources and save dated research reports with external evidence.
+                Allow Radar to query public sources and save dated research reports with citations, deltas, and follow-up actions tied to your profile.
               </p>
               <p className="mt-1.5 text-xs text-slate-400">
                 If disabled, Radar can still use your AppTrail activity, but it will not create public-web research reports.

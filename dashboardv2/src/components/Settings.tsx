@@ -591,7 +591,7 @@ export function Settings() {
                     <span className="flex items-center gap-1.5 font-medium text-slate-900">
                       <Brain className="w-3.5 h-3.5 text-violet-500" /> AI Processing
                     </span>
-                    Allow email classification, draft generation, and resume tailoring via OpenAI. When off, rule-based fallbacks are used.
+                    Allow OpenAI-backed classification, Copilot answers, Radar summaries, draft generation, resume parsing, and resume tailoring. Safety filters redact secrets before provider calls where possible; AI trace payloads are retained for a limited audit window and then redacted.
                   </span>
                 </label>
 
@@ -627,7 +627,7 @@ export function Settings() {
                     <span className="flex items-center gap-1.5 font-medium text-slate-900">
                       <Globe className="w-3.5 h-3.5 text-sky-500" /> Web Research
                     </span>
-                    Allow Radar to search public sources and save dated research reports with evidence.
+                    Allow Radar to query public sources and save dated research reports with citations, deltas, and follow-up actions tied to your profile.
                   </span>
                 </label>
 

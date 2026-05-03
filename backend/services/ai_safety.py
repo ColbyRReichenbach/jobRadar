@@ -493,6 +493,41 @@ async def record_safety_decision(
     )
     db_session.add(row)
     await db_session.flush()
+    await _maybe_create_admin_safety_alert(
+        db_session,
+        decision=row,
+        evaluation=evaluation,
+    )
+
+
+async def _maybe_create_admin_safety_alert(
+    db_session: AsyncSession,
+    *,
+    decision: AiSafetyDecision,
+    evaluation: SafetyEvaluation,
+) -> None:
+    if decision.stage != "preflight":
+        return
+    if evaluation.policy_decision not in {POLICY_BLOCK, POLICY_QUARANTINE}:
+        return
+    alert_type = "ai_safety_quarantine" if evaluation.policy_decision == POLICY_QUARANTINE else "ai_safety_block"
+    if any(reason.endswith("_rate_limit_exceeded") for reason in evaluation.reasons):
+        alert_type = "ai_rate_limit"
+    elif any(reason.endswith("_token_cap_exceeded") for reason in evaluation.reasons):
+        alert_type = "ai_budget_block"
+    try:
+        from backend.services.alerts import create_admin_operational_alert
+
+        await create_admin_operational_alert(
+            db_session,
+            alert_type=alert_type,
+            title=f"AI safety {evaluation.policy_decision.replace('_', ' ')} on {decision.surface}",
+            body=f"{decision.task_name} was stopped before model access. Reasons: {', '.join(evaluation.reasons) or 'policy decision'}.",
+            action_url="/ai-ops?safety=review",
+            dedupe_key=f"/ai-ops?safety={alert_type}:{decision.surface}:{decision.task_name}",
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("admin_ai_safety_alert_failed decision_id=%s error=%s", decision.id, exc)
 
 
 async def _sum_daily_tokens(

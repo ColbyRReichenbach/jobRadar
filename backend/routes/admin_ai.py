@@ -26,6 +26,11 @@ class TraceAccessPayload(BaseModel):
     reason: str = Field(min_length=8, max_length=500)
 
 
+class SafetyReviewPayload(BaseModel):
+    review_status: str = Field(pattern="^(confirmed_unsafe|dismissed|needs_reprocessing|false_positive)$")
+    review_notes: str | None = Field(default=None, max_length=1000)
+
+
 async def _get_report(db: AsyncSession, report_id: str) -> AiPromotionReport:
     try:
         rid = uuid.UUID(report_id)
@@ -167,6 +172,30 @@ async def safety_decisions(
             min_risk=min_risk,
         )
     }
+
+
+@router.patch("/safety-decisions/{decision_id}/review")
+async def review_safety_decision(
+    decision_id: str,
+    payload: SafetyReviewPayload,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_admin_user),
+):
+    try:
+        did = uuid.UUID(decision_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="AI safety decision not found") from exc
+    reviewed = await admin_ai.review_safety_decision(
+        db,
+        decision_id=did,
+        admin_user_id=admin.id,
+        review_status=payload.review_status,
+        review_notes=payload.review_notes,
+    )
+    if reviewed is None:
+        raise HTTPException(status_code=404, detail="AI safety decision not found")
+    await db.commit()
+    return reviewed
 
 
 @router.post("/promotion-reports/{report_id}/reject")

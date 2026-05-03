@@ -33,6 +33,8 @@ export interface AiTelemetry {
   safety_guardrails?: {
     blocked_decisions: number;
     redacted_decisions: number;
+    quarantined_decisions?: number;
+    unreviewed_decisions?: number;
   };
 }
 
@@ -142,6 +144,10 @@ export interface AiSafetyDecision {
   reasons: string[];
   token_estimate: number | null;
   metadata: Record<string, unknown>;
+  review_status: string;
+  reviewed_by_user_id: string | null;
+  reviewed_at: string | null;
+  review_notes: string | null;
   created_at: string | null;
 }
 
@@ -229,6 +235,20 @@ export async function fetchAiSafetyDecisions(params?: {
   const suffix = query.toString() ? `?${query.toString()}` : '';
   const payload = await requestJson<{ safety_decisions: AiSafetyDecision[] }>(`/api/admin/ai/safety-decisions${suffix}`, {}, 'Failed to load AI safety decisions.');
   return payload.safety_decisions;
+}
+
+export function reviewAiSafetyDecision(
+  decisionId: string,
+  payload: { review_status: string; review_notes?: string }
+): Promise<AiSafetyDecision> {
+  return requestJson(
+    `/api/admin/ai/safety-decisions/${encodeURIComponent(decisionId)}/review`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    },
+    'Failed to review AI safety decision.'
+  );
 }
 
 export function approvePromotionReport(reportId: string): Promise<{ status: string; recommendation: string }> {

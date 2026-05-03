@@ -130,6 +130,25 @@ async def telemetry_overview(db: AsyncSession) -> dict[str, Any]:
         ).scalar_one()
         or 0
     )
+    quarantined_safety_decisions = int(
+        (
+            await db.execute(
+                select(func.count(AiSafetyDecision.id)).where(AiSafetyDecision.policy_decision == "quarantine")
+            )
+        ).scalar_one()
+        or 0
+    )
+    unreviewed_safety_decisions = int(
+        (
+            await db.execute(
+                select(func.count(AiSafetyDecision.id)).where(
+                    AiSafetyDecision.policy_decision.in_(("block", "quarantine")),
+                    AiSafetyDecision.review_status == "unreviewed",
+                )
+            )
+        ).scalar_one()
+        or 0
+    )
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "overview": {
@@ -157,6 +176,8 @@ async def telemetry_overview(db: AsyncSession) -> dict[str, Any]:
         "safety_guardrails": {
             "blocked_decisions": blocked_safety_decisions,
             "redacted_decisions": redacted_safety_decisions,
+            "quarantined_decisions": quarantined_safety_decisions,
+            "unreviewed_decisions": unreviewed_safety_decisions,
         },
     }
 
@@ -347,6 +368,10 @@ def serialize_safety_decision(row: AiSafetyDecision) -> dict[str, Any]:
         "reasons": row.reasons or [],
         "token_estimate": row.token_estimate,
         "metadata": _redact_mapping(row.metadata_json or {}),
+        "review_status": row.review_status or "unreviewed",
+        "reviewed_by_user_id": str(row.reviewed_by_user_id) if row.reviewed_by_user_id else None,
+        "reviewed_at": _iso(row.reviewed_at),
+        "review_notes": row.review_notes,
         "created_at": _iso(row.created_at),
     }
 
@@ -383,3 +408,22 @@ async def list_safety_decisions(
         ).scalars()
     )
     return [serialize_safety_decision(row) for row in rows]
+
+
+async def review_safety_decision(
+    db: AsyncSession,
+    *,
+    decision_id: uuid.UUID,
+    admin_user_id: uuid.UUID,
+    review_status: str,
+    review_notes: str | None = None,
+) -> dict[str, Any] | None:
+    row = await db.get(AiSafetyDecision, decision_id)
+    if row is None:
+        return None
+    row.review_status = review_status
+    row.reviewed_by_user_id = admin_user_id
+    row.reviewed_at = datetime.now(timezone.utc)
+    row.review_notes = review_notes.strip() if review_notes else None
+    await db.flush()
+    return serialize_safety_decision(row)
