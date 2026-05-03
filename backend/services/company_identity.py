@@ -1,7 +1,8 @@
 """Company identity layer — extract company info from email sender domain.
 
-Maps sender domains to company names and logo URLs.
-Uses Logo.dev / Clearbit for logos, with a fallback to first-letter avatars.
+Maps sender domains to company names and optional logo URLs.
+Logo URLs come from a third-party provider and should only be exposed when
+third-party enrichment consent is granted.
 """
 
 import re
@@ -61,6 +62,10 @@ DOMAIN_TO_COMPANY = {
     "cockroachlabs.com": "Cockroach Labs",
 }
 
+COMPANY_TO_DOMAIN: dict[str, str] = {}
+for _domain, _company in DOMAIN_TO_COMPANY.items():
+    COMPANY_TO_DOMAIN.setdefault(_company.lower(), _domain)
+
 
 def extract_domain(email_address: str) -> str:
     """Extract domain from email address."""
@@ -107,7 +112,18 @@ def get_logo_url(domain: str) -> str | None:
     return f"https://logo.clearbit.com/{domain}"
 
 
-def get_company_info(sender_email: str) -> dict:
+def company_name_to_logo_url(company_name: str | None) -> str | None:
+    """Return a logo URL for a known company name when we have a canonical domain."""
+    normalized = (company_name or "").strip().lower()
+    if not normalized:
+        return None
+    domain = COMPANY_TO_DOMAIN.get(normalized)
+    if not domain:
+        return None
+    return get_logo_url(domain)
+
+
+def get_company_info(sender_email: str, include_logo: bool = True) -> dict:
     """Extract company identity from sender email.
 
     Returns:
@@ -131,6 +147,6 @@ def get_company_info(sender_email: str) -> dict:
     return {
         "domain": domain,
         "company_name": domain_to_company_name(domain),
-        "logo_url": get_logo_url(domain),
+        "logo_url": get_logo_url(domain) if include_logo else None,
         "is_company": True,
     }

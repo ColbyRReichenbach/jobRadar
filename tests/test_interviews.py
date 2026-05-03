@@ -203,7 +203,7 @@ async def test_extract_interview_datetime():
 @pytest.mark.asyncio
 async def test_calendar_sync_creates_and_updates_interview(client, db_session):
     """POST /api/calendar/sync upserts interview events from Google Calendar."""
-    from backend.models import Application, Company, GmailToken, Interview, User
+    from backend.models import Alert, Application, Company, GmailToken, Interview, User
 
     company = Company(domain="matchco.com", name="MatchCo")
     db_session.add(company)
@@ -228,6 +228,7 @@ async def test_calendar_sync_creates_and_updates_interview(client, db_session):
     user_result = await db_session.execute(select(User).where(User.id == TEST_USER_ID))
     user = user_result.scalar_one()
     user.calendar_connected = True
+    user.notifications_started_at = datetime.now(timezone.utc)
     await db_session.commit()
 
     calendar_service = MagicMock()
@@ -291,6 +292,14 @@ async def test_calendar_sync_creates_and_updates_interview(client, db_session):
     assert interview.duration_minutes == 45
     assert interview.location_or_link == "https://zoom.us/j/updated-sync"
     assert interview.notes == "Auto-synced from Google Calendar: Technical Interview with MatchCo (Updated)"
+
+    alert_result = await db_session.execute(select(Alert).where(Alert.user_id == TEST_USER_ID).order_by(Alert.created_at.asc()))
+    alerts = alert_result.scalars().all()
+    assert len(alerts) == 2
+    assert alerts[0].action_url == f"/calendar?interview_id={interview.id}"
+    assert alerts[1].action_url == f"/calendar?interview_id={interview.id}"
+    assert alerts[0].alert_type == "interview_request"
+    assert alerts[1].alert_type == "interview_request"
 
 
 @pytest.mark.asyncio

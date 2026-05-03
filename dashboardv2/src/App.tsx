@@ -1,16 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { Sidebar } from './components/Sidebar';
-import { KanbanBoard } from './components/KanbanBoard';
 import { EmailFeed } from './components/EmailFeed';
-import { JobSearch } from './components/JobSearch';
-import { ExportData } from './components/ExportData';
-import { Analytics } from './components/Analytics';
-import { Conversations } from './components/Conversations';
-import { NetworkPage } from './components/NetworkPage';
-import { Calendar } from './components/Calendar';
-import { Settings } from './components/Settings';
 import { LoginPage } from './components/LoginPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { NotificationCenter } from './components/NotificationCenter';
 import { initialJobs, initialEmails } from './data/mockData';
 import { Job, Email } from './types';
 import { Menu, X } from 'lucide-react';
@@ -18,24 +11,91 @@ import { motion, AnimatePresence } from 'motion/react';
 import { fetchJobs, fetchEmails } from './lib/api';
 import { AuthProvider, useAuth } from './lib/AuthContext';
 import { AddJobModal } from './components/AddJobModal';
+import { ConsentModal } from './components/ConsentModal';
+import { CopilotLauncher } from './components/copilot/CopilotLauncher';
+import { cn } from './lib/utils';
+import { Logo } from './components/Logo';
+
+// Lazy-loaded route components for code splitting
+const KanbanBoard = lazy(() => import('./components/KanbanBoard').then(m => ({ default: m.KanbanBoard })));
+const JobSearch = lazy(() => import('./components/JobSearch').then(m => ({ default: m.JobSearch })));
+const Analytics = lazy(() => import('./components/Analytics').then(m => ({ default: m.Analytics })));
+const Conversations = lazy(() => import('./components/Conversations').then(m => ({ default: m.Conversations })));
+const NetworkPage = lazy(() => import('./components/NetworkPage').then(m => ({ default: m.NetworkPage })));
+const Calendar = lazy(() => import('./components/Calendar').then(m => ({ default: m.Calendar })));
+const Radar = lazy(() => import('./components/Radar').then(m => ({ default: m.Radar })));
+const Settings = lazy(() => import('./components/Settings').then(m => ({ default: m.Settings })));
+const ClassifierAudit = lazy(() => import('./components/ClassifierAudit').then(m => ({ default: m.ClassifierAudit })));
+const ExtractionReports = lazy(() => import('./components/ExtractionReports').then(m => ({ default: m.ExtractionReports })));
+const AiOps = lazy(() => import('./components/admin/AiOps').then(m => ({ default: m.AiOps })));
+const ProfilePage = lazy(() => import('./components/ProfilePage').then(m => ({ default: m.ProfilePage })));
+
+const AI_OPS_ENABLED = import.meta.env.VITE_ADMIN_AI_OPS_ENABLED === 'true'
+  || (import.meta.env.DEV && import.meta.env.VITE_ADMIN_AI_OPS_ENABLED !== 'false');
+
+const TAB_TITLES: Record<string, string> = {
+  dashboard: 'Dashboard',
+  search: 'Job Search',
+  radar: 'Opportunity Radar',
+  analytics: 'Analytics',
+  conversations: 'Conversations',
+  network: 'Network',
+  calendar: 'Calendar',
+  profile: 'Profile',
+  settings: 'Settings',
+  audit: 'Classifier Audit',
+  'extraction-reports': 'Extraction Reports',
+  ...(AI_OPS_ENABLED ? { 'ai-ops': 'AI Ops' } : {}),
+  emails: 'Inbox',
+};
+const ADMIN_TABS = new Set(['audit', 'extraction-reports', ...(AI_OPS_ENABLED ? ['ai-ops'] : [])]);
+
+function LazyFallback() {
+  return (
+    <div className="flex flex-1 items-center justify-center">
+      <div className="w-8 h-8 border-2 rounded-full border-slate-300 border-t-slate-600 animate-spin" />
+    </div>
+  );
+}
 
 const USE_API = true;
+const COPILOT_ENABLED = import.meta.env.VITE_COPILOT_ENABLED === 'true';
 
 function AppContent() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, needsConsent, signOut, refreshUser } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [jobs, setJobs] = useState<Job[]>(USE_API ? [] : initialJobs);
   const [emails, setEmails] = useState<Email[]>(USE_API ? [] : initialEmails);
   const [isInboxCollapsed, setIsInboxCollapsed] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [loading, setLoading] = useState(USE_API);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [showAddJobModal, setShowAddJobModal] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(false);
   const [pendingJobDraft, setPendingJobDraft] = useState<Partial<Job> | null>(null);
   const [emailFocusRequest, setEmailFocusRequest] = useState<{
     emailId: string;
     threadId?: string;
     tab: 'emails' | 'conversations';
+    token: number;
+  } | null>(null);
+  const [networkFocusRequest, setNetworkFocusRequest] = useState<{
+    email: string;
+    token: number;
+  } | null>(null);
+  const [calendarFocusRequest, setCalendarFocusRequest] = useState<{
+    interviewId: string;
+    token: number;
+  } | null>(null);
+  const [dashboardFocusRequest, setDashboardFocusRequest] = useState<{
+    jobId: string;
+    token: number;
+  } | null>(null);
+  const [radarFocusRequest, setRadarFocusRequest] = useState<{
+    profileId?: string;
+    signalId?: string;
+    reportId?: string;
     token: number;
   } | null>(null);
 
@@ -69,10 +129,35 @@ function AppContent() {
     return () => clearInterval(interval);
   }, [authLoading, loadData, user]);
 
+  // Dynamic page title
+  useEffect(() => {
+    const title = TAB_TITLES[activeTab];
+    document.title = title ? `${title} — Opportunity Radar` : 'Opportunity Radar';
+  }, [activeTab]);
+
+  useEffect(() => {
+    const media = window.matchMedia('(min-width: 768px)');
+    const sync = () => setIsDesktop(media.matches);
+    sync();
+    media.addEventListener('change', sync);
+    return () => media.removeEventListener('change', sync);
+  }, []);
+
   // Close mobile menu when tab changes
   useEffect(() => {
     setIsMobileMenuOpen(false);
   }, [activeTab]);
+
+  useEffect(() => {
+    if (user && ADMIN_TABS.has(activeTab) && !user.is_admin) {
+      setActiveTab('dashboard');
+    }
+  }, [activeTab, user]);
+
+  const handleMobileSetActiveTab = useCallback((tab: string) => {
+    setActiveTab(tab);
+    setIsMobileMenuOpen(false);
+  }, []);
 
   const handleOpenEmail = useCallback((email: any) => {
     const emailKind = email.email_type || email.type;
@@ -84,6 +169,83 @@ function AppContent() {
       tab,
       token: Date.now(),
     });
+  }, []);
+
+  const handleNotificationNavigate = useCallback((actionUrl: string | null) => {
+    if (!actionUrl) return;
+    const resolved = new URL(actionUrl, window.location.origin);
+    const emailId = resolved.searchParams.get('email_id');
+    const threadId = resolved.searchParams.get('thread_id') || undefined;
+    const tab = resolved.searchParams.get('tab');
+    const email = resolved.searchParams.get('email');
+    const interviewId = resolved.searchParams.get('interview_id');
+    const jobId = resolved.searchParams.get('job_id');
+    const profileId = resolved.searchParams.get('profile_id') || undefined;
+    const signalId = resolved.searchParams.get('signal_id') || undefined;
+    const reportId = resolved.searchParams.get('report_id') || undefined;
+
+    if (resolved.pathname === '/network') {
+      setActiveTab('network');
+      if (email) {
+        setNetworkFocusRequest({
+          email,
+          token: Date.now(),
+        });
+      }
+      return;
+    }
+
+    if (resolved.pathname === '/calendar' && interviewId) {
+      setActiveTab('calendar');
+      setCalendarFocusRequest({
+        interviewId,
+        token: Date.now(),
+      });
+      return;
+    }
+
+    if ((resolved.pathname === '/dashboard' || resolved.pathname === '/') && jobId) {
+      setActiveTab('dashboard');
+      setDashboardFocusRequest({
+        jobId,
+        token: Date.now(),
+      });
+      return;
+    }
+
+    if (resolved.pathname === '/radar') {
+      setActiveTab('radar');
+      setRadarFocusRequest({
+        profileId,
+        signalId,
+        reportId,
+        token: Date.now(),
+      });
+      return;
+    }
+
+    if (resolved.pathname === '/conversations' || tab === 'conversations') {
+      if (!emailId) return;
+      setActiveTab('conversations');
+      setEmailFocusRequest({
+        emailId,
+        threadId,
+        tab: 'conversations',
+        token: Date.now(),
+      });
+      return;
+    }
+
+    if ((resolved.pathname === '/emails' || tab === 'emails') && emailId) {
+      setActiveTab('emails');
+      setEmailFocusRequest({
+        emailId,
+        threadId,
+        tab: 'emails',
+        token: Date.now(),
+      });
+      return;
+    }
   }, []);
 
   const handleOpenAddJob = useCallback((draft?: Partial<Job>) => {
@@ -105,7 +267,28 @@ function AppContent() {
     return <LoginPage />;
   }
 
-  const showInbox = activeTab !== 'emails' && activeTab !== 'conversations';
+  if (!authLoading && needsConsent) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-[#F5F5F0]">
+        <ConsentModal
+          onAccepted={() => refreshUser()}
+          onDeclined={() => signOut()}
+        />
+      </div>
+    );
+  }
+
+  const isAdminWorkspace = ADMIN_TABS.has(activeTab);
+  const showInbox = !isAdminWorkspace && activeTab !== 'emails' && activeTab !== 'conversations';
+  const dockNotificationsInInbox = isDesktop && showInbox && !isInboxCollapsed;
+  const notificationClassName = cn(
+    'fixed z-40 transition-[right,top] duration-300',
+    isDesktop
+      ? showInbox
+        ? 'top-4 right-24'
+        : 'top-4 right-4'
+      : 'top-3 right-16'
+  );
 
   if (loading || authLoading) {
     return (
@@ -123,15 +306,16 @@ function AppContent() {
       {/* Mobile Header */}
       <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-[#F5F5F0] border-b border-slate-200/60 z-40 flex items-center justify-between px-4">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 flex items-center justify-center bg-slate-800 rounded-xl shadow-sm">
-            <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>
+          <div className="w-8 h-8 flex items-center justify-center bg-[#172033] rounded-xl shadow-sm">
+            <Logo className="w-6 h-6 text-white" />
           </div>
           <span className="text-lg tracking-tight font-serif font-bold text-slate-900">
-            AppTrail
+            Opportunity Radar
           </span>
         </div>
         <button
           onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+          aria-label={isMobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
           className="p-2 -mr-2 text-slate-600 hover:text-slate-900 hover:bg-slate-200/50 rounded-lg transition-colors"
         >
           {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
@@ -140,7 +324,13 @@ function AppContent() {
 
       {/* Desktop Sidebar */}
       <div className="hidden md:block">
-        <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} onGmailSync={loadData} />
+        <Sidebar
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          onGmailSync={loadData}
+          collapsed={isSidebarCollapsed}
+          onToggleCollapsed={() => setIsSidebarCollapsed((current) => !current)}
+        />
       </div>
 
       {/* Mobile Sidebar Overlay */}
@@ -159,16 +349,28 @@ function AppContent() {
               animate={{ x: 0 }}
               exit={{ x: '-100%' }}
               transition={{ type: 'spring', bounce: 0, duration: 0.3 }}
+              onClick={(event) => {
+                const target = event.target as HTMLElement;
+                if (target.closest('button,[role="button"]')) {
+                  setIsMobileMenuOpen(false);
+                }
+              }}
               className="fixed inset-y-0 left-0 w-64 bg-[#F5F5F0] z-50 md:hidden shadow-2xl"
             >
-              <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} onGmailSync={loadData} />
+              <Sidebar activeTab={activeTab} setActiveTab={handleMobileSetActiveTab} onGmailSync={loadData} />
             </motion.div>
           </>
         )}
       </AnimatePresence>
 
-      <main className="flex-1 flex overflow-hidden pt-16 md:pt-0">
-        <div className="flex-1 flex flex-col overflow-hidden">
+      {!dockNotificationsInInbox ? (
+        <div className={notificationClassName}>
+          <NotificationCenter onNavigate={handleNotificationNavigate} />
+        </div>
+      ) : null}
+
+      <main className="min-w-0 flex-1 flex overflow-hidden pt-16 md:pt-0">
+        <div className="min-w-0 flex-1 flex flex-col overflow-hidden">
           {loadError && (
             <div className="px-4 md:px-6 pt-4 md:pt-5">
               <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -185,28 +387,46 @@ function AppContent() {
               </div>
             </div>
           )}
-          <div className="flex-1 flex overflow-hidden">
-            {activeTab === 'dashboard' && <KanbanBoard jobs={jobs} setJobs={setJobs} />}
-            {activeTab === 'search' && <JobSearch jobs={jobs} setJobs={setJobs} />}
-            {activeTab === 'analytics' && <Analytics jobs={jobs} />}
-            {activeTab === 'export' && <ExportData />}
-            {activeTab === 'conversations' && <Conversations emails={emails} jobs={jobs} focusRequest={emailFocusRequest?.tab === 'conversations' ? emailFocusRequest : null} />}
-            {activeTab === 'network' && <NetworkPage onOpenEmail={handleOpenEmail} onRefreshData={loadData} />}
-            {activeTab === 'calendar' && <Calendar />}
-            {activeTab === 'settings' && <Settings />}
-            {activeTab === 'emails' && (
-              <div className="flex-1 flex overflow-hidden">
-                <EmailFeed
-                  emails={emails}
-                  jobs={jobs}
-                  isCollapsed={false}
-                  setIsCollapsed={() => {}}
-                  forceOpen={true}
-                  onOpenAddJob={handleOpenAddJob}
-                  focusRequest={emailFocusRequest?.tab === 'emails' ? emailFocusRequest : null}
-                />
-              </div>
-            )}
+          <div className="min-w-0 flex-1 flex overflow-hidden">
+              <Suspense fallback={<LazyFallback />}>
+                {activeTab === 'dashboard' && <KanbanBoard jobs={jobs} setJobs={setJobs} focusRequest={dashboardFocusRequest} />}
+                {activeTab === 'search' && <JobSearch jobs={jobs} setJobs={setJobs} />}
+                {activeTab === 'radar' && <Radar focusRequest={radarFocusRequest} />}
+                {activeTab === 'analytics' && <Analytics jobs={jobs} />}
+              {activeTab === 'conversations' && <Conversations emails={emails} jobs={jobs} focusRequest={emailFocusRequest?.tab === 'conversations' ? emailFocusRequest : null} />}
+              {activeTab === 'network' && <NetworkPage onOpenEmail={handleOpenEmail} onRefreshData={loadData} focusRequest={networkFocusRequest} />}
+              {activeTab === 'calendar' && <Calendar focusRequest={calendarFocusRequest} />}
+              {activeTab === 'profile' && <ProfilePage />}
+              {activeTab === 'settings' && <Settings />}
+              {activeTab === 'audit' && user?.is_admin && <ClassifierAudit />}
+              {activeTab === 'extraction-reports' && user?.is_admin && <ExtractionReports />}
+              {AI_OPS_ENABLED && activeTab === 'ai-ops' && user?.is_admin && <AiOps />}
+              {activeTab === 'emails' && (
+                <div className="flex-1 flex overflow-hidden">
+                  <EmailFeed
+                    emails={emails}
+                    jobs={jobs}
+                    isCollapsed={false}
+                    setIsCollapsed={() => {}}
+                    forceOpen={true}
+                    onOpenAddJob={handleOpenAddJob}
+                    onSuggestionAccepted={loadData}
+                    focusRequest={emailFocusRequest?.tab === 'emails' ? emailFocusRequest : null}
+                  />
+                </div>
+              )}
+              {(!(activeTab in TAB_TITLES) || (ADMIN_TABS.has(activeTab) && !user?.is_admin)) && (
+                <div className="flex flex-1 flex-col items-center justify-center gap-4 text-slate-500">
+                  <p className="text-lg font-serif">Page not found</p>
+                  <button
+                    onClick={() => setActiveTab('dashboard')}
+                    className="px-4 py-2 rounded-xl bg-slate-800 text-white text-sm font-medium hover:bg-slate-700 transition-colors"
+                  >
+                    Back to Dashboard
+                  </button>
+                </div>
+              )}
+            </Suspense>
           </div>
         </div>
       </main>
@@ -219,7 +439,10 @@ function AppContent() {
             isCollapsed={isInboxCollapsed}
             setIsCollapsed={setIsInboxCollapsed}
             onOpenAddJob={handleOpenAddJob}
+            onNavigateToEmail={handleOpenEmail}
+            onSuggestionAccepted={loadData}
             focusRequest={emailFocusRequest?.tab === 'emails' ? emailFocusRequest : null}
+            headerAccessory={dockNotificationsInInbox ? <NotificationCenter onNavigate={handleNotificationNavigate} /> : undefined}
           />
         </div>
       )}
@@ -237,6 +460,10 @@ function AppContent() {
           />
         )}
       </AnimatePresence>
+
+      {COPILOT_ENABLED && user && (
+        <CopilotLauncher onNavigate={handleNotificationNavigate} />
+      )}
     </div>
   );
 }

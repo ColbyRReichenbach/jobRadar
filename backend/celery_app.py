@@ -1,17 +1,35 @@
 import os
+import warnings
 
 from celery import Celery
 from dotenv import load_dotenv
 
 load_dotenv()
 
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+REDIS_URL = os.getenv("REDIS_URL")
+if not REDIS_URL:
+    if os.getenv("ENVIRONMENT", "development") != "development":
+        raise RuntimeError(
+            "REDIS_URL environment variable is required in production. "
+            "Set it to your Upstash Redis TLS URL (rediss://...)."
+        )
+    warnings.warn("REDIS_URL not set — Celery will use redis://localhost:6379/0 (dev only)")
+    REDIS_URL = "redis://localhost:6379/0"
 
 celery_app = Celery(
     "apptrail",
     broker=REDIS_URL,
     backend=REDIS_URL,
-    include=["backend.tasks.poll_gmail", "backend.tasks.check_followups", "backend.tasks.check_dead_apps", "backend.tasks.compute_ats_metrics", "backend.tasks.send_weekly_digest"],
+    include=[
+        "backend.tasks.health",
+        "backend.tasks.poll_gmail",
+        "backend.tasks.check_followups",
+        "backend.tasks.check_dead_apps",
+        "backend.tasks.compute_ats_metrics",
+        "backend.tasks.send_weekly_digest",
+        "backend.tasks.run_research_radar",
+        "backend.tasks.index_search_documents",
+    ],
 )
 
 celery_app.conf.update(
@@ -50,6 +68,14 @@ celery_app.conf.update(
         "send-weekly-digest": {
             "task": "backend.tasks.send_weekly_digest.send_weekly_digest",
             "schedule": 604800.0,  # weekly
+        },
+        "dispatch-due-research-profiles": {
+            "task": "backend.tasks.run_research_radar.dispatch_due_research_profiles",
+            "schedule": 900.0,  # every 15 minutes
+        },
+        "record-beat-heartbeat": {
+            "task": "backend.tasks.health.record_beat_heartbeat",
+            "schedule": 60.0,
         },
     },
 )

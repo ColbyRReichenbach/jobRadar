@@ -1,0 +1,123 @@
+<svg width="1280" height="800" viewBox="0 0 1280 800" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1280" y2="800" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0f172a"/>
+      <stop offset="1" stop-color="#1e293b"/>
+    </linearGradient>
+    <linearGradient id="sidebar" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#0f172a"/>
+      <stop offset="1" stop-color="#1e293b"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1280" height="800" fill="url(#bg)"/>
+
+  <text x="640" y="60" text-anchor="middle" font-family="Georgia, serif" font-size="32" font-weight="700" fill="#f8fafc">Your Complete Job Search Dashboard</text>
+  <text x="640" y="90" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="16" fill="#94a3b8">Extension syncs with the AppTrail web app for full pipeline management</text>
+
+  <!-- Dashboard mockup -->
+  <g transform="translate(90, 120)">
+    <rect width="1100" height="600" rx="12" fill="white" stroke="rgba(226,232,240,0.6)" stroke-width="1"/>
+
+    <!-- Sidebar -->
+    <rect width="200" height="600" rx="12 0 0 12" fill="#0f172a"/>
+    <rect x="16" y="16" width="32" height="32" rx="8" fill="rgba(255,255,255,0.1)"/>
+    <text x="32" y="37" text-anchor="middle" font-family="Inter, sans-serif" font-size="12" font-weight="700" fill="white">A</text>
+    <text x="56" y="37" font-family="Georgia, serif" font-size="16" font-weight="600" fill="white">AppTrail</text>
+
+    <!-- Nav items -->
+    <rect x="12" y="68" width="176" height="36" rx="8" fill="rgba(99,102,241,0.15)"/>
+    <text x="44" y="91" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#a5b4fc">Pipeline</text>
+    <text x="24" y="91" font-family="Inter, sans-serif" font-size="14" fill="#a5b4fc">&#9632;</text>
+
+    <text x="44" y="128" font-family="Inter, sans-serif" font-size="13" fill="#64748b">Inbox</text>
+    <text x="44" y="160" font-family="Inter, sans-serif" font-size="13" fill="#64748b">Conversations</text>
+    <text x="44" y="192" font-family="Inter, sans-serif" font-size="13" fill="#64748b">Network</text>
+    <text x="44" y="224" font-family="Inter, sans-serif" font-size="13" fill="#64748b">Calendar</text>
+    <text x="44" y="256" font-family="Inter, sans-serif" font-size="13" fill="#64748b">Job Search</text>
+    <text x="44" y="288" font-family="Inter, sans-serif" font-size="13" fill="#64748b">Analytics</text>
+
+    <!-- Main content: Kanban -->
+    <g transform="translate(216, 16)">
+      <text x="0" y="24" font-family="Georgia, serif" font-size="20" font-weight="700" fill="#0f172a">Pipeline</text>
+
+      <!-- Kanban columns -->
+      <!-- Applied -->
+      <g transform="translate(0, 50)">
+        <text x="4" y="14" font-family="Inter, sans-serif" font-size="11" font-weight="600" fill="#64748b" letter-spacing="0.5">APPLIED</text>
+        <rect x="0" y="24" width="168" height="80" rx="8" fill="#f8fafc" stroke="rgba(226,232,240,0.6)" stroke-width="1"/>
+        <text x="12" y="48" font-family="Inter, sans-serif" font-size="12" font-weight="600" fill="#0f172a">Stripe</text>
+        <text x="12" y="64" font-family="Inter, sans-serif" font-size="11" fill="#64748b">Sr. Backend Engineer</text>
+        <rect x="12" y="74" width="52" height="18" rx="4" fill="rgba(34,197,94,0.1)"/>
+        <text x="38" y="87" text-anchor="middle" font-family="Inter, sans-serif" font-size="9" font-weight="600" fill="#059669">92% match</text>
+
+        <rect x="0" y="112" width="168" height="80" rx="8" fill="#f8fafc" stroke="rgba(226,232,240,0.6)" stroke-width="1"/>
+        <text x="12" y="136" font-family="Inter, sans-serif" font-size="12" font-weight="600" fill="#0f172a">Figma</text>
+        <text x="12" y="152" font-family="Inter, sans-serif" font-size="11" fill="#64748b">Full Stack Engineer</text>
+        <rect x="12" y="162" width="52" height="18" rx="4" fill="rgba(251,191,36,0.1)"/>
+        <text x="38" y="175" text-anchor="middle" font-family="Inter, sans-serif" font-size="9" font-weight="600" fill="#d97706">78% match</text>
+      </g>
+
+      <!-- Reviewing -->
+      <g transform="translate(180, 50)">
+        <text x="4" y="14" font-family="Inter, sans-serif" font-size="11" font-weight="600" fill="#64748b" letter-spacing="0.5">REVIEWING</text>
+        <rect x="0" y="24" width="168" height="80" rx="8" fill="#f8fafc" stroke="rgba(226,232,240,0.6)" stroke-width="1"/>
+        <text x="12" y="48" font-family="Inter, sans-serif" font-size="12" font-weight="600" fill="#0f172a">Vercel</text>
+        <text x="12" y="64" font-family="Inter, sans-serif" font-size="11" fill="#64748b">Platform Engineer</text>
+        <rect x="12" y="74" width="52" height="18" rx="4" fill="rgba(34,197,94,0.1)"/>
+        <text x="38" y="87" text-anchor="middle" font-family="Inter, sans-serif" font-size="9" font-weight="600" fill="#059669">88% match</text>
+      </g>
+
+      <!-- Active Convo -->
+      <g transform="translate(360, 50)">
+        <text x="4" y="14" font-family="Inter, sans-serif" font-size="11" font-weight="600" fill="#64748b" letter-spacing="0.5">ACTIVE CONVO</text>
+        <rect x="0" y="24" width="168" height="80" rx="8" fill="#f8fafc" stroke="rgba(226,232,240,0.6)" stroke-width="1"/>
+        <text x="12" y="48" font-family="Inter, sans-serif" font-size="12" font-weight="600" fill="#0f172a">Linear</text>
+        <text x="12" y="64" font-family="Inter, sans-serif" font-size="11" fill="#64748b">Senior Engineer</text>
+        <rect x="12" y="74" width="44" height="18" rx="4" fill="rgba(99,102,241,0.1)"/>
+        <text x="34" y="87" text-anchor="middle" font-family="Inter, sans-serif" font-size="9" font-weight="600" fill="#6366f1">2 emails</text>
+      </g>
+
+      <!-- Interview -->
+      <g transform="translate(540, 50)">
+        <text x="4" y="14" font-family="Inter, sans-serif" font-size="11" font-weight="600" fill="#64748b" letter-spacing="0.5">INTERVIEW</text>
+        <rect x="0" y="24" width="168" height="80" rx="8" fill="#f8fafc" stroke="rgba(226,232,240,0.6)" stroke-width="1"/>
+        <text x="12" y="48" font-family="Inter, sans-serif" font-size="12" font-weight="600" fill="#0f172a">Notion</text>
+        <text x="12" y="64" font-family="Inter, sans-serif" font-size="11" fill="#64748b">Staff Engineer</text>
+        <rect x="12" y="74" width="66" height="18" rx="4" fill="rgba(244,114,182,0.1)"/>
+        <text x="45" y="87" text-anchor="middle" font-family="Inter, sans-serif" font-size="9" font-weight="600" fill="#ec4899">Mar 28, 2pm</text>
+      </g>
+
+      <!-- Offer -->
+      <g transform="translate(720, 50)">
+        <text x="4" y="14" font-family="Inter, sans-serif" font-size="11" font-weight="600" fill="#64748b" letter-spacing="0.5">OFFER</text>
+        <rect x="0" y="24" width="152" height="80" rx="8" fill="rgba(34,197,94,0.04)" stroke="#a7f3d0" stroke-width="1"/>
+        <text x="12" y="48" font-family="Inter, sans-serif" font-size="12" font-weight="600" fill="#0f172a">Supabase</text>
+        <text x="12" y="64" font-family="Inter, sans-serif" font-size="11" fill="#64748b">Backend Engineer</text>
+        <rect x="12" y="74" width="56" height="18" rx="4" fill="rgba(34,197,94,0.15)"/>
+        <text x="40" y="87" text-anchor="middle" font-family="Inter, sans-serif" font-size="9" font-weight="600" fill="#059669">$195,000</text>
+      </g>
+    </g>
+
+    <!-- Email feed sidebar (right) -->
+    <rect x="880" y="0" width="220" height="600" fill="#f8fafc" stroke="rgba(226,232,240,0.6)" stroke-width="0 0 0 1"/>
+    <text x="896" y="36" font-family="Inter, sans-serif" font-size="14" font-weight="600" fill="#0f172a">Recent Emails</text>
+
+    <rect x="892" y="50" width="196" height="60" rx="8" fill="white" stroke="rgba(226,232,240,0.6)" stroke-width="1"/>
+    <rect x="900" y="58" width="6" height="44" rx="3" fill="#22c55e"/>
+    <text x="914" y="74" font-family="Inter, sans-serif" font-size="11" font-weight="600" fill="#0f172a">Notion - Interview</text>
+    <text x="914" y="90" font-family="Inter, sans-serif" font-size="10" fill="#64748b">We'd like to schedule...</text>
+
+    <rect x="892" y="118" width="196" height="60" rx="8" fill="white" stroke="rgba(226,232,240,0.6)" stroke-width="1"/>
+    <rect x="900" y="126" width="6" height="44" rx="3" fill="#3b82f6"/>
+    <text x="914" y="142" font-family="Inter, sans-serif" font-size="11" font-weight="600" fill="#0f172a">Supabase - Offer</text>
+    <text x="914" y="158" font-family="Inter, sans-serif" font-size="10" fill="#64748b">We're pleased to extend...</text>
+
+    <rect x="892" y="186" width="196" height="60" rx="8" fill="white" stroke="rgba(226,232,240,0.6)" stroke-width="1"/>
+    <rect x="900" y="194" width="6" height="44" rx="3" fill="#f59e0b"/>
+    <text x="914" y="210" font-family="Inter, sans-serif" font-size="11" font-weight="600" fill="#0f172a">Linear - Follow Up</text>
+    <text x="914" y="226" font-family="Inter, sans-serif" font-size="10" fill="#64748b">Thanks for your time...</text>
+  </g>
+
+  <text x="640" y="770" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="14" fill="#64748b">Jobs saved via the extension appear in your Kanban pipeline with AI-classified emails alongside</text>
+</svg>

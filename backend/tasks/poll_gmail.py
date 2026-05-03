@@ -84,6 +84,7 @@ async def _poll_gmail_async():
         update_application_status,
     )
     from backend.services.gmail_auth import get_valid_token
+    from backend.services.search.indexer import index_record
     from backend.models import EmailEvent, GmailToken, User
 
     async with async_session_factory() as db:
@@ -103,6 +104,9 @@ async def _poll_gmail_async():
         total_skipped_feedback = 0
 
         for gmail_token, user in token_rows:
+            from backend.dependencies import check_ai_consent
+            ai_enabled = await check_ai_consent(user.id, db)
+
             creds = await get_valid_token(db, user_id=user.id)
             service = build("gmail", "v1", credentials=creds)
 
@@ -165,6 +169,7 @@ async def _poll_gmail_async():
                     body=body,
                     sender=sender_name,
                     sender_email=sender_email,
+                    ai_enabled=ai_enabled,
                 )
 
                 if classification.get("classification") == "not_relevant":
@@ -210,7 +215,7 @@ async def _poll_gmail_async():
                     action_needed=classification.get("action_needed", False),
                     key_sentence=classification.get("key_sentence"),
                     summary=classification.get("summary"),
-                    is_automated=classification.get("is_automated", False),
+                    is_human=not classification.get("is_automated", False),
                     company_name=email_company_name,
                     company_logo_url=company_info.get("logo_url"),
                     sender_domain=sender_domain,
@@ -218,6 +223,7 @@ async def _poll_gmail_async():
                 )
                 db.add(event)
                 await db.flush()
+                await index_record(db, event)
 
                 if cls in STATUS_UPDATES and application_id:
                     await update_application_status(

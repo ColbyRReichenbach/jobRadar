@@ -7,13 +7,19 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-# Set test env vars before importing app
+# Set test env vars before importing app.
+# DATABASE_URL must be force-set (not setdefault) because it may already exist
+# as a shell env var pointing to the real Supabase database. If that leaks
+# through, asyncpg tries to connect at import time and hangs the test suite.
 os.environ["TESTING"] = "1"
+os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
+os.environ["REDIS_URL"] = ""
 os.environ.setdefault("APPTRAIL_API_KEY", "test-api-key-for-testing")
 os.environ.setdefault("APPTRAIL_GMAIL_TOKEN_ENCRYPTION_KEY", "9gesi-IgHlO6wRffB63j5cbQhIXnGGCKuxr0IFnAcaM=")
 os.environ.setdefault("JWT_SECRET", "test-jwt-secret-for-testing")
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-key")
-os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
+os.environ.setdefault("OPENAI_API_KEY", "test-key")
+os.environ.setdefault("APPTRAIL_ADMIN_EMAILS", "test-user@apptrail.test")
 
 from backend.database import get_db
 from backend.dependencies import create_jwt
@@ -43,6 +49,29 @@ _USER_SCOPED_MODELS = {
     "NotificationPreference",
     "ResumeDraft",
     "Alert",
+    "ResearchProfile",
+    "ResearchRun",
+    "ResearchRunStep",
+    "ResearchReport",
+    "ResearchEvidenceItem",
+    "ResearchSourceItem",
+    "OpportunitySignal",
+    "OpportunityScore",
+    "OpportunityBrief",
+    "RecommendedAction",
+    "ResearchFeedback",
+    "SearchDocument",
+    "CopilotConversation",
+    "CopilotMessage",
+    "CopilotFeedback",
+    "AiExperimentAssignment",
+    "AiFeedbackRewardEvent",
+    "AiShadowRun",
+    "AiModelCall",
+    "AiArtifact",
+    "EmailSyncAudit",
+    "ApplicationSuggestionDecision",
+    "InterviewSuggestionDecision",
 }
 
 
@@ -66,6 +95,7 @@ async def db_engine():
                 google_id="test-google-id",
                 email=TEST_USER_EMAIL,
                 name="Test User",
+                is_admin=True,
             )
         )
         await session.commit()

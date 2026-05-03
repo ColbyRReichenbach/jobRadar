@@ -1,0 +1,30 @@
+[
+  {
+    "name": "fills_roles_locations_and_remote_preferences_from_profile_context",
+    "tracker": {
+      "objective": "Find strong platform roles.",
+      "selected_roles": [],
+      "selected_domains": ["developer_tools"],
+      "selected_companies": ["TraceCo"],
+      "target_locations": [],
+      "remote_types": [],
+      "seniority_levels": ["staff"],
+      "keywords": ["platform"],
+      "excluded_keywords": ["intern"],
+      "report_prompt_notes": "Bias toward platform ownership."
+    },
+    "user_context": {
+      "role_interest_labels": ["Data Platform Engineer"],
+      "preferred_locations": ["New York"],
+      "preferred_remote_type": "hybrid",
+      "skills": ["Python", "SQL"],
+      "tools": ["Airflow", "dbt"],
+      "experience_years": 6
+    },
+    "expect": {
+      "ideal_role_titles": ["Data Platform Engineer"],
+      "target_locations": ["New York"],
+      "remote_preferences": ["hybrid"]
+    }
+  }
+]

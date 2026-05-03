@@ -1,0 +1,413 @@
+{
+  "dataset_version": "search_eval_v1",
+  "decision_note": "Use semantic_expansion_v1 for the next retrieval iteration because it has the strongest recall/MRR blend with the least additional ranking complexity among tied strategies.",
+  "document_count": 7,
+  "expected_query_count": 5,
+  "generated_at": "2026-05-02T19:35:12.491705+00:00",
+  "indexing_failure_count": 0,
+  "primary_user_key": "candidate_demo_user",
+  "query_count": 6,
+  "recommended_strategy": "semantic_expansion_v1",
+  "stale_document_count": 1,
+  "strategies": [
+    {
+      "cases": [
+        {
+          "expected_document_keys": [
+            "application:tracebank-data-scientist",
+            "email:tracebank-interview",
+            "radar_report:erica-hiring-signals"
+          ],
+          "latency_ms": 0.1022,
+          "query": "assistant search NLP role",
+          "query_id": "q-assistant-search",
+          "returned_document_keys": [
+            "email:tracebank-interview",
+            "radar_report:erica-hiring-signals",
+            "application:tracebank-data-scientist"
+          ],
+          "top_score": 12.0
+        },
+        {
+          "expected_document_keys": [
+            "radar_report:erica-hiring-signals"
+          ],
+          "latency_ms": 0.0725,
+          "query": "erica chat voice hiring signals",
+          "query_id": "q-erica-hiring",
+          "returned_document_keys": [
+            "radar_report:erica-hiring-signals"
+          ],
+          "top_score": 12.0
+        },
+        {
+          "expected_document_keys": [
+            "email:tracebank-interview",
+            "contact:alex-morgan"
+          ],
+          "latency_ms": 0.0567,
+          "query": "recruiter alex interview",
+          "query_id": "q-recruiter-interview",
+          "returned_document_keys": [
+            "email:tracebank-interview",
+            "contact:alex-morgan"
+          ],
+          "top_score": 9.0
+        },
+        {
+          "expected_document_keys": [
+            "application:finops-analytics"
+          ],
+          "latency_ms": 0.0559,
+          "query": "finops analyst cost dashboards",
+          "query_id": "q-finops-cost",
+          "returned_document_keys": [
+            "application:finops-analytics"
+          ],
+          "top_score": 9.0
+        },
+        {
+          "expected_document_keys": [
+            "application:tracebank-data-scientist",
+            "radar_report:erica-hiring-signals"
+          ],
+          "latency_ms": 0.0552,
+          "query": "governed white box workflow",
+          "query_id": "q-ml-eval-portfolio",
+          "returned_document_keys": [],
+          "top_score": null
+        },
+        {
+          "expected_document_keys": [],
+          "latency_ms": 0.047,
+          "query": "cobol aerospace firmware role",
+          "query_id": "q-no-match",
+          "returned_document_keys": [],
+          "top_score": null
+        }
+      ],
+      "description": "Cheap title and subtitle keyword baseline.",
+      "metrics": {
+        "avg_latency_ms": 0.0649,
+        "mrr": 0.8,
+        "ndcg_at_10": 0.8,
+        "p50_latency_ms": 0.0559,
+        "p95_latency_ms": 0.1022,
+        "recall_at_3": 0.8,
+        "recall_at_5": 0.8,
+        "zero_result_rate": 0.3333
+      },
+      "name": "title_keyword_v1",
+      "skip_reason": null,
+      "status": "completed",
+      "strategy_type": "keyword_title"
+    },
+    {
+      "cases": [
+        {
+          "expected_document_keys": [
+            "application:tracebank-data-scientist",
+            "email:tracebank-interview",
+            "radar_report:erica-hiring-signals"
+          ],
+          "latency_ms": 0.363,
+          "query": "assistant search NLP role",
+          "query_id": "q-assistant-search",
+          "returned_document_keys": [
+            "email:tracebank-interview",
+            "application:tracebank-data-scientist",
+            "radar_report:erica-hiring-signals",
+            "contact:alex-morgan"
+          ],
+          "top_score": 20.0
+        },
+        {
+          "expected_document_keys": [
+            "radar_report:erica-hiring-signals"
+          ],
+          "latency_ms": 0.4326,
+          "query": "erica chat voice hiring signals",
+          "query_id": "q-erica-hiring",
+          "returned_document_keys": [
+            "radar_report:erica-hiring-signals",
+            "email:tracebank-interview",
+            "contact:alex-morgan"
+          ],
+          "top_score": 30.0
+        },
+        {
+          "expected_document_keys": [
+            "email:tracebank-interview",
+            "contact:alex-morgan"
+          ],
+          "latency_ms": 0.3638,
+          "query": "recruiter alex interview",
+          "query_id": "q-recruiter-interview",
+          "returned_document_keys": [
+            "email:tracebank-interview",
+            "contact:alex-morgan"
+          ],
+          "top_score": 21.5
+        },
+        {
+          "expected_document_keys": [
+            "application:finops-analytics"
+          ],
+          "latency_ms": 0.2494,
+          "query": "finops analyst cost dashboards",
+          "query_id": "q-finops-cost",
+          "returned_document_keys": [
+            "application:finops-analytics"
+          ],
+          "top_score": 19.5
+        },
+        {
+          "expected_document_keys": [
+            "application:tracebank-data-scientist",
+            "radar_report:erica-hiring-signals"
+          ],
+          "latency_ms": 0.2613,
+          "query": "governed white box workflow",
+          "query_id": "q-ml-eval-portfolio",
+          "returned_document_keys": [],
+          "top_score": null
+        },
+        {
+          "expected_document_keys": [],
+          "latency_ms": 0.2241,
+          "query": "cobol aerospace firmware role",
+          "query_id": "q-no-match",
+          "returned_document_keys": [],
+          "top_score": null
+        }
+      ],
+      "description": "Current portable lexical retrieval shape: title, subtitle, body, and keywords.",
+      "metrics": {
+        "avg_latency_ms": 0.3157,
+        "mrr": 0.8,
+        "ndcg_at_10": 0.8,
+        "p50_latency_ms": 0.2613,
+        "p95_latency_ms": 0.4326,
+        "recall_at_3": 0.8,
+        "recall_at_5": 0.8,
+        "zero_result_rate": 0.3333
+      },
+      "name": "full_text_keyword_v1",
+      "skip_reason": null,
+      "status": "completed",
+      "strategy_type": "keyword_full_text"
+    },
+    {
+      "cases": [
+        {
+          "expected_document_keys": [
+            "application:tracebank-data-scientist",
+            "email:tracebank-interview",
+            "radar_report:erica-hiring-signals"
+          ],
+          "latency_ms": 0.4926,
+          "query": "assistant search NLP role",
+          "query_id": "q-assistant-search",
+          "returned_document_keys": [
+            "email:tracebank-interview",
+            "radar_report:erica-hiring-signals",
+            "application:tracebank-data-scientist",
+            "contact:alex-morgan"
+          ],
+          "top_score": 21.6
+        },
+        {
+          "expected_document_keys": [
+            "radar_report:erica-hiring-signals"
+          ],
+          "latency_ms": 0.4163,
+          "query": "erica chat voice hiring signals",
+          "query_id": "q-erica-hiring",
+          "returned_document_keys": [
+            "radar_report:erica-hiring-signals",
+            "email:tracebank-interview",
+            "contact:alex-morgan"
+          ],
+          "top_score": 31.8
+        },
+        {
+          "expected_document_keys": [
+            "email:tracebank-interview",
+            "contact:alex-morgan"
+          ],
+          "latency_ms": 0.3966,
+          "query": "recruiter alex interview",
+          "query_id": "q-recruiter-interview",
+          "returned_document_keys": [
+            "email:tracebank-interview",
+            "contact:alex-morgan"
+          ],
+          "top_score": 21.5
+        },
+        {
+          "expected_document_keys": [
+            "application:finops-analytics"
+          ],
+          "latency_ms": 0.3601,
+          "query": "finops analyst cost dashboards",
+          "query_id": "q-finops-cost",
+          "returned_document_keys": [
+            "application:finops-analytics"
+          ],
+          "top_score": 22.1
+        },
+        {
+          "expected_document_keys": [
+            "application:tracebank-data-scientist",
+            "radar_report:erica-hiring-signals"
+          ],
+          "latency_ms": 0.371,
+          "query": "governed white box workflow",
+          "query_id": "q-ml-eval-portfolio",
+          "returned_document_keys": [
+            "application:tracebank-data-scientist",
+            "radar_report:erica-hiring-signals",
+            "application:stale-platform-analytics"
+          ],
+          "top_score": 3.2
+        },
+        {
+          "expected_document_keys": [],
+          "latency_ms": 0.3249,
+          "query": "cobol aerospace firmware role",
+          "query_id": "q-no-match",
+          "returned_document_keys": [],
+          "top_score": null
+        }
+      ],
+      "description": "Deterministic synonym expansion proxy for semantic retrieval when embeddings are unavailable in CI.",
+      "metrics": {
+        "avg_latency_ms": 0.3936,
+        "mrr": 1.0,
+        "ndcg_at_10": 1.0,
+        "p50_latency_ms": 0.371,
+        "p95_latency_ms": 0.4926,
+        "recall_at_3": 1.0,
+        "recall_at_5": 1.0,
+        "zero_result_rate": 0.1667
+      },
+      "name": "semantic_expansion_v1",
+      "skip_reason": null,
+      "status": "completed",
+      "strategy_type": "semantic_expansion"
+    },
+    {
+      "cases": [
+        {
+          "expected_document_keys": [
+            "application:tracebank-data-scientist",
+            "email:tracebank-interview",
+            "radar_report:erica-hiring-signals"
+          ],
+          "latency_ms": 0.4659,
+          "query": "assistant search NLP role",
+          "query_id": "q-assistant-search",
+          "returned_document_keys": [
+            "email:tracebank-interview",
+            "radar_report:erica-hiring-signals",
+            "application:tracebank-data-scientist",
+            "contact:alex-morgan"
+          ],
+          "top_score": 21.6
+        },
+        {
+          "expected_document_keys": [
+            "radar_report:erica-hiring-signals"
+          ],
+          "latency_ms": 0.406,
+          "query": "erica chat voice hiring signals",
+          "query_id": "q-erica-hiring",
+          "returned_document_keys": [
+            "radar_report:erica-hiring-signals",
+            "email:tracebank-interview",
+            "contact:alex-morgan"
+          ],
+          "top_score": 34.98
+        },
+        {
+          "expected_document_keys": [
+            "email:tracebank-interview",
+            "contact:alex-morgan"
+          ],
+          "latency_ms": 0.3879,
+          "query": "recruiter alex interview",
+          "query_id": "q-recruiter-interview",
+          "returned_document_keys": [
+            "email:tracebank-interview",
+            "contact:alex-morgan"
+          ],
+          "top_score": 21.5
+        },
+        {
+          "expected_document_keys": [
+            "application:finops-analytics"
+          ],
+          "latency_ms": 0.3454,
+          "query": "finops analyst cost dashboards",
+          "query_id": "q-finops-cost",
+          "returned_document_keys": [
+            "application:finops-analytics"
+          ],
+          "top_score": 25.415
+        },
+        {
+          "expected_document_keys": [
+            "application:tracebank-data-scientist",
+            "radar_report:erica-hiring-signals"
+          ],
+          "latency_ms": 0.3464,
+          "query": "governed white box workflow",
+          "query_id": "q-ml-eval-portfolio",
+          "returned_document_keys": [
+            "application:tracebank-data-scientist",
+            "radar_report:erica-hiring-signals",
+            "application:stale-platform-analytics"
+          ],
+          "top_score": 3.68
+        },
+        {
+          "expected_document_keys": [],
+          "latency_ms": 0.324,
+          "query": "cobol aerospace firmware role",
+          "query_id": "q-no-match",
+          "returned_document_keys": [],
+          "top_score": null
+        }
+      ],
+      "description": "Full-text retrieval plus semantic expansion and source-aware boosts.",
+      "metrics": {
+        "avg_latency_ms": 0.3793,
+        "mrr": 1.0,
+        "ndcg_at_10": 1.0,
+        "p50_latency_ms": 0.3464,
+        "p95_latency_ms": 0.4659,
+        "recall_at_3": 1.0,
+        "recall_at_5": 1.0,
+        "zero_result_rate": 0.1667
+      },
+      "name": "hybrid_plus_boost_v1",
+      "skip_reason": null,
+      "status": "completed",
+      "strategy_type": "hybrid_plus_boost"
+    },
+    {
+      "cases": [],
+      "description": null,
+      "metrics": {},
+      "name": "vector_embedding_v1",
+      "skip_reason": "Embeddings are not provisioned in CI; keep this explicit instead of pretending vector search ran.",
+      "status": "skipped",
+      "strategy_type": "vector"
+    }
+  ],
+  "user_isolation": {
+    "foreign_document_count": 1,
+    "leaked_document_keys": [],
+    "passed": true
+  }
+}

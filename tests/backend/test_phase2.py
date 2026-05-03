@@ -1,9 +1,28 @@
 import uuid
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from tests.conftest import AUTH_HEADER
+from tests.conftest import AUTH_HEADER, TEST_USER_ID
+
+
+async def _grant_enrichment_consent(db_session):
+    from backend.models import DataConsent, User
+
+    now = datetime.now(timezone.utc)
+    user = await db_session.get(User, TEST_USER_ID)
+    user.data_consent_accepted_at = now
+    db_session.add(
+        DataConsent(
+            user_id=TEST_USER_ID,
+            consent_type="third_party_enrichment",
+            granted=True,
+            granted_at=now,
+            updated_at=now,
+        )
+    )
+    await db_session.commit()
 
 
 @pytest.mark.asyncio
@@ -47,8 +66,10 @@ async def test_hunter_find_contacts():
 
 
 @pytest.mark.asyncio
-async def test_hunter_caching(client):
+async def test_hunter_caching(client, db_session):
     """Second call for same domain hits cache, not Hunter API."""
+    await _grant_enrichment_consent(db_session)
+
     # Create an application first
     app_resp = await client.post(
         "/api/jobs",
@@ -127,8 +148,10 @@ async def test_hunter_limit_degrades():
 
 
 @pytest.mark.asyncio
-async def test_contacts_find_endpoint(client):
+async def test_contacts_find_endpoint(client, db_session):
     """POST /api/contacts/find returns list + linkedin URL."""
+    await _grant_enrichment_consent(db_session)
+
     # Create application
     app_resp = await client.post(
         "/api/jobs",
@@ -177,8 +200,10 @@ async def test_contacts_find_endpoint(client):
 
 
 @pytest.mark.asyncio
-async def test_contact_update(client):
+async def test_contact_update(client, db_session):
     """PATCH /api/contacts/{id} updates reached_out fields."""
+    await _grant_enrichment_consent(db_session)
+
     # Create application + contact
     app_resp = await client.post(
         "/api/jobs",
@@ -232,12 +257,44 @@ async def test_contact_update(client):
 
 
 @pytest.mark.asyncio
+async def test_contacts_find_without_enrichment_consent_returns_no_contacts(client):
+    app_resp = await client.post(
+        "/api/jobs",
+        json={
+            "company": "NoConsentCo",
+            "role_title": "Analyst",
+            "job_url": "https://example.com/job/no-consent-test",
+            "source": "manual",
+        },
+        headers=AUTH_HEADER,
+    )
+    app_id = app_resp.json()["id"]
+
+    resp = await client.post(
+        "/api/contacts/find",
+        json={"application_id": app_id, "company": "NoConsentCo", "domain": "noconsent.co"},
+        headers=AUTH_HEADER,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["contacts"] == []
+    assert data["cached"] is False
+    assert data["enrichment_enabled"] is False
+    assert "linkedin_search_url" in data
+
+
+@pytest.mark.asyncio
 async def test_linkedin_search_url_format():
-    """URL contains UNC Chapel Hill + company + data."""
+    """URL contains company name, and school if provided."""
     from backend.services.hunter import generate_linkedin_search_url
 
+    # Without school — just company
     url = generate_linkedin_search_url("Stripe")
-    assert "UNC+Chapel+Hill" in url or "UNC Chapel Hill" in url
     assert "Stripe" in url
-    assert "data" in url
     assert "linkedin.com/search/results/people" in url
+
+    # With school — includes both
+    url_with_school = generate_linkedin_search_url("Stripe", school="UNC Chapel Hill")
+    assert "UNC+Chapel+Hill" in url_with_school or "UNC Chapel Hill" in url_with_school
+    assert "Stripe" in url_with_school
+    assert "linkedin.com/search/results/people" in url_with_school

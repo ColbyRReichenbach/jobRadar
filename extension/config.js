@@ -36,7 +36,7 @@ export function normalizeApiBase(value) {
   }
 
   throw new Error(
-    "Use https://api.apptrail.com or a local http://localhost URL."
+    "Use https://api.apptrail.com, http://localhost, or http://127.0.0.1."
   );
 }
 
@@ -56,19 +56,18 @@ export async function setApiBase(value) {
 }
 
 export async function getApiKey() {
-  const sessionData = await chrome.storage.session.get(API_KEY_STORAGE_KEY);
-  if (sessionData[API_KEY_STORAGE_KEY]) {
-    return sessionData[API_KEY_STORAGE_KEY];
+  const localData = await chrome.storage.local.get(API_KEY_STORAGE_KEY);
+  if (localData[API_KEY_STORAGE_KEY]) {
+    return localData[API_KEY_STORAGE_KEY];
   }
 
-  // Migrate legacy installs off persistent local storage.
-  const legacyData = await chrome.storage.local.get(API_KEY_STORAGE_KEY);
-  if (legacyData[API_KEY_STORAGE_KEY]) {
-    await chrome.storage.session.set({
-      [API_KEY_STORAGE_KEY]: legacyData[API_KEY_STORAGE_KEY],
+  const sessionData = await chrome.storage.session.get(API_KEY_STORAGE_KEY);
+  if (sessionData[API_KEY_STORAGE_KEY]) {
+    await chrome.storage.local.set({
+      [API_KEY_STORAGE_KEY]: sessionData[API_KEY_STORAGE_KEY],
     });
-    await chrome.storage.local.remove(API_KEY_STORAGE_KEY);
-    return legacyData[API_KEY_STORAGE_KEY];
+    await chrome.storage.session.remove(API_KEY_STORAGE_KEY);
+    return sessionData[API_KEY_STORAGE_KEY];
   }
 
   return "";
@@ -80,8 +79,8 @@ export async function setApiKey(value) {
     throw new Error("Please enter an API key.");
   }
 
-  await chrome.storage.session.set({ [API_KEY_STORAGE_KEY]: apiKey });
-  await chrome.storage.local.remove(API_KEY_STORAGE_KEY);
+  await chrome.storage.local.set({ [API_KEY_STORAGE_KEY]: apiKey });
+  await chrome.storage.session.remove(API_KEY_STORAGE_KEY);
   return apiKey;
 }
 

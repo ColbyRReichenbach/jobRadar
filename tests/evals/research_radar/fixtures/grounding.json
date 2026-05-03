@@ -1,0 +1,28 @@
+[
+  {
+    "name": "sections_with_citations_are_ready",
+    "report_sections": [
+      {
+        "section_key": "executive_summary",
+        "markdown": "Strong fit based on public hiring signals.",
+        "structured_json": {"citation_ids": ["source-1"]}
+      },
+      {
+        "section_key": "recommended_actions",
+        "markdown": "Review the strongest role opening and prepare outreach.",
+        "structured_json": {"citation_ids": ["source-1"]}
+      }
+    ],
+    "evidence_items": [
+      {
+        "source_item_id": "source-1",
+        "claim": "Example is hiring a Platform Engineer.",
+        "url": "https://example.com/jobs/platform-engineer"
+      }
+    ],
+    "expect": {
+      "status": "ready",
+      "unsupported_claim_count": 0
+    }
+  }
+]

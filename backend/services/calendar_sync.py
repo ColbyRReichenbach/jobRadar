@@ -208,42 +208,69 @@ async def sync_calendar_events(
         )
         existing_result = await db.execute(existing_stmt)
         interview = existing_result.scalar_one_or_none()
+        sync_status = "skipped"
 
         if interview:
-            interview.interview_type = interview_type
-            interview.scheduled_at = scheduled_at
-            interview.duration_minutes = duration_minutes
-            interview.interviewer_name = interviewer_name or interview.interviewer_name
-            interview.interviewer_email = interviewer_email or interview.interviewer_email
-            interview.location_or_link = location or interview.location_or_link
+            changed = False
+            if interview.interview_type != interview_type:
+                interview.interview_type = interview_type
+                changed = True
+            if interview.scheduled_at != scheduled_at:
+                interview.scheduled_at = scheduled_at
+                changed = True
+            if interview.duration_minutes != duration_minutes:
+                interview.duration_minutes = duration_minutes
+                changed = True
+            if interviewer_name and interview.interviewer_name != interviewer_name:
+                interview.interviewer_name = interviewer_name
+                changed = True
+            if interviewer_email and interview.interviewer_email != interviewer_email:
+                interview.interviewer_email = interviewer_email
+                changed = True
+            if location and interview.location_or_link != location:
+                interview.location_or_link = location
+                changed = True
             if application_id and interview.application_id is None:
                 interview.application_id = application_id
-            if not interview.notes or interview.notes.startswith("Auto-synced from Google Calendar:"):
+                changed = True
+            if (
+                (not interview.notes or interview.notes.startswith("Auto-synced from Google Calendar:"))
+                and interview.notes != auto_note
+            ):
                 interview.notes = auto_note
-            updated += 1
+                changed = True
+            if changed:
+                updated += 1
+                sync_status = "updated"
+            else:
+                skipped += 1
+                continue
         else:
-            db.add(
-                Interview(
-                    user_id=user_id,
-                    application_id=application_id,
-                    interview_type=interview_type,
-                    scheduled_at=scheduled_at,
-                    duration_minutes=duration_minutes,
-                    interviewer_name=interviewer_name,
-                    interviewer_email=interviewer_email,
-                    location_or_link=location,
-                    notes=auto_note,
-                    calendar_event_id=event_id,
-                )
+            interview = Interview(
+                user_id=user_id,
+                application_id=application_id,
+                interview_type=interview_type,
+                scheduled_at=scheduled_at,
+                duration_minutes=duration_minutes,
+                interviewer_name=interviewer_name,
+                interviewer_email=interviewer_email,
+                location_or_link=location,
+                notes=auto_note,
+                calendar_event_id=event_id,
             )
+            db.add(interview)
+            await db.flush()
             created += 1
+            sync_status = "created"
 
         synced.append(
             {
                 "event_id": event_id,
+                "interview_id": str(interview.id),
                 "summary": summary,
                 "scheduled_at": scheduled_at.isoformat() if scheduled_at else None,
                 "interview_type": interview_type,
+                "status": sync_status,
             }
         )
 

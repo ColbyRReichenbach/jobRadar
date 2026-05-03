@@ -1,0 +1,119 @@
+<svg width="1280" height="800" viewBox="0 0 1280 800" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1280" y2="800" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0f172a"/>
+      <stop offset="1" stop-color="#1e293b"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1280" height="800" fill="url(#bg)"/>
+
+  <text x="640" y="60" text-anchor="middle" font-family="Georgia, serif" font-size="32" font-weight="700" fill="#f8fafc">Works Everywhere You Apply</text>
+  <text x="640" y="90" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="16" fill="#94a3b8">Automatic detection across 15+ applicant tracking systems</text>
+
+  <!-- Platform grid -->
+  <g transform="translate(140, 140)">
+    <!-- Row 1 -->
+    <g transform="translate(0, 0)">
+      <rect width="180" height="100" rx="12" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+      <text x="90" y="45" text-anchor="middle" font-family="Inter, sans-serif" font-size="22" font-weight="700" fill="#0a66c2">in</text>
+      <text x="90" y="72" text-anchor="middle" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#e2e8f0">LinkedIn</text>
+    </g>
+    <g transform="translate(200, 0)">
+      <rect width="180" height="100" rx="12" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+      <text x="90" y="45" text-anchor="middle" font-family="Inter, sans-serif" font-size="20" font-weight="700" fill="#2ea44f">&#9670;</text>
+      <text x="90" y="72" text-anchor="middle" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#e2e8f0">Greenhouse</text>
+    </g>
+    <g transform="translate(400, 0)">
+      <rect width="180" height="100" rx="12" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+      <text x="90" y="45" text-anchor="middle" font-family="Inter, sans-serif" font-size="20" font-weight="700" fill="#5b5fc7">&#9650;</text>
+      <text x="90" y="72" text-anchor="middle" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#e2e8f0">Lever</text>
+    </g>
+    <g transform="translate(600, 0)">
+      <rect width="180" height="100" rx="12" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+      <text x="90" y="45" text-anchor="middle" font-family="Inter, sans-serif" font-size="20" font-weight="700" fill="#ff6b00">W</text>
+      <text x="90" y="72" text-anchor="middle" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#e2e8f0">Workday</text>
+    </g>
+    <g transform="translate(800, 0)">
+      <rect width="180" height="100" rx="12" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+      <text x="90" y="45" text-anchor="middle" font-family="Inter, sans-serif" font-size="20" font-weight="700" fill="#6366f1">A</text>
+      <text x="90" y="72" text-anchor="middle" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#e2e8f0">Ashby</text>
+    </g>
+
+    <!-- Row 2 -->
+    <g transform="translate(0, 120)">
+      <rect width="180" height="100" rx="12" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+      <text x="90" y="45" text-anchor="middle" font-family="Inter, sans-serif" font-size="20" font-weight="700" fill="#2164f3">&#9679;</text>
+      <text x="90" y="72" text-anchor="middle" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#e2e8f0">Indeed</text>
+    </g>
+    <g transform="translate(200, 120)">
+      <rect width="180" height="100" rx="12" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+      <text x="90" y="45" text-anchor="middle" font-family="Inter, sans-serif" font-size="20" font-weight="700" fill="#0caa41">G</text>
+      <text x="90" y="72" text-anchor="middle" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#e2e8f0">Glassdoor</text>
+    </g>
+    <g transform="translate(400, 120)">
+      <rect width="180" height="100" rx="12" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+      <text x="90" y="45" text-anchor="middle" font-family="Inter, sans-serif" font-size="20" font-weight="700" fill="#23c1ab">Z</text>
+      <text x="90" y="72" text-anchor="middle" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#e2e8f0">ZipRecruiter</text>
+    </g>
+    <g transform="translate(600, 120)">
+      <rect width="180" height="100" rx="12" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+      <text x="90" y="45" text-anchor="middle" font-family="Inter, sans-serif" font-size="20" font-weight="700" fill="#f97316">W</text>
+      <text x="90" y="72" text-anchor="middle" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#e2e8f0">Wellfound</text>
+    </g>
+    <g transform="translate(800, 120)">
+      <rect width="180" height="100" rx="12" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+      <text x="90" y="45" text-anchor="middle" font-family="Inter, sans-serif" font-size="20" font-weight="700" fill="#3b82f6">S</text>
+      <text x="90" y="72" text-anchor="middle" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#e2e8f0">SmartRecruiters</text>
+    </g>
+
+    <!-- Row 3 -->
+    <g transform="translate(0, 240)">
+      <rect width="180" height="100" rx="12" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+      <text x="90" y="45" text-anchor="middle" font-family="Inter, sans-serif" font-size="20" font-weight="700" fill="#ef4444">i</text>
+      <text x="90" y="72" text-anchor="middle" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#e2e8f0">iCIMS</text>
+    </g>
+    <g transform="translate(200, 240)">
+      <rect width="180" height="100" rx="12" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+      <text x="90" y="45" text-anchor="middle" font-family="Inter, sans-serif" font-size="20" font-weight="700" fill="#10b981">J</text>
+      <text x="90" y="72" text-anchor="middle" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#e2e8f0">Jobvite</text>
+    </g>
+    <g transform="translate(400, 240)">
+      <rect width="180" height="100" rx="12" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+      <text x="90" y="45" text-anchor="middle" font-family="Inter, sans-serif" font-size="20" font-weight="700" fill="#78c349">B</text>
+      <text x="90" y="72" text-anchor="middle" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#e2e8f0">BambooHR</text>
+    </g>
+    <g transform="translate(600, 240)">
+      <rect width="180" height="100" rx="12" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+      <text x="90" y="45" text-anchor="middle" font-family="Inter, sans-serif" font-size="20" font-weight="700" fill="#8b5cf6">R</text>
+      <text x="90" y="72" text-anchor="middle" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#e2e8f0">Rippling</text>
+    </g>
+    <g transform="translate(800, 240)">
+      <rect width="180" height="100" rx="12" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+      <text x="90" y="45" text-anchor="middle" font-family="Inter, sans-serif" font-size="20" font-weight="700" fill="#94a3b8">+</text>
+      <text x="90" y="72" text-anchor="middle" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#e2e8f0">Generic Careers</text>
+    </g>
+  </g>
+
+  <!-- Bottom text -->
+  <text x="640" y="560" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="18" fill="#cbd5e1">Plus any page with /careers, /jobs, or /openings in the URL</text>
+
+  <!-- Feature callouts -->
+  <g transform="translate(260, 600)">
+    <rect width="200" height="60" rx="10" fill="rgba(99,102,241,0.1)"/>
+    <text x="100" y="30" text-anchor="middle" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#a5b4fc">URL Pattern Matching</text>
+    <text x="100" y="48" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" fill="#64748b">Regex-based detection</text>
+  </g>
+  <g transform="translate(520, 600)">
+    <rect width="200" height="60" rx="10" fill="rgba(34,197,94,0.1)"/>
+    <text x="100" y="30" text-anchor="middle" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#86efac">SPA Navigation</text>
+    <text x="100" y="48" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" fill="#64748b">Handles client-side routing</text>
+  </g>
+  <g transform="translate(780, 600)">
+    <rect width="200" height="60" rx="10" fill="rgba(251,191,36,0.1)"/>
+    <text x="100" y="30" text-anchor="middle" font-family="Inter, sans-serif" font-size="13" font-weight="600" fill="#fcd34d">Auto-Extract</text>
+    <text x="100" y="48" text-anchor="middle" font-family="Inter, sans-serif" font-size="11" fill="#64748b">Title, company, salary, location</text>
+  </g>
+
+  <text x="640" y="720" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="14" fill="#64748b">New platforms added regularly based on user reports</text>
+</svg>

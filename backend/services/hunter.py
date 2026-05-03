@@ -76,8 +76,15 @@ async def find_contacts(domain: str, company: str) -> list[dict]:
     return filtered
 
 
-def generate_linkedin_search_url(company: str) -> str:
-    """Generate UNC alumni LinkedIn search URL for the given company."""
-    keywords = f"UNC Chapel Hill {company} data"
+def generate_linkedin_search_url(company: str, school: str | None = None) -> str:
+    """Generate alumni LinkedIn search URL for the given company.
+
+    Uses the user's school from their profile if available,
+    otherwise falls back to a generic company search.
+    """
+    if school:
+        keywords = f"{school} {company}"
+    else:
+        keywords = company
     encoded = keywords.replace(" ", "+")
     return f"https://www.linkedin.com/search/results/people/?keywords={encoded}"

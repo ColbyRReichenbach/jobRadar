@@ -1,10 +1,20 @@
-import { useState, useEffect, useMemo, useId, useRef } from 'react';
+import { type FormEvent, useState, useEffect, useMemo, useId, useRef } from 'react';
 import { AnimatePresence } from 'motion/react';
-import { ChevronLeft, ChevronRight, Plus, Phone, Code, Building2, Users, X, Clock, MapPin, MessageSquare, BookOpen, AlertCircle, RefreshCw, Video, Mail } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Phone, Code, Building2, Users, X, Clock, MapPin, MessageSquare, BookOpen, AlertCircle, RefreshCw, Video, Mail, Trash2 } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { apiFetch, authHeaders, fetchInterviews, syncCalendar } from '../lib/api';
+import {
+  acceptInterviewSuggestion,
+  apiFetch,
+  authHeaders,
+  deleteInterview,
+  dismissInterviewSuggestion,
+  fetchInterviewSuggestions,
+  fetchInterviews,
+  syncCalendar,
+} from '../lib/api';
 import { DialogShell } from './DialogShell';
 import { useAuth } from '../lib/AuthContext';
+import { InterviewSuggestion } from '../types';
 
 interface InterviewData {
   id: string;
@@ -62,7 +72,14 @@ const OUTCOME_COLORS: Record<string, string> = {
   failed: 'bg-red-100 text-red-700',
 };
 
-export function Calendar() {
+interface CalendarProps {
+  focusRequest?: {
+    interviewId: string;
+    token: number;
+  } | null;
+}
+
+export function Calendar({ focusRequest }: CalendarProps) {
   const { user, connectCalendar, refreshUser } = useAuth();
   const selectedInterviewTitleId = useId();
   const selectedInterviewCloseButtonRef = useRef<HTMLButtonElement>(null);
@@ -80,11 +97,22 @@ export function Calendar() {
   const [prepData, setPrepData] = useState<{ past_notes: InterviewNoteData[]; company_context: any } | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [interviewSuggestions, setInterviewSuggestions] = useState<InterviewSuggestion[]>([]);
+  const [busySuggestionEmailId, setBusySuggestionEmailId] = useState<string | null>(null);
 
   useEffect(() => {
     loadInterviews();
     loadPastDue();
+    loadInterviewSuggestions();
   }, []);
+
+  useEffect(() => {
+    if (!focusRequest?.interviewId || interviews.length === 0) return;
+    const target = interviews.find((interview) => interview.id === focusRequest.interviewId);
+    if (target) {
+      void handleSelectInterview(target);
+    }
+  }, [focusRequest, interviews]);
 
   const getErrorMessage = async (res: Response, fallback: string) => {
     const payload = await res.json().catch(() => null);
@@ -116,6 +144,14 @@ export function Calendar() {
       setPastDueInterviews(await res.json());
     } catch {
       setErrorMessage('Failed to load past-due interviews.');
+    }
+  };
+
+  const loadInterviewSuggestions = async () => {
+    try {
+      setInterviewSuggestions(await fetchInterviewSuggestions());
+    } catch {
+      setErrorMessage('Failed to load interview suggestions.');
     }
   };
 
@@ -193,7 +229,7 @@ export function Calendar() {
       setErrorMessage(null);
       setStatusMessage('Interview added.');
       setShowAddModal(false);
-      loadInterviews();
+      await loadInterviews();
     } catch {
       setErrorMessage('Failed to create interview.');
     }
@@ -219,6 +255,25 @@ export function Calendar() {
     }
   };
 
+  const handleDeleteInterview = async (interview: InterviewData) => {
+    const confirmed = window.confirm(
+      `Delete this ${interview.interview_type} interview${interview.company_name ? ` at ${interview.company_name}` : ''}?`,
+    );
+    if (!confirmed) return;
+
+    try {
+      await deleteInterview(interview.id);
+      setErrorMessage(null);
+      setStatusMessage('Interview deleted.');
+      setSelectedInterview(null);
+      setShowNoteForm(false);
+      setEditingInterview(null);
+      await Promise.all([loadInterviews(), loadPastDue()]);
+    } catch {
+      setErrorMessage('Failed to delete interview.');
+    }
+  };
+
   const handleSyncCalendar = async () => {
     setSyncingCalendar(true);
     setErrorMessage(null);
@@ -240,6 +295,36 @@ export function Calendar() {
       }
     } finally {
       setSyncingCalendar(false);
+    }
+  };
+
+  const handleAcceptSuggestion = async (suggestion: InterviewSuggestion) => {
+    setBusySuggestionEmailId(suggestion.email_id);
+    setErrorMessage(null);
+    setStatusMessage(null);
+    try {
+      await acceptInterviewSuggestion(suggestion);
+      setStatusMessage('Interview added from Gmail.');
+      await Promise.all([loadInterviews(), loadPastDue(), loadInterviewSuggestions()]);
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to add interview suggestion.');
+    } finally {
+      setBusySuggestionEmailId(null);
+    }
+  };
+
+  const handleDismissSuggestion = async (suggestion: InterviewSuggestion) => {
+    setBusySuggestionEmailId(suggestion.email_id);
+    setErrorMessage(null);
+    setStatusMessage(null);
+    try {
+      await dismissInterviewSuggestion(suggestion.email_id);
+      setInterviewSuggestions((prev) => prev.filter((item) => item.email_id !== suggestion.email_id));
+      setStatusMessage('Interview suggestion dismissed.');
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to dismiss interview suggestion.');
+    } finally {
+      setBusySuggestionEmailId(null);
     }
   };
 
@@ -402,6 +487,58 @@ export function Calendar() {
 
           {/* Upcoming Sidebar */}
           <div className="w-full xl:w-80 shrink-0 space-y-4">
+            {interviewSuggestions.length > 0 && (
+              <div className="bg-indigo-50 rounded-3xl shadow-sm border border-indigo-100 p-6">
+                <h3 className="text-sm font-bold text-slate-900 mb-2 flex items-center gap-2">
+                  <Mail className="w-4 h-4 text-indigo-600" /> Review from Gmail
+                </h3>
+                <p className="text-xs text-slate-500 mb-4">
+                  AppTrail found interview details in your inbox. Add the ones you want on your calendar.
+                </p>
+                <div className="space-y-3">
+                  {interviewSuggestions.slice(0, 3).map((suggestion) => {
+                    const isBusy = busySuggestionEmailId === suggestion.email_id;
+                    return (
+                      <div key={suggestion.email_id} className="rounded-2xl border border-white/80 bg-white/85 p-3">
+                        <p className="text-sm font-bold text-slate-900 line-clamp-2">
+                          {suggestion.company_name || suggestion.sender || 'Interview'}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500 line-clamp-2">
+                          {suggestion.role_title || suggestion.subject || 'Review the Gmail message before adding.'}
+                        </p>
+                        <div className="mt-2 flex items-center gap-2 text-[11px] text-slate-500">
+                          <Clock className="h-3.5 w-3.5" />
+                          <span>
+                            {suggestion.scheduled_at
+                              ? new Date(suggestion.scheduled_at).toLocaleString()
+                              : 'Time not detected'}
+                          </span>
+                        </div>
+                        <div className="mt-3 flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void handleAcceptSuggestion(suggestion)}
+                            disabled={isBusy}
+                            className="flex-1 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+                          >
+                            {isBusy ? 'Adding...' : 'Add'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleDismissSuggestion(suggestion)}
+                            disabled={isBusy}
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                          >
+                            Dismiss
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Post-Interview Prompts */}
             {pastDueInterviews.length > 0 && (
               <div className="bg-amber-50 rounded-3xl shadow-sm border border-amber-200 p-6">
@@ -600,7 +737,7 @@ export function Calendar() {
                     onCancel={() => setShowNoteForm(false)}
                   />
                 ) : (
-                  <div className="grid gap-2 sm:grid-cols-2">
+                  <div className="grid gap-2 sm:grid-cols-3">
                     <button
                       onClick={() => {
                         setEditingInterview(selectedInterview);
@@ -609,6 +746,12 @@ export function Calendar() {
                       className="w-full px-3 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 flex items-center justify-center gap-2"
                     >
                       <BookOpen className="w-4 h-4" /> Edit Interview
+                    </button>
+                    <button
+                      onClick={() => void handleDeleteInterview(selectedInterview)}
+                      className="w-full px-3 py-2 text-sm font-medium text-red-700 bg-red-50 rounded-xl hover:bg-red-100 flex items-center justify-center gap-2"
+                    >
+                      <Trash2 className="w-4 h-4" /> Delete Interview
                     </button>
                     <button
                       onClick={() => setShowNoteForm(true)}
@@ -665,7 +808,7 @@ function AddInterviewModal({
   const [location, setLocation] = useState(initialInterview?.location_or_link || '');
   const [notes, setNotes] = useState(initialInterview?.notes || '');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     const payload = {
       interview_type: type,

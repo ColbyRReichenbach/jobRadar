@@ -1,0 +1,6 @@
+{"id":"q-assistant-search","query":"assistant search NLP role","expected_document_keys":["application:tracebank-data-scientist","email:tracebank-interview","radar_report:erica-hiring-signals"],"notes":"Core retrieval path for AI assistant search opportunities."}
+{"id":"q-erica-hiring","query":"erica chat voice hiring signals","expected_document_keys":["radar_report:erica-hiring-signals"],"notes":"Radar-specific query should surface the Radar report first."}
+{"id":"q-recruiter-interview","query":"recruiter alex interview","expected_document_keys":["email:tracebank-interview","contact:alex-morgan"],"notes":"Network and inbox search should recover recruiter context."}
+{"id":"q-finops-cost","query":"finops analyst cost dashboards","expected_document_keys":["application:finops-analytics"],"notes":"Non-AI analytics query checks domain separation."}
+{"id":"q-ml-eval-portfolio","query":"governed white box workflow","expected_document_keys":["application:tracebank-data-scientist","radar_report:erica-hiring-signals"],"notes":"Semantic gap case: users may describe governed white-box workflows while records say responsible AI, observability, and evaluation."}
+{"id":"q-no-match","query":"cobol aerospace firmware role","expected_document_keys":[],"notes":"No-match case used for zero-result behavior."}

@@ -3,6 +3,7 @@
 import asyncio
 import random
 from datetime import datetime, timezone
+from urllib.parse import urlencode
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,6 +26,12 @@ PLATFORM_DEAD_SIGNALS = {
     "lever.co": ["This position is no longer available"],
     "myworkday.com": ["The page you are looking for cannot be found"],
 }
+
+
+def _alert_action_url(path: str, **params: str | None) -> str:
+    clean_params = {key: value for key, value in params.items() if value}
+    query = urlencode(clean_params)
+    return f"{path}?{query}" if query else path
 
 
 async def _check_url(url: str) -> dict:
@@ -77,9 +84,19 @@ async def _check_url(url: str) -> dict:
 async def _run_check():
     """Check up to 50 active applications for dead listings."""
     from backend.database import async_session_factory
-    from backend.models import Application
+    from backend.models import Application, NotificationPreference, User
+    from backend.services.alerts import create_user_alert
 
     async with async_session_factory() as db:
+        enabled_users_result = await db.execute(
+            select(User.id).where(User.notifications_started_at.isnot(None))
+        )
+        enabled_user_ids = {row[0] for row in enabled_users_result.all()}
+        pref_result = await db.execute(
+            select(NotificationPreference).where(NotificationPreference.user_id.in_(enabled_user_ids))
+        )
+        prefs_by_user = {pref.user_id: pref for pref in pref_result.scalars().all()}
+
         stmt = (
             select(Application)
             .where(
@@ -101,6 +118,16 @@ async def _run_check():
             if not result["alive"]:
                 app.listing_alive = False
                 app.listing_died_at = datetime.now(timezone.utc)
+                if app.user_id and app.user_id in enabled_user_ids:
+                    await create_user_alert(
+                        db,
+                        user_id=app.user_id,
+                        alert_type="dead_listing",
+                        title=f"Posting may be closed at {app.company}",
+                        body=f"{app.role_title} looks inactive. Open Pipeline to review this application.",
+                        action_url=_alert_action_url("/dashboard", job_id=str(app.id)),
+                        notification_pref=prefs_by_user.get(app.user_id),
+                    )
                 dead += 1
             checked += 1
 

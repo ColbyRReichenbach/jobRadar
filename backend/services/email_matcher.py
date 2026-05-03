@@ -24,9 +24,13 @@ ATS_DOMAIN_TO_SOURCE = {
 
 # Classification → application status mapping
 STATUS_UPDATES = {
+    "rejection": "rejected",
     "rejected": "rejected",
     "interview_request": "interviewing",
     "offer": "offer",
+    "job_update": "applied",
+    "action_item": "applied",
+    "conversation": "applied",
     "under_review": "applied",
     "applied_confirmed": "applied",
     "action_required": "applied",
@@ -164,6 +168,9 @@ async def create_email_event(
         summary=classification.get("summary"),
     )
     db.add(event)
+    await db.flush()
+    from backend.services.search.indexer import index_record
+    await index_record(db, event)
     await db.commit()
     await db.refresh(event)
     return event
@@ -202,4 +209,6 @@ async def update_application_status(
         from datetime import timedelta
         app.archived_at = datetime.now(timezone.utc) + timedelta(days=30)
 
+    from backend.services.search.indexer import index_record
+    await index_record(db, app)
     await db.commit()

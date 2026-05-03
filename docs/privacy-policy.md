@@ -1,76 +1,143 @@
 # AppTrail Privacy Policy
 
-Last updated: March 10, 2026
+Last updated: April 22, 2026
 
-AppTrail helps users track job applications, organize outreach, and monitor hiring activity across supported job boards. This Privacy Policy explains what AppTrail collects, how it is used, and the choices available to users of the AppTrail dashboard, backend services, and Chrome extension.
+This policy explains what AppTrail collects, how that information is used, and what choices users have when they use the dashboard, backend services, and Chrome extension.
 
-## Information We Collect
+## Scope
 
-AppTrail may collect the following categories of information:
+This policy applies to:
 
-- Account information: name, email address, profile photo, and Google account identifier used for sign-in.
-- Authentication data: short-lived access tokens, refresh tokens, and user-scoped API keys used to authenticate requests.
-- Job search data: applications, company names, job titles, job URLs, notes, statuses, compensation details, and related workflow metadata.
-- Communication data: Gmail-derived message metadata and message content that users choose to connect for pipeline tracking, summaries, classifications, and draft generation.
-- Contact and networking data: recruiter names, titles, email addresses, LinkedIn URLs, and outreach status.
-- Extension activity data: supported job-page URLs, detected company domains, visit counts, application submission detections, and queued sync events needed to operate extension features.
-- Device and usage data: basic request metadata such as timestamps, IP-derived rate-limit data, and error logs used for security and reliability.
+- the AppTrail web dashboard
+- the AppTrail backend and worker services
+- the AppTrail Chrome extension
 
-## How We Use Information
+## Information AppTrail Stores
 
-AppTrail uses collected information to:
+### Account data
 
-- authenticate users and secure access to their data;
-- display and organize the user’s application pipeline;
-- detect supported job postings and sync extension activity to the user’s account;
-- classify emails, generate summaries, and prepare draft communications when those features are enabled;
-- improve product reliability, detect abuse, and troubleshoot failures; and
-- comply with legal obligations and enforce service terms.
+When a user signs in, AppTrail stores the basic account data required to run the product:
 
-## Chrome Extension Permissions
+- name
+- email address
+- profile image, when provided by Google
+- internal account identifiers
 
-The AppTrail Chrome extension requests browser permissions only for features it provides:
+### Job search data
 
-- `storage`: save extension configuration and short-lived session data;
-- `activeTab` and `sidePanel`: detect supported pages and present capture workflows;
-- limited host permissions for the AppTrail backend and optional supported job-board domains.
+AppTrail stores the records that make the workflow usable:
 
-The extension reads page content only on supported job-related pages needed for job detection, LinkedIn extraction, visit tracking, or submission detection. It does not sell browsing history or use captured data for advertising.
+- applications
+- companies
+- recruiter and contact details
+- interview records and notes
+- saved search results
+- resume profile data
+- extraction reports and feedback
+- Opportunity Radar profiles, runs, signals, briefs, and actions
+
+### Connected-service data
+
+If a user connects Gmail, AppTrail stores the data needed to support the product workflow:
+
+- Gmail tokens
+- email metadata
+- message snippets and message content needed for classification, threading, and draft context
+
+### Extension data
+
+The extension stores and may sync:
+
+- supported job-page URLs
+- extracted job fields
+- career-page visit counts
+- submission detections
+- offline queue items
+- the user-scoped API key used to connect the extension to the account
+
+### Operational data
+
+AppTrail also stores limited operational data for security and reliability:
+
+- request timestamps
+- rate-limit information
+- basic logs and error records
+- task metrics and audit data
+
+## How AppTrail Uses That Information
+
+AppTrail uses stored information to:
+
+- authenticate users
+- show and organize the application pipeline
+- classify hiring-related email
+- generate drafts and resume outputs when those features are enabled
+- save jobs from the extension
+- surface contact, interview, and follow-up context
+- run product reports and activity history
+- secure the service and investigate failures
+
+AppTrail does not sell personal information.
+
+## Consent And Optional Processing
+
+Some AppTrail features depend on extra processing or outside services. The product includes explicit consent controls for:
+
+- AI-assisted processing
+- third-party enrichment
+
+If those features are turned off, AppTrail falls back to the product behavior that does not require them.
 
 ## How Information Is Shared
 
-AppTrail does not sell personal information. Information may be shared only in the following cases:
+AppTrail shares information only when needed to operate the product or comply with law. That may include infrastructure and service providers used for:
 
-- with infrastructure or API providers that process data on AppTrail’s behalf, such as hosting, email, AI, or authentication providers;
-- when a user explicitly connects third-party services such as Google;
-- to comply with law, legal process, or valid governmental requests; or
-- to protect AppTrail, its users, or the public from fraud, abuse, or security threats.
+- hosting
+- database and queue infrastructure
+- Google sign-in and Gmail connectivity
+- LLM-backed product tasks
+- contact enrichment
+- error reporting and monitoring
+
+AppTrail does not use customer data for ad targeting.
 
 ## Data Retention
 
-AppTrail retains user data for as long as needed to provide the service, maintain security records, and satisfy legal obligations. Session-scoped extension API keys are cleared when the browser session ends. Users may request deletion of their account data, subject to any required retention obligations.
+AppTrail keeps data for as long as it is needed to run the product and maintain the account, unless the user deletes that data or requests account deletion.
 
-## Security
+Some operational records may be retained longer when required for security, abuse prevention, or legal compliance.
 
-AppTrail uses reasonable administrative, technical, and organizational safeguards intended to protect personal information, including authenticated access controls, per-user data isolation, scoped API keys, and transport security in production. No system can be guaranteed to be 100% secure.
-
-## User Choices
+## User Controls
 
 Users can:
 
-- disconnect Gmail or other connected services;
-- rotate or revoke extension API keys;
-- remove stored extension session data by closing the browser or clearing extension storage; and
-- request account or data deletion by contacting AppTrail.
+- disconnect Gmail
+- rotate or revoke extension API keys
+- delete saved jobs, contacts, notes, and other account records
+- clear extension-local storage by resetting or uninstalling the extension
+- request account deletion
 
-## Children’s Privacy
+## Security
 
-AppTrail is not directed to children under 13 and is not intended for use by children.
+AppTrail uses layered security controls that include:
 
-## Changes to This Policy
+- authenticated access
+- user-scoped data access
+- encrypted Gmail token storage
+- transport security in production
+- rate limiting
+- structured logging with redaction
 
-AppTrail may update this Privacy Policy from time to time. Material changes will be reflected by updating the “Last updated” date above.
+No system can promise perfect security, but AppTrail is designed to limit unnecessary exposure and keep sensitive flows scoped.
+
+## Children
+
+AppTrail is not intended for children under 13.
+
+## Policy Changes
+
+This policy may be updated as the product changes. The current version will always be posted with the latest update date.
 
 ## Contact
 
-For privacy questions or data requests, contact: `privacy@apptrail.com`
+For privacy questions or data requests, contact `privacy@apptrail.com`.

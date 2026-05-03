@@ -5,8 +5,27 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlalchemy import select
 
 from tests.conftest import AUTH_HEADER, TEST_USER_ID
+
+
+async def _grant_enrichment_consent(db_session):
+    from backend.models import DataConsent, User
+
+    now = datetime.now(timezone.utc)
+    user = await db_session.get(User, TEST_USER_ID)
+    user.data_consent_accepted_at = now
+    db_session.add(
+        DataConsent(
+            user_id=TEST_USER_ID,
+            consent_type="third_party_enrichment",
+            granted=True,
+            granted_at=now,
+            updated_at=now,
+        )
+    )
+    await db_session.commit()
 
 
 # --- 4.1 Job search tests ---
@@ -38,6 +57,7 @@ async def test_job_search_returns_results():
             assert results[0]["title"] == "Data Analyst"
             assert results[0]["company"] == "TestCo"
             assert results[0]["source"] == "serpapi"
+            assert results[0]["description"] == "Analyze data for insights"
 
 
 @pytest.mark.asyncio
@@ -78,6 +98,77 @@ async def test_job_search_caching(client):
             assert resp2.status_code == 200
             data2 = resp2.json()
             assert data2["cached"] is True
+
+
+@pytest.mark.asyncio
+async def test_job_search_returns_backend_logo_when_enrichment_allowed(client, db_session):
+    await _grant_enrichment_consent(db_session)
+
+    mock_response = {
+        "jobs_results": [
+            {
+                "title": "Backend Engineer",
+                "company_name": "Stripe",
+                "location": "Remote",
+                "description": "Build backend systems",
+                "related_links": [{"link": "https://jobs.stripe.com/roles/backend-engineer"}],
+                "detected_extensions": {"posted_at": "1 day ago"},
+            }
+        ]
+    }
+
+    with patch("backend.services.job_search.SERPAPI_KEY", "test-key"):
+        with patch("backend.services.job_search.with_retry", new_callable=AsyncMock) as mock_retry:
+            mock_retry.return_value = mock_response
+
+            resp = await client.get(
+                "/api/search?q=backend+engineer&location=Remote",
+                headers=AUTH_HEADER,
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["cached"] is False
+            assert data["results"][0]["description"] == "Build backend systems"
+            assert data["results"][0]["logo_url"] == "https://logo.clearbit.com/stripe.com"
+
+
+@pytest.mark.asyncio
+async def test_job_search_cache_keeps_backend_logo_shape(client, db_session):
+    await _grant_enrichment_consent(db_session)
+
+    mock_response = {
+        "jobs_results": [
+            {
+                "title": "Platform Engineer",
+                "company_name": "Stripe",
+                "location": "Remote",
+                "description": "Cached platform role",
+                "related_links": [{"link": "https://jobs.stripe.com/roles/platform-engineer"}],
+                "detected_extensions": {"posted_at": "today"},
+            }
+        ]
+    }
+
+    with patch("backend.services.job_search.SERPAPI_KEY", "test-key"):
+        with patch("backend.services.job_search.with_retry", new_callable=AsyncMock) as mock_retry:
+            mock_retry.return_value = mock_response
+
+            first = await client.get(
+                "/api/search?q=platform+engineer&location=Remote",
+                headers=AUTH_HEADER,
+            )
+            assert first.status_code == 200
+            assert first.json()["cached"] is False
+
+            second = await client.get(
+                "/api/search?q=platform+engineer&location=Remote",
+                headers=AUTH_HEADER,
+            )
+            assert second.status_code == 200
+            data = second.json()
+            assert data["cached"] is True
+            assert data["results"][0]["description"] == "Cached platform role"
+            assert data["results"][0]["logo_url"] == "https://logo.clearbit.com/stripe.com"
 
 
 @pytest.mark.asyncio
@@ -150,6 +241,46 @@ async def test_followup_flagging(db_session):
 
     await db_session.refresh(app)
     assert app.follow_up_due is True
+
+
+@pytest.mark.asyncio
+async def test_followup_task_creates_pipeline_alert(db_session):
+    from backend.models import Alert, Application, User
+    from backend.tasks.check_followups import _check_followups_async
+
+    class _SessionCtx:
+        def __init__(self, session):
+            self.session = session
+
+        async def __aenter__(self):
+            return self.session
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    app = Application(
+        user_id=TEST_USER_ID,
+        company="FollowUpCo",
+        role_title="Engineer",
+        status="applied",
+        applied_at=datetime.now(timezone.utc) - timedelta(days=8),
+    )
+    db_session.add(app)
+    user_result = await db_session.execute(select(User).where(User.id == TEST_USER_ID))
+    user = user_result.scalar_one()
+    user.notifications_started_at = datetime.now(timezone.utc)
+    await db_session.commit()
+
+    with patch("backend.database.async_session_factory", return_value=_SessionCtx(db_session)):
+        count = await _check_followups_async()
+
+    assert count == 1
+
+    alert_result = await db_session.execute(select(Alert).where(Alert.user_id == TEST_USER_ID))
+    alert = alert_result.scalar_one()
+    assert alert.alert_type == "follow_up"
+    assert alert.action_url == f"/dashboard?job_id={app.id}"
+    assert "Follow up with FollowUpCo" in alert.title
 
 
 # --- 4.3 Contact response tracking ---

@@ -1,6 +1,6 @@
 <svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="bg" x1="18" y1="12" x2="110" y2="116" gradientUnits="userSpaceOnUse">
+    <linearGradient id="bg" x1="0" y1="0" x2="128" y2="128" gradientUnits="userSpaceOnUse">
       <stop stop-color="#0f172a"/>
       <stop offset="1" stop-color="#1d4ed8"/>
     </linearGradient>
@@ -9,7 +9,7 @@
       <stop offset="1" stop-color="#dbeafe"/>
     </linearGradient>
   </defs>
-  <rect x="8" y="8" width="112" height="112" rx="28" fill="url(#bg)"/>
+  <rect width="128" height="128" rx="28" fill="url(#bg)"/>
   <circle cx="31" cy="95" r="10" fill="#f8fafc"/>
   <circle cx="64" cy="28" r="10" fill="#f8fafc"/>
   <circle cx="97" cy="95" r="10" fill="#f8fafc"/>

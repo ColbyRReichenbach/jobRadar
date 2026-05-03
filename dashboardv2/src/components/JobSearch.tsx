@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import type { Dispatch, MouseEvent, SetStateAction } from 'react';
 import { useId, useRef, useState } from 'react';
 import { Job } from '../types';
-import { searchJobs, createJob } from '../lib/api';
+import { searchJobs, createJob, checkJobDuplicates, getSearchMatchPreview } from '../lib/api';
 import { DialogShell } from './DialogShell';
 
 interface JobSearchProps {
@@ -11,12 +11,36 @@ interface JobSearchProps {
   setJobs: Dispatch<SetStateAction<Job[]>>;
 }
 
+interface SearchResult {
+  id: string;
+  company: string;
+  role: string;
+  location: string;
+  salary: string;
+  type: string;
+  posted: string;
+  description: string;
+  logoUrl?: string;
+  url?: string;
+  matchScore?: number | null;
+  fitLabel?: 'best_fit' | 'good_fit' | 'stretch' | null;
+  matchedSkills?: string[];
+}
+
+function displayRole(result: SearchResult): string {
+  return result.role || 'Role unavailable';
+}
+
+function displayCompany(result: SearchResult): string {
+  return result.company || 'Company unavailable';
+}
+
 export function JobSearch({ jobs, setJobs }: JobSearchProps) {
   const selectedJobTitleId = useId();
   const closeButtonRef = useRef<HTMLButtonElement>(null);
-  const [selectedJob, setSelectedJob] = useState<any | null>(null);
+  const [selectedJob, setSelectedJob] = useState<SearchResult | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -33,18 +57,48 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
     setStatusMessage(null);
     try {
       const results = await searchJobs(searchQuery);
-      setSearchResults(results.map((r: any) => ({
+      const mappedResults: SearchResult[] = results.map((r: any) => ({
         id: r.id || r.url || Math.random().toString(),
-        company: r.company || 'Unknown',
-        role: r.title || 'Unknown Role',
+        company: r.company || '',
+        role: r.title || '',
         location: r.location || '',
         salary: r.salary || '',
         type: 'Full-time',
         posted: r.posted_at ? new Date(r.posted_at).toLocaleDateString() : 'Recently',
-        description: r.description || r.source || '',
-        logoUrl: `https://logo.clearbit.com/${(r.company || '').toLowerCase().replace(/\s+/g, '')}.com`,
+        description: r.description || '',
+        logoUrl: r.logo_url || undefined,
         url: r.url,
-      })));
+      })).filter((result) => result.company || result.role || result.url);
+      try {
+        const preview = await getSearchMatchPreview(
+          mappedResults.map((result) => ({
+            id: result.id,
+            title: result.role,
+            company: result.company,
+            location: result.location,
+            salary: result.salary,
+            description: result.description,
+            url: result.url,
+          })),
+        );
+        const previewMap = new Map((preview.jobs || []).map((item) => [item.id || item.url, item]));
+        const enriched = mappedResults.map((result) => {
+          const match = previewMap.get(result.id) || previewMap.get(result.url || '');
+          return {
+            ...result,
+            matchScore: match?.score ?? null,
+            fitLabel: match?.fit_label ?? null,
+            matchedSkills: match?.matched_skills ?? [],
+          };
+        });
+        enriched.sort((a, b) => (b.matchScore ?? -1) - (a.matchScore ?? -1));
+        setSearchResults(enriched);
+        if (!preview.profile_available) {
+          setStatusMessage('Add your profile to unlock best-fit scoring on search results.');
+        }
+      } catch {
+        setSearchResults(mappedResults);
+      }
       if (results.length === 0) {
         setStatusMessage('No matching jobs found for that search.');
       }
@@ -55,9 +109,38 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
     }
   };
 
-  const handleSave = async (e: MouseEvent, result: any) => {
+  const handleSave = async (e: MouseEvent, result: SearchResult) => {
     e.stopPropagation();
     if (jobs.some(j => j.company === result.company && j.role === result.role)) return;
+
+    if (!result.company || !result.role) {
+      setErrorMessage('This result is missing a company or job title, so it cannot be saved yet.');
+      return;
+    }
+
+    try {
+      const duplicateCheck = await checkJobDuplicates({
+        company: result.company,
+        role_title: result.role,
+        job_url: result.url,
+        location: result.location,
+      });
+      if (duplicateCheck.duplicate_type === 'hard') {
+        setErrorMessage(duplicateCheck.message || 'This job is already in your pipeline.');
+        return;
+      }
+      if (duplicateCheck.duplicate_type === 'soft') {
+        const shouldContinue = window.confirm(
+          duplicateCheck.message || 'A similar job already exists in your pipeline. Save this one anyway?'
+        );
+        if (!shouldContinue) {
+          setStatusMessage('Skipped saving duplicate job.');
+          return;
+        }
+      }
+    } catch {
+      // Keep save flow resilient if the warning check fails.
+    }
 
     const optimisticId = result.id || `search-${crypto.randomUUID()}`;
     const newJob: Job = {
@@ -86,6 +169,25 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
       setJobs(prev => prev.filter(j => j.id !== optimisticId));
       setErrorMessage(err instanceof Error ? err.message : 'Failed to save job.');
     }
+  };
+
+  const fitBadge = (result: SearchResult) => {
+    if (result.matchScore == null || !result.fitLabel) return null;
+    const badgeStyles: Record<string, string> = {
+      best_fit: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+      good_fit: 'bg-blue-50 text-blue-700 border-blue-200',
+      stretch: 'bg-amber-50 text-amber-700 border-amber-200',
+    };
+    const labelMap: Record<string, string> = {
+      best_fit: 'Best fit',
+      good_fit: 'Good fit',
+      stretch: 'Stretch',
+    };
+    return (
+      <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${badgeStyles[result.fitLabel]}`}>
+        {labelMap[result.fitLabel]}{typeof result.matchScore === 'number' ? ` • ${result.matchScore}` : ''}
+      </span>
+    );
   };
   return (
     <div className="flex-1 h-full overflow-y-auto p-4 md:p-8 bg-[#F5F5F0]">
@@ -157,21 +259,26 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
               }}
               role="button"
               tabIndex={0}
-              aria-label={`Open ${result.role} at ${result.company}`}
+              aria-label={`Open ${displayRole(result)} at ${displayCompany(result)}`}
               className="p-5 group cursor-pointer transition-all bg-white rounded-3xl border border-slate-100 hover:shadow-[0_8px_30px_rgb(0,0,0,0.04)] focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-300"
             >
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-100">
                     {result.logoUrl ? (
-                      <img src={result.logoUrl} alt={result.company} className="w-10 h-10 rounded-xl" referrerPolicy="no-referrer" />
+                      <img src={result.logoUrl} alt={displayCompany(result)} className="w-10 h-10 rounded-xl" referrerPolicy="no-referrer" />
                     ) : (
                       <Building2 className="w-5 h-5 text-slate-400" />
                     )}
                   </div>
                   <div>
-                    <h3 className="text-lg font-serif font-bold text-slate-900">{result.role}</h3>
-                    <p className="text-sm text-slate-500 font-sans">{result.company}</p>
+                    <h3 className="text-lg font-serif font-bold text-slate-900">{displayRole(result)}</h3>
+                    <p className="text-sm text-slate-500 font-sans">{displayCompany(result)}</p>
+                    {result.fitLabel && (
+                      <div className="mt-2">
+                        {fitBadge(result)}
+                      </div>
+                    )}
                   </div>
                 </div>
                 <button 
@@ -197,6 +304,16 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
               <p className="text-sm line-clamp-2 mb-4 text-slate-500">
                 {result.description}
               </p>
+
+              {result.matchedSkills && result.matchedSkills.length > 0 && (
+                <div className="mb-4 flex flex-wrap gap-2">
+                  {result.matchedSkills.slice(0, 3).map((skill) => (
+                    <span key={`${result.id}-${skill}`} className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600">
+                      {skill}
+                    </span>
+                  ))}
+                </div>
+              )}
 
               <div className="flex items-center justify-between pt-4 border-t border-slate-100">
                 <span className="text-xs text-slate-400">Posted {result.posted}</span>
@@ -224,15 +341,15 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
               <div className="p-6 border-b border-slate-100 flex items-start justify-between bg-slate-50/50 shrink-0">
                 <div className="flex items-start gap-4 pr-4">
                   {selectedJob.logoUrl ? (
-                    <img src={selectedJob.logoUrl} alt={selectedJob.company} className="w-16 h-16 rounded-2xl border border-slate-100 shrink-0 bg-white" referrerPolicy="no-referrer" />
+                    <img src={selectedJob.logoUrl} alt={displayCompany(selectedJob)} className="w-16 h-16 rounded-2xl border border-slate-100 shrink-0 bg-white" referrerPolicy="no-referrer" />
                   ) : (
                     <div className="w-16 h-16 flex items-center justify-center rounded-2xl bg-white border border-slate-100 shrink-0">
                       <Building2 className="w-8 h-8 text-slate-400" />
                     </div>
                   )}
                   <div className="min-w-0 flex-1">
-                    <h2 id={selectedJobTitleId} className="text-2xl tracking-tight font-serif font-bold text-slate-900 break-words">{selectedJob.role}</h2>
-                    <p className="text-lg text-slate-500 font-sans truncate">{selectedJob.company}</p>
+                    <h2 id={selectedJobTitleId} className="text-2xl tracking-tight font-serif font-bold text-slate-900 break-words">{displayRole(selectedJob)}</h2>
+                    <p className="text-lg text-slate-500 font-sans truncate">{displayCompany(selectedJob)}</p>
                   </div>
                 </div>
                 <button 
@@ -260,17 +377,23 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
 
                 <div className="prose prose-slate max-w-none mb-4">
                   <h3 className="text-xl font-serif font-bold text-slate-900 mb-2">About the role</h3>
-                  <p className="text-slate-600 leading-relaxed">{selectedJob.description}</p>
-                  <p className="text-slate-600 leading-relaxed mt-4">
-                    Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.
-                  </p>
-                  <h3 className="text-xl font-serif font-bold text-slate-900 mt-6 mb-2">Requirements</h3>
-                  <ul className="list-disc pl-5 text-slate-600 space-y-2">
-                    <li>3+ years of experience in a similar role</li>
-                    <li>Strong portfolio demonstrating your skills</li>
-                    <li>Excellent communication and collaboration abilities</li>
-                    <li>Experience working in a fast-paced environment</li>
-                  </ul>
+                  {selectedJob.description ? (
+                    <p className="text-slate-600 leading-relaxed whitespace-pre-line">{selectedJob.description}</p>
+                  ) : (
+                    <p className="text-slate-500 leading-relaxed">No detailed job description was returned for this search result.</p>
+                  )}
+                  {selectedJob.matchedSkills && selectedJob.matchedSkills.length > 0 && (
+                    <>
+                      <h3 className="text-xl font-serif font-bold text-slate-900 mt-6 mb-2">Matched skills</h3>
+                      <div className="flex flex-wrap gap-2">
+                        {selectedJob.matchedSkills.map((skill) => (
+                          <span key={`modal-${selectedJob.id}-${skill}`} className="rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-700">
+                            {skill}
+                          </span>
+                        ))}
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -278,10 +401,18 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
               <div className="p-6 border-t border-slate-100 bg-slate-50/50 shrink-0 flex flex-col sm:flex-row items-center gap-4">
                 <button 
                   onClick={(e) => handleSave(e, selectedJob)}
-                  disabled={jobs.some(j => j.company === selectedJob.company && j.role === selectedJob.role)}
+                  disabled={
+                    !selectedJob.company ||
+                    !selectedJob.role ||
+                    jobs.some(j => j.company === selectedJob.company && j.role === selectedJob.role)
+                  }
                   className="w-full sm:flex-1 py-3 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-medium shadow-sm transition-colors disabled:bg-slate-200 disabled:text-slate-500"
                 >
-                  {jobs.some(j => j.company === selectedJob.company && j.role === selectedJob.role) ? 'Saved to Pipeline' : 'Save to Pipeline'}
+                  {!selectedJob.company || !selectedJob.role
+                    ? 'Missing Required Details'
+                    : jobs.some(j => j.company === selectedJob.company && j.role === selectedJob.role)
+                      ? 'Saved to Pipeline'
+                      : 'Save to Pipeline'}
                 </button>
                 {selectedJob?.url ? (
                   <button

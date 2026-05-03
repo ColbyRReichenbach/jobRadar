@@ -131,6 +131,7 @@ def render_digest_text(stats: dict) -> str:
 async def _send_weekly_digest_async():
     from backend.database import async_session_factory
     from backend.models import NotificationPreference, User
+    from backend.services.alerts import create_user_alert
 
     async with async_session_factory() as db:
         # Find users with digest enabled
@@ -158,14 +159,14 @@ async def _send_weekly_digest_async():
                 logger.info(f"Weekly digest for {user.email}: {stats}")
                 # In production this would send via Gmail API or SendGrid
                 # For now we create an alert so users see it in-app
-                from backend.models import Alert
-                alert = Alert(
+                await create_user_alert(
+                    db,
                     user_id=user.id,
                     alert_type="weekly_digest",
                     title="Your Weekly Digest",
                     body=body,
+                    notification_pref=pref,
                 )
-                db.add(alert)
                 sent += 1
             except Exception as e:
                 logger.error(f"Failed to send digest to {user.email}: {e}")

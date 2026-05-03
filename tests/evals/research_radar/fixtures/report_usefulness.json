@@ -1,0 +1,44 @@
+[
+  {
+    "name": "deterministic_report_surfaces_top_evidence_and_counts",
+    "normalized_brief": {
+      "search_objective": "Find strong platform engineering opportunities.",
+      "ideal_role_titles": ["Platform Engineer"],
+      "target_domains": ["developer_tools"],
+      "target_companies": ["Example"],
+      "target_locations": ["Remote"],
+      "remote_preferences": ["remote"],
+      "seniority": ["senior"],
+      "must_have_signals": ["platform"],
+      "avoid_signals": ["intern"],
+      "fit_summary": "Experienced platform engineer.",
+      "search_constraints": []
+    },
+    "diff_summary": {
+      "diff_summary": "1 new findings, 0 changed findings, and 0 dropped findings since the last report.",
+      "new_findings": ["example|platform-engineer"],
+      "changed_findings": [],
+      "all_keys": ["example|platform-engineer"]
+    },
+    "evidence_items": [
+      {
+        "source_item_id": "source-1",
+        "claim": "Example is hiring a Platform Engineer for its data platform team.",
+        "title": "Platform Engineer at Example",
+        "company_name": "Example",
+        "role_title": "Platform Engineer"
+      }
+    ],
+    "expect": {
+      "finding_count": 1,
+      "new_findings_count": 1,
+      "required_sections": [
+        "executive_summary",
+        "what_changed",
+        "best_fit_opportunities",
+        "recommended_actions"
+      ],
+      "summary_contains": "Example is hiring a Platform Engineer"
+    }
+  }
+]

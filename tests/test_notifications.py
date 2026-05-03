@@ -3,7 +3,7 @@
 import pytest
 from datetime import datetime, timezone, timedelta
 from unittest.mock import patch, AsyncMock
-from tests.conftest import AUTH_HEADER
+from tests.conftest import AUTH_HEADER, TEST_USER_ID
 
 
 @pytest.mark.asyncio
@@ -15,6 +15,13 @@ async def test_get_preferences_default(client):
     assert data["sms_enabled"] is False
     assert data["sms_phone"] is None
     assert data["weekly_digest_enabled"] is False
+    assert data["browser_notifications_enabled"] is False
+    assert data["radar_updates_enabled"] is True
+    assert data["inbox_updates_enabled"] is True
+    assert data["conversations_enabled"] is True
+    assert data["quiet_hours_enabled"] is False
+    assert data["quiet_hours_start"] is None
+    assert data["quiet_hours_end"] is None
 
 
 @pytest.mark.asyncio
@@ -31,17 +38,33 @@ async def test_create_and_update_preferences(client):
     assert data["sms_enabled"] is True
     assert data["sms_phone"] == "+15551234567"
     assert data["weekly_digest_enabled"] is False
+    assert data["radar_updates_enabled"] is True
+    assert data["inbox_updates_enabled"] is True
 
     # Update
     resp2 = await client.put(
         "/api/notifications/preferences",
-        json={"weekly_digest_enabled": True},
+        json={
+            "weekly_digest_enabled": True,
+            "browser_notifications_enabled": True,
+            "radar_updates_enabled": False,
+            "followups_enabled": False,
+            "quiet_hours_enabled": True,
+            "quiet_hours_start": 22,
+            "quiet_hours_end": 7,
+        },
         headers=AUTH_HEADER,
     )
     assert resp2.status_code == 200
     data2 = resp2.json()
     assert data2["sms_enabled"] is True  # unchanged
     assert data2["weekly_digest_enabled"] is True
+    assert data2["browser_notifications_enabled"] is True
+    assert data2["radar_updates_enabled"] is False
+    assert data2["followups_enabled"] is False
+    assert data2["quiet_hours_enabled"] is True
+    assert data2["quiet_hours_start"] == 22
+    assert data2["quiet_hours_end"] == 7
 
 
 @pytest.mark.asyncio
@@ -59,6 +82,36 @@ async def test_get_preferences_after_set(client):
     assert data["sms_enabled"] is True
     assert data["sms_phone"] == "+15559876543"
     assert data["weekly_digest_enabled"] is True
+    assert data["radar_updates_enabled"] is True
+
+
+@pytest.mark.asyncio
+async def test_notification_preferences_allow_clearing_quiet_hours(client):
+    resp = await client.put(
+        "/api/notifications/preferences",
+        json={
+            "quiet_hours_enabled": True,
+            "quiet_hours_start": 21,
+            "quiet_hours_end": 6,
+        },
+        headers=AUTH_HEADER,
+    )
+    assert resp.status_code == 200
+
+    clear_resp = await client.put(
+        "/api/notifications/preferences",
+        json={
+            "quiet_hours_enabled": False,
+            "quiet_hours_start": None,
+            "quiet_hours_end": None,
+        },
+        headers=AUTH_HEADER,
+    )
+    assert clear_resp.status_code == 200
+    data = clear_resp.json()
+    assert data["quiet_hours_enabled"] is False
+    assert data["quiet_hours_start"] is None
+    assert data["quiet_hours_end"] is None
 
 
 @pytest.mark.asyncio
@@ -132,6 +185,29 @@ async def test_create_alert_no_sms_when_disabled(client, db_session):
     )
     assert resp.status_code == 201
     assert resp.json()["sms_sent"] is False
+
+
+@pytest.mark.asyncio
+async def test_radar_alert_volume_limit(monkeypatch, db_session):
+    from backend.services.alerts import create_user_alert
+
+    monkeypatch.setenv("RADAR_ALERT_MAX_PER_USER_PER_DAY", "1")
+
+    first = await create_user_alert(
+        db_session,
+        user_id=TEST_USER_ID,
+        alert_type="research_report_ready",
+        title="Radar report ready",
+    )
+    assert first is not None
+
+    second = await create_user_alert(
+        db_session,
+        user_id=TEST_USER_ID,
+        alert_type="research_run_failed",
+        title="Radar run failed",
+    )
+    assert second is None
 
 
 @pytest.mark.asyncio

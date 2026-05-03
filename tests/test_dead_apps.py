@@ -1,10 +1,12 @@
 """Sprint 7: Tests for dead application detection."""
 
+from datetime import datetime, timezone
 import pytest
 import pytest_asyncio
+from sqlalchemy import select
 from unittest.mock import AsyncMock, patch, MagicMock
 
-from tests.conftest import AUTH_HEADER
+from tests.conftest import AUTH_HEADER, TEST_USER_ID
 
 
 @pytest.mark.asyncio
@@ -129,3 +131,52 @@ async def test_check_url_network_error():
 
             result = await _check_url("https://example.com/job/timeout")
             assert result["alive"] is True  # Don't mark dead on network issues
+
+
+@pytest.mark.asyncio
+async def test_dead_app_task_creates_pipeline_alert(db_session):
+    from backend.models import Alert, Application, User
+    from backend.tasks.check_dead_apps import _run_check
+
+    class _SessionCtx:
+        def __init__(self, session):
+            self.session = session
+
+        async def __aenter__(self):
+            return self.session
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    app = Application(
+        user_id=TEST_USER_ID,
+        company="DeadCo",
+        role_title="Ghost Engineer",
+        status="applied",
+        job_url="https://example.com/dead",
+        listing_alive=True,
+        listing_last_checked=None,
+        listing_died_at=None,
+        applied_at=datetime.now(timezone.utc),
+    )
+    db_session.add(app)
+    user_result = await db_session.execute(select(User).where(User.id == TEST_USER_ID))
+    user = user_result.scalar_one()
+    user.notifications_started_at = datetime.now(timezone.utc)
+    await db_session.commit()
+
+    with patch("backend.database.async_session_factory", return_value=_SessionCtx(db_session)):
+        with patch("backend.tasks.check_dead_apps._check_url", new=AsyncMock(return_value={"alive": False, "reason": "404"})):
+            result = await _run_check()
+
+    assert result["dead"] == 1
+
+    await db_session.refresh(app)
+    assert app.listing_alive is False
+    assert app.listing_died_at is not None
+
+    alert_result = await db_session.execute(select(Alert).where(Alert.user_id == TEST_USER_ID))
+    alert = alert_result.scalar_one()
+    assert alert.alert_type == "dead_listing"
+    assert alert.action_url == f"/dashboard?job_id={app.id}"
+    assert "Posting may be closed at DeadCo" in alert.title

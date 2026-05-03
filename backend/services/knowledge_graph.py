@@ -13,6 +13,13 @@ from backend.models import (
     Application, Company, Contact, EmailEvent, CompanyTechProfile,
     AtsBehavior, WarmConnection,
 )
+from backend.services.aggregate_privacy import (
+    aggregate_min_users,
+    bucket_count,
+    distinct_company_user_count,
+    distinct_ats_user_count,
+    has_enough_contributors,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -120,33 +127,46 @@ async def get_company_context(db: AsyncSession, domain: str, user_id=None) -> di
         })
 
     # 5. Tech stack
-    tech_stmt = select(CompanyTechProfile).where(
-        CompanyTechProfile.company_id == company.id
-    ).order_by(CompanyTechProfile.mention_count.desc())
-    tech_result = await db.execute(tech_stmt)
-    tech_stack = [
-        {"name": t.tech_name, "category": t.category, "mentions": t.mention_count}
-        for t in tech_result.scalars().all()
-    ]
+    company_contributor_count = await distinct_company_user_count(db, company.id)
+    tech_stack = []
+    if has_enough_contributors(company_contributor_count):
+        tech_stmt = select(CompanyTechProfile).where(
+            CompanyTechProfile.company_id == company.id
+        ).order_by(CompanyTechProfile.mention_count.desc())
+        tech_result = await db.execute(tech_stmt)
+        tech_stack = [
+            {
+                "name": t.tech_name,
+                "category": t.category,
+                "mention_bucket": bucket_count(t.mention_count),
+            }
+            for t in tech_result.scalars().all()
+        ]
 
     # 6. ATS behavior profile
     ats_profile = None
     if company.ats_platform:
-        ats_stmt = select(AtsBehavior).where(
-            AtsBehavior.platform == company.ats_platform
-        )
-        ats_result = await db.execute(ats_stmt)
-        metrics = {}
-        for m in ats_result.scalars().all():
-            metrics[m.metric_name] = {
-                "value": m.metric_value,
-                "sample_size": m.sample_size,
-            }
-        if metrics:
-            ats_profile = {
-                "platform": company.ats_platform,
-                "metrics": metrics,
-            }
+        ats_contributor_count = await distinct_ats_user_count(db, company.ats_platform)
+        if has_enough_contributors(ats_contributor_count):
+            ats_stmt = select(AtsBehavior).where(
+                AtsBehavior.platform == company.ats_platform,
+                AtsBehavior.sample_size >= aggregate_min_users(),
+            )
+            ats_result = await db.execute(ats_stmt)
+            metrics = {}
+            for m in ats_result.scalars().all():
+                metrics[m.metric_name] = {
+                    "value": m.metric_value,
+                    "sample_size_bucket": bucket_count(m.sample_size),
+                    "contributor_bucket": bucket_count(ats_contributor_count),
+                }
+            if metrics:
+                ats_profile = {
+                    "platform": company.ats_platform,
+                    "metrics": metrics,
+                    "aggregate_status": "available",
+                    "minimum_user_count": aggregate_min_users(),
+                }
 
     # 7. Response time stats
     response_stats = {}

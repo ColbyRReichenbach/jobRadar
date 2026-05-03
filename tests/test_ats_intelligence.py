@@ -1,10 +1,29 @@
 """Sprint 8: Tests for ATS behavioral intelligence."""
 
 import pytest
-import pytest_asyncio
+import uuid
 from datetime import datetime, timezone, timedelta
 
-from tests.conftest import AUTH_HEADER
+from tests.conftest import AUTH_HEADER, TEST_USER_ID
+
+
+async def _add_users(db_session, count: int) -> list[uuid.UUID]:
+    from backend.models import User
+
+    user_ids = [TEST_USER_ID]
+    for idx in range(count - 1):
+        user_id = uuid.uuid4()
+        user_ids.append(user_id)
+        db_session.add(
+            User(
+                id=user_id,
+                google_id=f"ats-user-{user_id}",
+                email=f"ats-{idx}@apptrail.test",
+                name=f"ATS User {idx}",
+            )
+        )
+    await db_session.commit()
+    return user_ids
 
 
 @pytest.mark.asyncio
@@ -15,6 +34,37 @@ async def test_ats_intelligence_empty(client):
     data = resp.json()
     assert data["platform"] == "greenhouse.io"
     assert data["metrics"] == {}
+    assert data["aggregate_status"] == "insufficient_data"
+
+
+@pytest.mark.asyncio
+async def test_ats_profile_hides_metrics_until_minimum_distinct_users(client, db_session):
+    from backend.models import Company, Application
+
+    company = Company(domain="smallco.com", name="SmallCo", ats_platform="greenhouse.io")
+    db_session.add(company)
+    await db_session.commit()
+    await db_session.refresh(company)
+    db_session.add(
+        Application(
+            company="SmallCo",
+            role_title="Engineer",
+            status="rejected",
+            company_id=company.id,
+            applied_at=datetime.now(timezone.utc) - timedelta(days=30),
+            last_email_at=datetime.now(timezone.utc) - timedelta(days=25),
+        )
+    )
+    await db_session.commit()
+
+    compute_resp = await client.post("/api/intelligence/ats/compute", headers=AUTH_HEADER)
+    assert compute_resp.status_code == 200
+    assert compute_resp.json()["metrics"] == []
+
+    profile_resp = await client.get("/api/intelligence/ats/greenhouse.io", headers=AUTH_HEADER)
+    profile = profile_resp.json()
+    assert profile["metrics"] == {}
+    assert profile["aggregate_status"] == "insufficient_data"
 
 
 @pytest.mark.asyncio
@@ -32,23 +82,43 @@ async def test_compute_ats_metrics(client, db_session):
     await db_session.commit()
     await db_session.refresh(company)
 
-    # Create applications linked to that company
-    app1 = Application(
-        company="TestCorp",
-        role_title="SWE",
-        status="rejected",
-        company_id=company.id,
-        applied_at=datetime.now(timezone.utc) - timedelta(days=30),
-        last_email_at=datetime.now(timezone.utc) - timedelta(days=25),
-    )
-    app2 = Application(
-        company="TestCorp",
-        role_title="Designer",
-        status="applied",
-        company_id=company.id,
-        applied_at=datetime.now(timezone.utc) - timedelta(days=20),
-    )
-    db_session.add_all([app1, app2])
+    user_ids = await _add_users(db_session, 4)
+    apps = [
+        Application(
+            user_id=user_ids[0],
+            company="TestCorp",
+            role_title="SWE",
+            status="rejected",
+            company_id=company.id,
+            applied_at=datetime.now(timezone.utc) - timedelta(days=30),
+            last_email_at=datetime.now(timezone.utc) - timedelta(days=25),
+        ),
+        Application(
+            user_id=user_ids[1],
+            company="TestCorp",
+            role_title="Backend Engineer",
+            status="rejected",
+            company_id=company.id,
+            applied_at=datetime.now(timezone.utc) - timedelta(days=28),
+        ),
+        Application(
+            user_id=user_ids[2],
+            company="TestCorp",
+            role_title="Designer",
+            status="applied",
+            company_id=company.id,
+            applied_at=datetime.now(timezone.utc) - timedelta(days=20),
+        ),
+        Application(
+            user_id=user_ids[3],
+            company="TestCorp",
+            role_title="Data Engineer",
+            status="applied",
+            company_id=company.id,
+            applied_at=datetime.now(timezone.utc) - timedelta(days=18),
+        ),
+    ]
+    db_session.add_all(apps)
     await db_session.commit()
 
     # Compute metrics
@@ -63,7 +133,9 @@ async def test_compute_ats_metrics(client, db_session):
     assert profile_resp.status_code == 200
     profile = profile_resp.json()
     assert "rejection_rate" in profile["metrics"]
-    assert profile["metrics"]["rejection_rate"]["value"] == 50.0  # 1 of 2 rejected
+    assert profile["metrics"]["rejection_rate"]["value"] == 50.0
+    assert profile["metrics"]["rejection_rate"]["sample_size_bucket"] == "3-4"
+    assert "sample_size" not in profile["metrics"]["rejection_rate"]
 
 
 @pytest.mark.asyncio
@@ -80,16 +152,19 @@ async def test_ats_ghosting_rate(client, db_session):
     await db_session.commit()
     await db_session.refresh(company)
 
-    # Old app with no response
-    old_app = Application(
-        company="GhostCo",
-        role_title="Phantom Role",
-        status="applied",
-        company_id=company.id,
-        applied_at=datetime.now(timezone.utc) - timedelta(days=30),
-        last_email_at=None,
-    )
-    db_session.add(old_app)
+    user_ids = await _add_users(db_session, 3)
+    db_session.add_all([
+        Application(
+            user_id=user_id,
+            company="GhostCo",
+            role_title=f"Phantom Role {idx}",
+            status="applied",
+            company_id=company.id,
+            applied_at=datetime.now(timezone.utc) - timedelta(days=30 + idx),
+            last_email_at=None,
+        )
+        for idx, user_id in enumerate(user_ids)
+    ])
     await db_session.commit()
 
     resp = await client.post("/api/intelligence/ats/compute", headers=AUTH_HEADER)
@@ -115,15 +190,19 @@ async def test_ats_insights_generated(client, db_session):
     await db_session.commit()
     await db_session.refresh(company)
 
-    app1 = Application(
-        company="InsightCo",
-        role_title="Analyst",
-        status="rejected",
-        company_id=company.id,
-        applied_at=datetime.now(timezone.utc) - timedelta(days=10),
-        last_email_at=datetime.now(timezone.utc) - timedelta(days=5),
-    )
-    db_session.add(app1)
+    user_ids = await _add_users(db_session, 3)
+    db_session.add_all([
+        Application(
+            user_id=user_id,
+            company="InsightCo",
+            role_title=f"Analyst {idx}",
+            status="rejected",
+            company_id=company.id,
+            applied_at=datetime.now(timezone.utc) - timedelta(days=10 + idx),
+            last_email_at=datetime.now(timezone.utc) - timedelta(days=5 + idx),
+        )
+        for idx, user_id in enumerate(user_ids)
+    ])
     await db_session.commit()
 
     await client.post("/api/intelligence/ats/compute", headers=AUTH_HEADER)

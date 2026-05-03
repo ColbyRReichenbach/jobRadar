@@ -34,6 +34,20 @@ async def test_parse_job_rejects_private_ip_urls(client):
 
 
 @pytest.mark.asyncio
+async def test_parse_job_rejects_non_global_ip_urls(client):
+    with patch("backend.main.extract_job", new_callable=AsyncMock) as mock_extract:
+        response = await client.post(
+            "/api/jobs/parse",
+            json={"url": "https://100.64.0.1/job/123"},
+            headers=AUTH_HEADER,
+        )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Local or private network addresses are not allowed"
+    mock_extract.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_parse_job_rejects_unsupported_hosts(client):
     with patch("backend.main.extract_job", new_callable=AsyncMock) as mock_extract:
         response = await client.post(

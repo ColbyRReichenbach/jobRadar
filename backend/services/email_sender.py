@@ -222,6 +222,7 @@ async def send_email(
         )
     contact_result = await db.execute(contact_stmt.limit(1))
     existing_contact = contact_result.scalar_one_or_none()
+    contact_to_index = existing_contact
     if existing_contact:
         existing_contact.reached_out = True
         existing_contact.reached_out_at = datetime.now(timezone.utc)
@@ -238,7 +239,13 @@ async def send_email(
             reached_out_at=datetime.now(timezone.utc),
         )
         db.add(contact)
+        contact_to_index = contact
 
+    await db.flush()
+    from backend.services.search.indexer import index_record
+    await index_record(db, event)
+    if contact_to_index:
+        await index_record(db, contact_to_index)
     await db.commit()
     await db.refresh(event)
 

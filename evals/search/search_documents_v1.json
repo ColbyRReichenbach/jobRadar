@@ -1,0 +1,94 @@
+{
+  "dataset_version": "search_eval_v1",
+  "primary_user_key": "candidate_demo_user",
+  "documents": [
+    {
+      "key": "application:tracebank-data-scientist",
+      "user_key": "candidate_demo_user",
+      "source_type": "application",
+      "title": "TraceBank Data Scientist",
+      "subtitle": "Charlotte NLP platform team",
+      "body": "Applied role focused on virtual assistant search ranking, NLP evaluation, LLM observability, and responsible AI model metrics.",
+      "keywords": ["Python", "NLP", "LLM evals", "search ranking"],
+      "source_updated_at": "2026-04-30T12:00:00Z",
+      "indexed_at": "2026-05-02T12:00:00Z"
+    },
+    {
+      "key": "application:finops-analytics",
+      "user_key": "candidate_demo_user",
+      "source_type": "application",
+      "title": "Northstar FinOps Analytics Engineer",
+      "subtitle": "Plano cost intelligence",
+      "body": "Saved role for cost dashboards, cloud spend forecasting, anomaly detection, and executive analytics.",
+      "keywords": ["FinOps", "forecasting", "dashboards", "cost"],
+      "source_updated_at": "2026-04-25T12:00:00Z",
+      "indexed_at": "2026-05-02T12:00:00Z"
+    },
+    {
+      "key": "email:tracebank-interview",
+      "user_key": "candidate_demo_user",
+      "source_type": "email",
+      "title": "Interview loop for assistant search role",
+      "subtitle": "Alex Morgan at TraceBank",
+      "body": "Product-facing summary: recruiter Alex Morgan invited the candidate to an interview for the chat search and voice assistant data science role.",
+      "keywords": ["interview", "recruiter", "assistant search"],
+      "source_updated_at": "2026-05-01T14:00:00Z",
+      "indexed_at": "2026-05-02T12:00:00Z"
+    },
+    {
+      "key": "contact:alex-morgan",
+      "user_key": "candidate_demo_user",
+      "source_type": "contact",
+      "title": "Alex Morgan",
+      "subtitle": "AI platform recruiter at TraceBank",
+      "body": "Recruiter contact for assistant search, chat AI, and data science interviews.",
+      "keywords": ["recruiter", "TraceBank", "AI platform"],
+      "source_updated_at": "2026-05-01T14:05:00Z",
+      "indexed_at": "2026-05-02T12:00:00Z"
+    },
+    {
+      "key": "radar_report:erica-hiring-signals",
+      "user_key": "candidate_demo_user",
+      "source_type": "radar_report",
+      "title": "Assistant AI Hiring Signals",
+      "subtitle": "published",
+      "body": "Radar summary found Bank of America Erica, chat, voice, search, NLP, and responsible AI hiring signals tied to model evaluation workflows.",
+      "keywords": ["Radar", "Erica", "chat voice", "responsible AI"],
+      "source_updated_at": "2026-05-02T09:00:00Z",
+      "indexed_at": "2026-05-02T12:00:00Z"
+    },
+    {
+      "key": "email:generic-rejection",
+      "user_key": "candidate_demo_user",
+      "source_type": "email",
+      "title": "Application status update",
+      "subtitle": "Automated recruiting system",
+      "body": "Product-facing summary: automated rejection notice for an unrelated frontend role.",
+      "keywords": ["rejection", "status update"],
+      "source_updated_at": "2026-04-20T12:00:00Z",
+      "indexed_at": "2026-04-21T12:00:00Z"
+    },
+    {
+      "key": "application:stale-platform-analytics",
+      "user_key": "candidate_demo_user",
+      "source_type": "application",
+      "title": "Stale Platform Analytics",
+      "subtitle": "Remote",
+      "body": "Saved role used to verify stale-index metrics when source content changed after the index timestamp.",
+      "keywords": ["stale index", "analytics"],
+      "source_updated_at": "2026-05-02T13:00:00Z",
+      "indexed_at": "2026-04-20T12:00:00Z"
+    },
+    {
+      "key": "application:foreign-user-offer",
+      "user_key": "other_user",
+      "source_type": "application",
+      "title": "TraceBank Confidential Offer",
+      "subtitle": "Other user's private application",
+      "body": "This document should never appear in candidate_demo_user search results.",
+      "keywords": ["TraceBank", "offer", "private"],
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "indexed_at": "2026-05-02T12:00:00Z"
+    }
+  ]
+}

@@ -1,0 +1,76 @@
+# Email Classifier Eval
+
+## Metadata
+
+| Metric | Value |
+| --- | --- |
+| dataset_version | email_classifier_v1 |
+| decision | approved_for_demo_artifact |
+| generated_at | 2026-05-02T18:13:05.468552+00:00 |
+| git_sha | 2c5cfe1 |
+| model | gpt-4o-mini |
+| prompt_version | v3 |
+| recommendation | keep_recall_weighted_threshold |
+| release_version | ai-classifier-evals |
+| report_type | email_classifier_eval |
+| title | Email Classifier Eval |
+
+## Summary
+
+No AI summary was generated. Deterministic metric tables below are the source of truth.
+
+## Primary Metrics
+
+| Metric | Value |
+| --- | --- |
+| baseline_subject_only_f1 | 0.8 |
+| baseline_subject_only_recall | 0.6667 |
+| category_accuracy | 0.8333 |
+| confusion_matrix | `{'action_item': {'action_item': 1, 'conversation': 0, 'interview_request': 1, 'job_update': 0, 'not_relevant': 0, 'offer': 0, 'rejection': 0}, 'conversation': {'action_item': 0, 'conversation': 0, 'interview_request': 0, 'job_update': 0, 'not_relevant': 1, 'offer': 0, 'rejection': 0}, 'interview_request': {'action_item': 0, 'conversation': 0, 'interview_request': 1, 'job_update': 0, 'not_relevant': 0, 'offer': 0, 'rejection': 0}, 'job_update': {'action_item': 0, 'conversation': 0, 'interview_request': 0, 'job_update': 2, 'not_relevant': 0, 'offer': 0, 'rejection': 0}, 'not_relevant': {'action_item': 0, 'conversation': 0, 'interview_request': 0, 'job_update': 0, 'not_relevant': 3, 'offer': 0, 'rejection': 0}, 'offer': {'action_item': 0, 'conversation': 0, 'interview_request': 0, 'job_update': 0, 'not_relevant': 0, 'offer': 1, 'rejection': 0}, 'rejection': {'action_item': 0, 'conversation': 0, 'interview_request': 0, 'job_update': 0, 'not_relevant': 0, 'offer': 0, 'rejection': 2}}` |
+| example_count | 12 |
+| f1 | 0.9412 |
+| false_negatives | 1 |
+| false_positives | 0 |
+| precision | 1 |
+| recall | 0.8889 |
+| stage_accuracy | 0.7778 |
+
+## Token Breakdown
+
+| Metric | Value |
+| --- | --- |
+| live_model_calls | 0 |
+| output_tokens | estimated_per_email |
+| prompt_tokens | estimated_per_email |
+
+## Cost Breakdown
+
+| Metric | Value |
+| --- | --- |
+| cost_per_1000_emails_cents | 0 |
+| total_cost_cents | 0 |
+
+## Latency Metrics
+
+| Metric | Value |
+| --- | --- |
+| avg_ms | 0.063 |
+| p50_ms | 0.036 |
+| p95_ms | 0.301 |
+
+## Supporting Artifacts
+
+- [Classifier eval dataset](evals/email_classifier/email_classifier_v1.jsonl)
+- [Labeling guidelines](evals/labeling-guidelines.md)
+- [Dataset governance](evals/dataset-governance.md)
+
+## Notes
+
+- Recall is weighted above precision because a missed job email is higher risk than extra review noise.
+- CI uses deterministic classifier paths and does not call a live model provider.
+- The subject-only baseline is included to show the value of richer fallback rules before live prompt/model comparisons.
+
+## Decision
+
+- Recommendation: keep_recall_weighted_threshold
+- Decision: approved_for_demo_artifact

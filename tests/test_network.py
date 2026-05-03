@@ -307,6 +307,44 @@ async def test_network_auto_fills_email_derived_contact_fields(client, db_sessio
 
 
 @pytest.mark.asyncio
+async def test_network_does_not_copy_user_signature_linkedin_to_sender(client, db_session):
+    from backend.models import EmailEvent
+    from datetime import datetime, timezone
+
+    db_session.add(
+        EmailEvent(
+            gmail_message_id="network-signature-linkedin-1",
+            sender="Alex Herra",
+            sender_email="alex.herra@example.com",
+            subject="Quick follow-up",
+            body=(
+                "Hi Colby,\n\n"
+                "Can you send your availability?\n\n"
+                "Best,\n"
+                "Alex Herra\n\n"
+                "-- \n"
+                "Colby Reichenbach\n"
+                "https://www.linkedin.com/in/colbyreichenbach/\n"
+            ),
+            snippet="Can you send your availability?",
+            classification="conversation",
+            is_human=True,
+            email_type="conversation",
+            company_name="Example",
+            received_at=datetime.now(timezone.utc),
+        )
+    )
+    await db_session.commit()
+
+    resp = await client.get("/api/network", headers=AUTH_HEADER)
+    assert resp.status_code == 200
+    contacts = resp.json()
+    contact = next(c for c in contacts if c["email"] == "alex.herra@example.com")
+    assert contact["name"] == "Alex Herra"
+    assert contact["linkedin_url"] is None
+
+
+@pytest.mark.asyncio
 async def test_network_contact_detail_infers_missing_fields_from_email_history(client, db_session):
     from backend.models import EmailEvent
     from datetime import datetime, timezone

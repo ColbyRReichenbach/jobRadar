@@ -1,0 +1,7 @@
+{
+  "linked_output_tokens": 700,
+  "linked_prompt_tokens": 3800,
+  "linked_total_tokens": 4500,
+  "run_tokens_in": 12000,
+  "run_tokens_out": 2600
+}
