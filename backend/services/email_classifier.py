@@ -88,6 +88,20 @@ Subject: {subject}
             ai_orchestrator.record_fallback(CLASSIFIER_TASK, "invalid_classification", {"surface": "email_classifier"})
             return _fallback_classify(subject, body, sender_email, sender=sender)
         return normalized_result
+    except ai_safety.AiSafetyQuarantinedError as e:
+        logger.warning("Classifier quarantined unsafe inbound email: %s", e)
+        return {
+            "classification": "not_relevant",
+            "confidence": 1.0,
+            "company_name": None,
+            "sender_role": "automated",
+            "key_sentence": subject,
+            "summary": "This message was quarantined before AI classification because it contained unsafe instructions.",
+            "action_needed": False,
+            "is_automated": True,
+            "safety_status": "quarantined",
+            "safety_reason": str(e),
+        }
     except Exception as e:
         logger.error("Classifier unexpected error: %s", e)
         ai_orchestrator.record_fallback(CLASSIFIER_TASK, "task_failure", {"surface": "email_classifier"})

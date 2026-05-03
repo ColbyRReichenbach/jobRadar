@@ -3260,6 +3260,7 @@ async def sync_gmail(
         "skipped_blocked": 0,
         "skipped_noise": 0,
         "skipped_not_relevant": 0,
+        "quarantined": 0,
     }
     new_count = 0
     emails_synced = []
@@ -3393,6 +3394,22 @@ async def sync_gmail(
         sync_stats["classified"] += 1
 
         cls = classification.get("classification", "job_update")
+
+        if classification.get("safety_status") == "quarantined":
+            sync_stats["quarantined"] += 1
+            record_sync_audit(
+                gmail_message_id=msg_id,
+                thread_id=msg.get("threadId", ""),
+                sender=sender_name,
+                sender_email=sender_email_addr,
+                sender_domain=sender_domain,
+                subject=subject,
+                received_at=received_at,
+                decision="quarantined",
+                reason=classification.get("safety_reason") or "ai_safety_quarantine",
+                classification=cls,
+            )
+            continue
 
         # Skip not_relevant
         if cls == "not_relevant":

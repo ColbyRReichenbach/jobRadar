@@ -215,8 +215,19 @@ export async function fetchAiTraceAccessLogs(): Promise<AiTraceAccessLog[]> {
   return payload.access_logs;
 }
 
-export async function fetchAiSafetyDecisions(): Promise<AiSafetyDecision[]> {
-  const payload = await requestJson<{ safety_decisions: AiSafetyDecision[] }>('/api/admin/ai/safety-decisions', {}, 'Failed to load AI safety decisions.');
+export async function fetchAiSafetyDecisions(params?: {
+  surface?: string;
+  task_name?: string;
+  policy_decision?: string;
+  stage?: string;
+  min_risk?: string;
+}): Promise<AiSafetyDecision[]> {
+  const query = new URLSearchParams();
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value) query.set(key, value);
+  });
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  const payload = await requestJson<{ safety_decisions: AiSafetyDecision[] }>(`/api/admin/ai/safety-decisions${suffix}`, {}, 'Failed to load AI safety decisions.');
   return payload.safety_decisions;
 }
 

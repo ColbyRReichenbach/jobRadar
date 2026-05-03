@@ -145,6 +145,38 @@ async def test_admin_ai_ops_telemetry_and_lineage_endpoints(client, db_session):
 
 
 @pytest.mark.asyncio
+async def test_admin_ai_safety_decisions_support_operational_filters(client, db_session):
+    await _seed_ai_ops_data(db_session)
+    db_session.add(
+        AiSafetyDecision(
+            user_id=TEST_USER_ID,
+            surface="research_radar",
+            task_name="research_evidence_extractor",
+            stage="preflight",
+            policy_decision="quarantine",
+            risk_score=0.91,
+            prompt_injection_score=0.91,
+            input_data_classes=["public_research"],
+            redaction_counts={"prompt_injection_line": 1},
+            reasons=["semantic_prompt_guard"],
+            token_estimate=300,
+        )
+    )
+    await db_session.commit()
+
+    response = await client.get(
+        "/api/admin/ai/safety-decisions?policy_decision=quarantine&stage=preflight&min_risk=0.8",
+        headers=AUTH_HEADER,
+    )
+
+    assert response.status_code == 200
+    decisions = response.json()["safety_decisions"]
+    assert len(decisions) == 1
+    assert decisions[0]["surface"] == "research_radar"
+    assert decisions[0]["policy_decision"] == "quarantine"
+
+
+@pytest.mark.asyncio
 async def test_full_trace_access_requires_reason_and_writes_log(client, db_session):
     call = await _seed_ai_ops_data(db_session)
 

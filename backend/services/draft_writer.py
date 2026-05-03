@@ -80,7 +80,17 @@ async def generate_draft(
             untrusted_input=True,
         )
 
-        normalized = _normalize_draft_result(result, draft_type)
+        normalized = _normalize_draft_result(
+            result,
+            draft_type,
+            context={
+                "company": company,
+                "role": role,
+                "contact_name": contact_name,
+                "conversation_history": conversation_history or [],
+                "additional_context": additional_context,
+            },
+        )
         if normalized is None:
             ai_orchestrator.record_fallback(DRAFT_TASK, "invalid_payload", {"surface": "draft_writer", "draft_type": draft_type})
             return _fallback_draft(draft_type, company, role, contact_name)
@@ -131,11 +141,66 @@ def _clean_text(value: object) -> str:
     return value.strip() if isinstance(value, str) else ""
 
 
-def _normalize_draft_result(result: dict, draft_type: str) -> dict | None:
+def _context_text(context: dict | None) -> str:
+    if not context:
+        return ""
+    parts: list[str] = []
+    for key in ("company", "role", "contact_name", "additional_context"):
+        value = context.get(key)
+        if isinstance(value, str):
+            parts.append(value)
+    for item in context.get("conversation_history") or []:
+        if isinstance(item, dict):
+            parts.extend(str(item.get(key) or "") for key in ("subject", "snippet", "sender"))
+    return " ".join(parts).lower()
+
+
+def _has_conversation_history(context: dict | None) -> bool:
+    return bool(context and context.get("conversation_history"))
+
+
+def _draft_has_unsupported_claims(subject: str, body: str, context: dict | None) -> bool:
+    combined = f"{subject}\n{body}".lower()
+    source = _context_text(context)
+    unsupported_patterns: dict[str, tuple[list[str], list[str]]] = {
+        "referral": (
+            ["referred me", "your referral", "referred by", "recommended me"],
+            ["referral", "referred", "recommended"],
+        ),
+        "prior_conversation": (
+            ["as we discussed", "as discussed", "great speaking with you", "after our conversation"],
+            ["spoke", "speaking", "discussed", "conversation", "chat", "call"],
+        ),
+        "interview": (
+            ["our interview", "interviewing with your team", "after the interview"],
+            ["interview", "interviewing"],
+        ),
+        "offer": (
+            ["accept the offer", "offer letter", "compensation package"],
+            ["offer", "compensation"],
+        ),
+    }
+    for category, (phrases, evidence_terms) in unsupported_patterns.items():
+        has_claim = any(phrase in combined for phrase in phrases)
+        if not has_claim:
+            continue
+        if category == "prior_conversation":
+            if _has_conversation_history(context) or any(term in source for term in evidence_terms):
+                continue
+            return True
+        if not any(term in source for term in evidence_terms):
+            return True
+    return False
+
+
+def _normalize_draft_result(result: dict, draft_type: str, context: dict | None = None) -> dict | None:
     subject = _clean_text(result.get("subject"))
     body = _clean_text(result.get("body"))
     if not subject or not body:
         logger.warning("Draft writer returned invalid payload with subject/body missing")
+        return None
+    if _draft_has_unsupported_claims(subject, body, context):
+        logger.warning("Draft writer returned unsupported relationship or process claims")
         return None
 
     tone = _clean_text(result.get("tone")).lower()

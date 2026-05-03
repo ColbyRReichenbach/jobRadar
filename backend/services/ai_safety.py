@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import re
+import time
 import uuid
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
@@ -34,6 +35,7 @@ DATA_CLASS_GENERATED_OUTPUT = "generated_output"
 POLICY_ALLOW = "allow"
 POLICY_ALLOW_REDACTED = "allow_redacted"
 POLICY_BLOCK = "block"
+POLICY_QUARANTINE = "quarantine"
 
 PROMPT_INJECTION_REDACTED = "[redacted prompt-injection attempt]"
 
@@ -82,12 +84,34 @@ PROMPT_INJECTION_PATTERNS: tuple[tuple[str, float, re.Pattern[str]], ...] = (
 )
 
 
+def _normalize_prompt_text_for_risk(text: str) -> str:
+    return (
+        text.replace("\\r\\n", "\n")
+        .replace("\\n", "\n")
+        .replace("\\r", "\n")
+    )
+
+
 class AiSafetyBlockedError(RuntimeError):
     """Raised when a request should not be sent to the model."""
 
 
 class AiSafetyBudgetExceededError(AiSafetyBlockedError):
     """Raised when configured AI token budgets would be exceeded."""
+
+
+class AiSafetyRateLimitExceededError(AiSafetyBlockedError):
+    """Raised when configured AI request rate limits would be exceeded."""
+
+
+class AiSafetyQuarantinedError(AiSafetyBlockedError):
+    """Raised when untrusted content is quarantined before model access."""
+
+
+_semantic_prompt_guard: Any | None = None
+_semantic_prompt_guard_loaded = False
+_redis_rate_client: Any | None = None
+_rate_limit_buckets: dict[str, list[float]] = {}
 
 
 @dataclass(frozen=True)
@@ -144,9 +168,67 @@ def per_task_daily_token_cap() -> int:
     return _env_int("AI_TASK_DAILY_TOKEN_CAP", 0)
 
 
+def per_user_rate_limit_per_minute() -> int:
+    return _env_int("AI_RATE_LIMIT_PER_MINUTE_PER_USER", 60)
+
+
+def per_task_rate_limit_per_minute() -> int:
+    return _env_int("AI_RATE_LIMIT_PER_MINUTE_PER_TASK", 120)
+
+
+def global_rate_limit_per_minute() -> int:
+    return _env_int("AI_RATE_LIMIT_PER_MINUTE_GLOBAL", 0)
+
+
+def quarantine_prompt_risk_threshold() -> float:
+    try:
+        return max(0.0, min(1.0, float(os.getenv("AI_QUARANTINE_PROMPT_RISK_THRESHOLD", "0.7"))))
+    except ValueError:
+        return 0.7
+
+
+def semantic_prompt_guard_enabled() -> bool:
+    return os.getenv("AI_SEMANTIC_PROMPT_GUARD_ENABLED", "false").lower() == "true"
+
+
+def semantic_prompt_guard_threshold() -> float:
+    try:
+        return max(0.0, min(1.0, float(os.getenv("AI_SEMANTIC_PROMPT_GUARD_THRESHOLD", "0.7"))))
+    except ValueError:
+        return 0.7
+
+
 def _day_start() -> datetime:
     now = datetime.now(timezone.utc)
     return now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def _get_semantic_prompt_guard() -> Any | None:
+    global _semantic_prompt_guard_loaded, _semantic_prompt_guard
+    if _semantic_prompt_guard is not None:
+        return _semantic_prompt_guard
+    if _semantic_prompt_guard_loaded or not semantic_prompt_guard_enabled():
+        return None
+    _semantic_prompt_guard_loaded = True
+    model_name = os.getenv("AI_SEMANTIC_PROMPT_GUARD_MODEL", "ProtectAI/deberta-v3-base-prompt-injection-v2")
+    try:
+        from transformers import pipeline  # type: ignore
+
+        _semantic_prompt_guard = pipeline("text-classification", model=model_name, truncation=True)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("semantic_prompt_guard_unavailable model=%s error=%s", model_name, exc)
+        _semantic_prompt_guard = None
+    return _semantic_prompt_guard
+
+
+def set_semantic_prompt_guard_for_tests(guard: Any | None) -> None:
+    global _semantic_prompt_guard, _semantic_prompt_guard_loaded
+    _semantic_prompt_guard = guard
+    _semantic_prompt_guard_loaded = guard is not None
+
+
+def reset_ai_rate_limits_for_tests() -> None:
+    _rate_limit_buckets.clear()
 
 
 def _add_count(counts: dict[str, int], key: str, amount: int = 1) -> None:
@@ -163,13 +245,45 @@ def _merge_counts(left: dict[str, int], right: dict[str, int]) -> dict[str, int]
 def detect_prompt_injection_risk(text: str) -> PromptRisk:
     if not text:
         return PromptRisk(score=0.0, reasons=[])
+    risk_text = _normalize_prompt_text_for_risk(text)
     score = 0.0
     reasons: list[str] = []
     for reason, weight, pattern in PROMPT_INJECTION_PATTERNS:
-        if pattern.search(text):
+        if pattern.search(risk_text):
             score += weight
             reasons.append(reason)
+    semantic = detect_semantic_prompt_injection_risk(risk_text)
+    if semantic.score > 0:
+        score = max(score, semantic.score)
+        reasons.extend(semantic.reasons)
     return PromptRisk(score=round(min(score, 1.0), 3), reasons=reasons)
+
+
+def detect_semantic_prompt_injection_risk(text: str) -> PromptRisk:
+    guard = _get_semantic_prompt_guard()
+    if guard is None or not text:
+        return PromptRisk(score=0.0, reasons=[])
+    try:
+        raw_result = guard(text[:4000])
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("semantic_prompt_guard_failed error=%s", exc)
+        return PromptRisk(score=0.0, reasons=[])
+
+    first = raw_result[0] if isinstance(raw_result, list) and raw_result else raw_result
+    if isinstance(first, list) and first:
+        first = max(first, key=lambda item: float(item.get("score", 0.0)) if isinstance(item, dict) else 0.0)
+    if not isinstance(first, dict):
+        return PromptRisk(score=0.0, reasons=[])
+
+    label = str(first.get("label") or "").lower()
+    try:
+        score = float(first.get("score") or 0.0)
+    except (TypeError, ValueError):
+        score = 0.0
+    unsafe_label = any(token in label for token in {"injection", "malicious", "jailbreak", "unsafe", "attack"})
+    if unsafe_label and score >= semantic_prompt_guard_threshold():
+        return PromptRisk(score=round(min(score, 1.0), 3), reasons=["semantic_prompt_guard"])
+    return PromptRisk(score=0.0, reasons=[])
 
 
 def sanitize_untrusted_text(text: str) -> tuple[str, PromptRisk, dict[str, int]]:
@@ -319,6 +433,8 @@ def evaluate_payload(
     policy_decision = POLICY_ALLOW
     if redaction_counts or injection_risk.reasons:
         policy_decision = POLICY_ALLOW_REDACTED
+    if untrusted_input and injection_risk.score >= quarantine_prompt_risk_threshold():
+        policy_decision = POLICY_QUARANTINE
     if block_on_high_risk and injection_risk.score >= 0.7:
         policy_decision = POLICY_BLOCK
     if block_on_high_risk and redaction_counts.get("sensitive_key"):
@@ -411,6 +527,79 @@ def _blocked_evaluation(evaluation: SafetyEvaluation, reason: str) -> SafetyEval
     )
 
 
+async def _get_redis_rate_client() -> Any | None:
+    global _redis_rate_client
+    if _redis_rate_client is not None:
+        return _redis_rate_client
+    redis_url = os.getenv("RATE_LIMIT_STORAGE_URI") or os.getenv("REDIS_URL")
+    if not redis_url:
+        return None
+    try:
+        import redis.asyncio as redis  # type: ignore
+
+        _redis_rate_client = redis.from_url(redis_url, decode_responses=True)
+        await _redis_rate_client.ping()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ai_rate_limit_redis_unavailable error=%s", exc)
+        _redis_rate_client = None
+    return _redis_rate_client
+
+
+def _rate_limited_memory(key: str, limit: int, *, now: float | None = None) -> bool:
+    if limit <= 0:
+        return False
+    current = now or time.time()
+    window_start = current - 60
+    bucket = [timestamp for timestamp in _rate_limit_buckets.get(key, []) if timestamp >= window_start]
+    if len(bucket) >= limit:
+        _rate_limit_buckets[key] = bucket
+        return True
+    bucket.append(current)
+    _rate_limit_buckets[key] = bucket
+    return False
+
+
+async def _rate_limited(key: str, limit: int) -> bool:
+    if limit <= 0:
+        return False
+    client = await _get_redis_rate_client()
+    if client is None:
+        return _rate_limited_memory(key, limit)
+    try:
+        count = await client.incr(key)
+        if count == 1:
+            await client.expire(key, 60)
+        return int(count) > limit
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ai_rate_limit_redis_failed error=%s", exc)
+        return _rate_limited_memory(key, limit)
+
+
+async def enforce_ai_rate_limit(
+    evaluation: SafetyEvaluation,
+    *,
+    surface: str,
+    task_name: str,
+    user_id: uuid.UUID | str | None = None,
+) -> SafetyEvaluation:
+    user_limit = per_user_rate_limit_per_minute()
+    if user_limit and user_id is not None:
+        if await _rate_limited(f"apptrail:ai_rate:user:{user_id}", user_limit):
+            return _blocked_evaluation(evaluation, "user_rate_limit_exceeded")
+
+    task_limit = per_task_rate_limit_per_minute()
+    if task_limit:
+        if await _rate_limited(f"apptrail:ai_rate:task:{surface}:{task_name}", task_limit):
+            return _blocked_evaluation(evaluation, "task_rate_limit_exceeded")
+
+    global_limit = global_rate_limit_per_minute()
+    if global_limit:
+        if await _rate_limited("apptrail:ai_rate:global", global_limit):
+            return _blocked_evaluation(evaluation, "global_rate_limit_exceeded")
+
+    return evaluation
+
+
 async def enforce_ai_token_budget(
     db_session: AsyncSession | None,
     evaluation: SafetyEvaluation,
@@ -488,6 +677,12 @@ async def run_json_task_with_safety(
         untrusted_input=untrusted_input,
         block_on_high_risk=block_on_high_risk,
     )
+    preflight = await enforce_ai_rate_limit(
+        preflight,
+        surface=surface,
+        task_name=task_config.name,
+        user_id=user_id or (metadata or {}).get("user_id"),
+    )
     preflight = await enforce_ai_token_budget(
         db_session,
         preflight,
@@ -504,9 +699,13 @@ async def run_json_task_with_safety(
         user_id=user_id or (metadata or {}).get("user_id"),
         metadata=metadata,
     )
+    if preflight.policy_decision == POLICY_QUARANTINE:
+        raise AiSafetyQuarantinedError(f"AI request quarantined for {task_config.name}: {', '.join(preflight.reasons)}")
     if preflight.policy_decision == POLICY_BLOCK:
         if any(reason.endswith("_token_cap_exceeded") for reason in preflight.reasons):
             raise AiSafetyBudgetExceededError(f"AI token budget blocked {task_config.name}: {', '.join(preflight.reasons)}")
+        if any(reason.endswith("_rate_limit_exceeded") for reason in preflight.reasons):
+            raise AiSafetyRateLimitExceededError(f"AI rate limit blocked {task_config.name}: {', '.join(preflight.reasons)}")
         raise AiSafetyBlockedError(f"AI request blocked by safety policy for {task_config.name}: {', '.join(preflight.reasons)}")
 
     result = await ai_orchestrator.run_json_task_with_metadata(
@@ -560,6 +759,12 @@ async def run_json_task(
         untrusted_input=bool(kwargs.get("untrusted_input", False)),
         block_on_high_risk=bool(kwargs.get("block_on_high_risk", False)),
     )
+    preflight = await enforce_ai_rate_limit(
+        preflight,
+        surface=str((metadata or {}).get("surface") or task_config.service_path),
+        task_name=task_config.name,
+        user_id=effective_user_id,
+    )
     preflight = await enforce_ai_token_budget(
         None,
         preflight,
@@ -567,9 +772,13 @@ async def run_json_task(
         task_name=task_config.name,
         user_id=effective_user_id,
     )
+    if preflight.policy_decision == POLICY_QUARANTINE:
+        raise AiSafetyQuarantinedError(f"AI request quarantined for {task_config.name}: {', '.join(preflight.reasons)}")
     if preflight.policy_decision == POLICY_BLOCK:
         if any(reason.endswith("_token_cap_exceeded") for reason in preflight.reasons):
             raise AiSafetyBudgetExceededError(f"AI token budget blocked {task_config.name}: {', '.join(preflight.reasons)}")
+        if any(reason.endswith("_rate_limit_exceeded") for reason in preflight.reasons):
+            raise AiSafetyRateLimitExceededError(f"AI rate limit blocked {task_config.name}: {', '.join(preflight.reasons)}")
         raise AiSafetyBlockedError(f"AI request blocked by safety policy for {task_config.name}: {', '.join(preflight.reasons)}")
 
     payload = await ai_orchestrator.run_json_task(

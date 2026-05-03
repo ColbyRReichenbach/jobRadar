@@ -148,10 +148,25 @@ async def trace_access_logs(
 @router.get("/safety-decisions")
 async def safety_decisions(
     limit: int = 50,
+    surface: str | None = None,
+    task_name: str | None = None,
+    policy_decision: str | None = None,
+    stage: str | None = None,
+    min_risk: float | None = None,
     db: AsyncSession = Depends(get_db),
     _admin: User = Depends(require_admin_user),
 ):
-    return {"safety_decisions": await admin_ai.list_safety_decisions(db, limit=min(max(limit, 1), 100))}
+    return {
+        "safety_decisions": await admin_ai.list_safety_decisions(
+            db,
+            limit=min(max(limit, 1), 100),
+            surface=surface,
+            task_name=task_name,
+            policy_decision=policy_decision,
+            stage=stage,
+            min_risk=min_risk,
+        )
+    }
 
 
 @router.post("/promotion-reports/{report_id}/reject")

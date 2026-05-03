@@ -618,6 +618,13 @@ async def extract_evidence_with_metrics(
         if not isinstance(evidence_payload, list):
             raise ValueError("research_evidence_extractor returned a non-list evidence payload")
         return [_normalize_evidence_payload(item, source_document) for item in evidence_payload if isinstance(item, dict)], _task_call_metric(result)
+    except ai_safety.AiSafetyQuarantinedError as exc:
+        logger.warning(
+            "research_radar_source_quarantined source_url=%s error=%s",
+            source_document.get("source_url"),
+            exc,
+        )
+        return [], None
     except Exception as exc:  # noqa: BLE001
         if deterministic_fallbacks_allowed():
             _record_llm_fallback("research_evidence_extractor", "task_failure_or_invalid_payload", metadata, exc)

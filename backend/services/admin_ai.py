@@ -351,11 +351,32 @@ def serialize_safety_decision(row: AiSafetyDecision) -> dict[str, Any]:
     }
 
 
-async def list_safety_decisions(db: AsyncSession, *, limit: int = 50) -> list[dict[str, Any]]:
+async def list_safety_decisions(
+    db: AsyncSession,
+    *,
+    limit: int = 50,
+    surface: str | None = None,
+    task_name: str | None = None,
+    policy_decision: str | None = None,
+    stage: str | None = None,
+    min_risk: float | None = None,
+) -> list[dict[str, Any]]:
+    filters = []
+    if surface:
+        filters.append(AiSafetyDecision.surface == surface)
+    if task_name:
+        filters.append(AiSafetyDecision.task_name == task_name)
+    if policy_decision:
+        filters.append(AiSafetyDecision.policy_decision == policy_decision)
+    if stage:
+        filters.append(AiSafetyDecision.stage == stage)
+    if min_risk is not None:
+        filters.append(AiSafetyDecision.risk_score >= min_risk)
     rows = list(
         (
             await db.execute(
                 select(AiSafetyDecision)
+                .where(*filters)
                 .order_by(AiSafetyDecision.created_at.desc())
                 .limit(limit)
             )

@@ -168,6 +168,11 @@ export function AiOps() {
   const [surfaceFilter, setSurfaceFilter] = useState('');
   const [taskFilter, setTaskFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [safetySurfaceFilter, setSafetySurfaceFilter] = useState('');
+  const [safetyTaskFilter, setSafetyTaskFilter] = useState('');
+  const [safetyPolicyFilter, setSafetyPolicyFilter] = useState('');
+  const [safetyStageFilter, setSafetyStageFilter] = useState('');
+  const [safetyMinRiskFilter, setSafetyMinRiskFilter] = useState('');
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -180,7 +185,13 @@ export function AiOps() {
         fetchAiExperiments(),
         fetchAiModelCards(),
         fetchAiPromotionReports(),
-        fetchAiSafetyDecisions(),
+        fetchAiSafetyDecisions({
+          surface: safetySurfaceFilter,
+          task_name: safetyTaskFilter,
+          policy_decision: safetyPolicyFilter,
+          stage: safetyStageFilter,
+          min_risk: safetyMinRiskFilter,
+        }),
         fetchAiTraceAccessLogs(),
       ]);
       setTelemetry(telemetryData);
@@ -196,7 +207,7 @@ export function AiOps() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [safetyMinRiskFilter, safetyPolicyFilter, safetyStageFilter, safetySurfaceFilter, safetyTaskFilter]);
 
   useEffect(() => {
     void loadAll();
@@ -658,6 +669,65 @@ export function AiOps() {
 
         {activeSection === 'safety' && (
           <SectionShell title="Safety Decisions" icon={ShieldCheck}>
+            <div className="mb-4 grid gap-2 rounded-2xl border border-slate-200 bg-slate-50/70 p-3 md:grid-cols-2 xl:grid-cols-5">
+              <label className="grid gap-1 text-xs font-medium text-slate-600">
+                Surface
+                <input
+                  value={safetySurfaceFilter}
+                  onChange={(event) => setSafetySurfaceFilter(event.target.value)}
+                  placeholder="copilot"
+                  className="min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-slate-400"
+                />
+              </label>
+              <label className="grid gap-1 text-xs font-medium text-slate-600">
+                Task
+                <input
+                  value={safetyTaskFilter}
+                  onChange={(event) => setSafetyTaskFilter(event.target.value)}
+                  placeholder="copilot_answer"
+                  className="min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-slate-400"
+                />
+              </label>
+              <label className="grid gap-1 text-xs font-medium text-slate-600">
+                Decision
+                <select
+                  value={safetyPolicyFilter}
+                  onChange={(event) => setSafetyPolicyFilter(event.target.value)}
+                  className="min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-slate-400"
+                >
+                  <option value="">All decisions</option>
+                  <option value="allow">Allow</option>
+                  <option value="allow_redacted">Allow redacted</option>
+                  <option value="quarantine">Quarantine</option>
+                  <option value="block">Block</option>
+                </select>
+              </label>
+              <label className="grid gap-1 text-xs font-medium text-slate-600">
+                Stage
+                <select
+                  value={safetyStageFilter}
+                  onChange={(event) => setSafetyStageFilter(event.target.value)}
+                  className="min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-slate-400"
+                >
+                  <option value="">All stages</option>
+                  <option value="preflight">Preflight</option>
+                  <option value="postflight">Postflight</option>
+                </select>
+              </label>
+              <label className="grid gap-1 text-xs font-medium text-slate-600">
+                Minimum risk
+                <input
+                  type="number"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={safetyMinRiskFilter}
+                  onChange={(event) => setSafetyMinRiskFilter(event.target.value)}
+                  placeholder="0.70"
+                  className="min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-slate-400"
+                />
+              </label>
+            </div>
             {safetyDecisions.length === 0 ? (
               <EmptyState label="No safety gateway decisions have been recorded yet." />
             ) : (
