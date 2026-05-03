@@ -28,6 +28,7 @@ os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
 
 from backend.database import async_session_factory, get_db
 from backend.dependencies import (
+    AuthCodeStoreUnavailableError,
     REFRESH_COOKIE_NAME,
     blacklist_token,
     clear_refresh_cookie,
@@ -2918,7 +2919,10 @@ async def google_auth_callback(
         "name": user.name,
         "picture": user.picture,
     })
-    store_auth_code(auth_code, code_payload)
+    try:
+        store_auth_code(auth_code, code_payload)
+    except AuthCodeStoreUnavailableError as exc:
+        raise HTTPException(status_code=503, detail="Authentication is temporarily unavailable") from exc
 
     from starlette.responses import RedirectResponse as _RedirectResponse
     redirect_url = _build_frontend_callback_url(frontend_url, auth_code)
@@ -2978,7 +2982,10 @@ class LocalAuthRequest(BaseModel):
 async def exchange_auth_code(request: Request, body: AuthCodeExchangeRequest):
     """Exchange a one-time auth code (from OAuth callback) for access + refresh tokens."""
     _require_allowed_browser_origin(request)
-    payload_json = consume_auth_code(body.code)
+    try:
+        payload_json = consume_auth_code(body.code)
+    except AuthCodeStoreUnavailableError as exc:
+        raise HTTPException(status_code=503, detail="Authentication is temporarily unavailable") from exc
     if not payload_json:
         raise HTTPException(status_code=400, detail="Invalid or expired auth code")
 
@@ -3260,6 +3267,7 @@ async def sync_gmail(
         "skipped_blocked": 0,
         "skipped_noise": 0,
         "skipped_not_relevant": 0,
+        "quarantined": 0,
     }
     new_count = 0
     emails_synced = []
@@ -3394,6 +3402,22 @@ async def sync_gmail(
 
         cls = classification.get("classification", "job_update")
 
+        if classification.get("safety_status") == "quarantined":
+            sync_stats["quarantined"] += 1
+            record_sync_audit(
+                gmail_message_id=msg_id,
+                thread_id=msg.get("threadId", ""),
+                sender=sender_name,
+                sender_email=sender_email_addr,
+                sender_domain=sender_domain,
+                subject=subject,
+                received_at=received_at,
+                decision="quarantined",
+                reason=classification.get("safety_reason") or "ai_safety_quarantine",
+                classification=cls,
+            )
+            continue
+
         # Skip not_relevant
         if cls == "not_relevant":
             sync_stats["skipped_not_relevant"] += 1
@@ -3434,7 +3458,7 @@ async def sync_gmail(
         if (
             sender_email_addr
             and CLASSIFICATION_TO_EMAIL_TYPE.get(cls) == "conversation"
-            and should_create_network_contact(sender_name, sender_email_addr, cls)
+            and should_create_network_contact(sender_name, sender_email_addr, cls, user_email=current_user.email)
             and not contact_id
         ):
             prior_sender_stmt = select(EmailEvent.id).where(
@@ -7874,6 +7898,13 @@ async def extraction_version_stats(
 # ---------------------------------------------------------------------------
 
 CONSENT_TYPES = ("core", "ai_processing", "third_party_enrichment", "web_research")
+CONSENT_DISCLOSURES = {
+    "core": "Stores saved jobs, pipeline state, contacts, inbox classifications, calendar items, and account settings so the app can function.",
+    "ai_processing": "Sends selected career data, email text, resume text, and retrieved AppTrail context to OpenAI for classification, Copilot answers, drafts, resume parsing, and Radar summaries. Safety filters redact secrets before provider calls where possible.",
+    "third_party_enrichment": "Sends company domains to enrichment providers for contact discovery and company identity data. Personal Gmail content is not sent for enrichment.",
+    "web_research": "Lets Radar query public sources and save dated reports with citations, deltas, and follow-up actions tied to your profile.",
+    "retention": "AI trace payloads are retained for a limited audit window, then redacted while ledger rows and aggregate metrics are kept for governance.",
+}
 
 
 class ConsentBody(BaseModel):
@@ -7895,6 +7926,7 @@ async def get_consent(
     return {
         "consents": {ct: rows.get(ct, False) for ct in CONSENT_TYPES},
         "accepted_at": current_user.data_consent_accepted_at.isoformat() if current_user.data_consent_accepted_at else None,
+        "disclosures": CONSENT_DISCLOSURES,
     }
 
 
@@ -7956,6 +7988,7 @@ async def update_consent(
     return {
         "consents": mapping,
         "accepted_at": now.isoformat(),
+        "disclosures": CONSENT_DISCLOSURES,
     }
 
 

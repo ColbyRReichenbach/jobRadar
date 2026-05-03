@@ -56,8 +56,8 @@ jobs:
 
   deploy-backend:
     runs-on: ubuntu-latest
-    needs: validate-deployment-config
-    if: ${{ needs.validate-deployment-config.result == 'success' && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success') }}
+    needs: run-migrations
+    if: ${{ needs.run-migrations.result == 'success' }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -79,8 +79,8 @@ jobs:
 
   run-migrations:
     runs-on: ubuntu-latest
-    needs: deploy-backend
-    if: ${{ needs.deploy-backend.result == 'success' }}
+    needs: validate-deployment-config
+    if: ${{ needs.validate-deployment-config.result == 'success' && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success') }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4

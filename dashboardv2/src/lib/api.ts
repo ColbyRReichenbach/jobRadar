@@ -185,6 +185,7 @@ export interface ConsentStatus {
     web_research: boolean;
   };
   accepted_at: string | null;
+  disclosures?: Record<string, string>;
 }
 
 export interface ConsentUpdate {

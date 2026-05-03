@@ -68,6 +68,7 @@ _USER_SCOPED_MODELS = {
     "AiFeedbackRewardEvent",
     "AiShadowRun",
     "AiModelCall",
+    "AiSafetyDecision",
     "AiArtifact",
     "EmailSyncAudit",
     "ApplicationSuggestionDecision",
@@ -132,3 +133,6 @@ def reset_rate_limits():
     storage = limiter._storage
     if hasattr(storage, "reset"):
         storage.reset()
+    from backend.services.ai_safety import reset_ai_rate_limits_for_tests
+
+    reset_ai_rate_limits_for_tests()

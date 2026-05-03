@@ -23,6 +23,7 @@ async function mockApp(page: Page, options: MockOptions = {}) {
 
   let promotionStatus = 'pending_review';
   let accessLogs: unknown[] = [];
+  let safetyReviewStatus = 'unreviewed';
 
   await page.route('http://localhost:8000/api/**', async (route) => {
     const request = route.request();
@@ -139,6 +140,12 @@ async function mockApp(page: Page, options: MockOptions = {}) {
           running_experiments: 1,
           paused_experiments: 1,
           pending_promotion_reports: promotionStatus === 'pending_review' ? 1 : 0,
+        },
+        safety_guardrails: {
+          blocked_decisions: 1,
+          redacted_decisions: 3,
+          quarantined_decisions: 1,
+          unreviewed_decisions: 1,
         },
       });
       return;
@@ -331,6 +338,93 @@ async function mockApp(page: Page, options: MockOptions = {}) {
       return;
     }
 
+    if (path === '/api/admin/ai/safety-decisions' && method === 'GET') {
+      if (url.searchParams.get('policy_decision') === 'quarantine') {
+        await fulfillJson(route, {
+          safety_decisions: [
+            {
+              id: '99999999-9999-4999-8999-999999999999',
+              user_id: '00000000-0000-0000-0000-000000000001',
+              model_call_id: null,
+              surface: 'research_radar',
+              task_name: 'research_evidence_extractor',
+              stage: 'preflight',
+              policy_decision: 'quarantine',
+              risk_score: 0.91,
+              prompt_injection_score: 0.91,
+              input_data_classes: ['public_research'],
+              consent_snapshot: { ai: true },
+              redaction_counts: { prompt_injection_line: 1 },
+              reasons: ['semantic_prompt_guard'],
+              token_estimate: 300,
+              metadata: {},
+              review_status: safetyReviewStatus,
+              reviewed_by_user_id: safetyReviewStatus === 'unreviewed' ? null : '00000000-0000-0000-0000-000000000001',
+              reviewed_at: safetyReviewStatus === 'unreviewed' ? null : '2026-05-02T14:40:00Z',
+              review_notes: safetyReviewStatus === 'unreviewed' ? null : 'Reviewed in AI Ops.',
+              created_at: '2026-05-02T14:34:00Z',
+            },
+          ],
+        });
+        return;
+      }
+      await fulfillJson(route, {
+        safety_decisions: [
+          {
+            id: '88888888-8888-4888-8888-888888888888',
+            user_id: '00000000-0000-0000-0000-000000000001',
+            model_call_id: RUN_ID,
+            surface: 'copilot',
+            task_name: 'copilot_answer',
+            stage: 'preflight',
+            policy_decision: 'allow_redacted',
+            risk_score: 0.72,
+            prompt_injection_score: 0.36,
+            input_data_classes: ['career_private', 'untrusted_inbound'],
+            consent_snapshot: { ai: true },
+            redaction_counts: { email: 1 },
+            reasons: ['reveal_prompt', 'redacted_email'],
+            token_estimate: 431,
+            metadata: { raw_prompt: '[redacted]' },
+            review_status: 'unreviewed',
+            reviewed_by_user_id: null,
+            reviewed_at: null,
+            review_notes: null,
+            created_at: '2026-05-02T14:33:00Z',
+          },
+        ],
+      });
+      return;
+    }
+
+    if (path === '/api/admin/ai/safety-decisions/99999999-9999-4999-8999-999999999999/review' && method === 'PATCH') {
+      const body = JSON.parse(request.postData() || '{}');
+      safetyReviewStatus = body.review_status || 'confirmed_unsafe';
+      await fulfillJson(route, {
+        id: '99999999-9999-4999-8999-999999999999',
+        user_id: '00000000-0000-0000-0000-000000000001',
+        model_call_id: null,
+        surface: 'research_radar',
+        task_name: 'research_evidence_extractor',
+        stage: 'preflight',
+        policy_decision: 'quarantine',
+        risk_score: 0.91,
+        prompt_injection_score: 0.91,
+        input_data_classes: ['public_research'],
+        consent_snapshot: { ai: true },
+        redaction_counts: { prompt_injection_line: 1 },
+        reasons: ['semantic_prompt_guard'],
+        token_estimate: 300,
+        metadata: {},
+        review_status: safetyReviewStatus,
+        reviewed_by_user_id: '00000000-0000-0000-0000-000000000001',
+        reviewed_at: '2026-05-02T14:40:00Z',
+        review_notes: 'Reviewed in AI Ops.',
+        created_at: '2026-05-02T14:34:00Z',
+      });
+      return;
+    }
+
     await fulfillJson(route, {});
   });
 }
@@ -366,6 +460,17 @@ test('admin can review AI Ops telemetry, traces, and promotion reports', async (
   await page.getByRole('button', { name: 'Access Logs' }).click();
   await expect(page.getByText('Debugging groundedness issue')).toBeVisible();
   await expect(page.getByText('view full ai trace')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Safety' }).click();
+  await expect(page.getByText('Safety Decisions')).toBeVisible();
+  await expect(page.locator('tbody').getByText('allow redacted', { exact: true })).toBeVisible();
+  await expect(page.getByText('redacted email')).toBeVisible();
+  await page.getByLabel('Decision').selectOption('quarantine');
+  await expect(page.locator('tbody').getByText('quarantine', { exact: true })).toBeVisible();
+  await expect(page.getByText('semantic prompt guard')).toBeVisible();
+  await expect(page.locator('tbody').getByText('unreviewed', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Confirm unsafe' }).click();
+  await expect(page.locator('tbody').getByText('confirmed unsafe', { exact: true })).toBeVisible();
 
   await page.getByRole('button', { name: 'Promotions' }).click();
   await expect(page.getByText('keep control collect more data')).toBeVisible();

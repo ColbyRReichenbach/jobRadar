@@ -76,6 +76,18 @@ These should be set on the backend API and any worker process unless noted other
 - `AI_PROMOTION_REPORT_MIN_CALLS`
 - `AI_PROMOTION_REPORT_MIN_FEEDBACK`
 - `AI_MODEL_PRICING_CONFIG` if default model pricing needs an override
+- `AI_MAX_INPUT_TOKENS_PER_REQUEST=12000` for beta, lower if Gmail payloads are too large
+- `AI_DAILY_TOKEN_CAP_PER_USER=150000` for beta users
+- `AI_GLOBAL_DAILY_TOKEN_CAP=1000000` for the beta environment
+- `AI_TASK_DAILY_TOKEN_CAP=500000` per AI task
+- `AI_RATE_LIMIT_PER_MINUTE_PER_USER=20`
+- `AI_RATE_LIMIT_PER_MINUTE_PER_TASK=120`
+- `AI_RATE_LIMIT_PER_MINUTE_GLOBAL=300`
+- `AI_QUARANTINE_PROMPT_RISK_THRESHOLD=0.70`
+- `AI_ADMIN_ALERTS_ENABLED=true`
+- `AI_SEMANTIC_PROMPT_GUARD_ENABLED=false` unless the semantic guard dependency and model are explicitly provisioned
+- `POSTGRES_BACKUPS_ENABLED=true`
+- `POSTGRES_BACKUP_PROVIDER` set to the provider or plan, for example `Neon automated backups`
 
 ### Google auth and Gmail
 
@@ -147,6 +159,7 @@ Pull requests must pass:
 - Alembic single-head and Postgres migration checks
 - dashboard type-check, production build, and Playwright smoke tests through `scripts/ci/run_dashboard_checks.sh`
 - targeted AI/security/contract checks through `scripts/ci/run_ai_feature_checks.sh`
+- opt-in live OpenAI smoke checks before beta promotion: `RUN_LIVE_OPENAI_TESTS=1 pytest -q tests/test_live_openai_hardening.py`
 - dependency audits
 - `git diff --check`
 
@@ -178,6 +191,8 @@ Production promotion requires:
 - `GET /api/ai/metrics` is admin-only
 - Radar beta posture is deliberate: `RADAR_ENABLED`, `RADAR_RESEARCH_ENABLED`, and `RADAR_ALERT_MAX_PER_USER_PER_DAY` match the launch plan
 - AI platform posture is deliberate: `COPILOT_ENABLED`, `COPILOT_EXPERIMENTS_ENABLED`, `SEARCH_BACKEND`, `AI_TRACE_FULL_PAYLOADS_ENABLED`, `AI_FULL_TRACE_EXPORT_ENABLED`, and AI budget caps match the launch plan
+- production readiness env gate passes: `python3 scripts/deploy/check_production_readiness.py`
+- AI safety quarantines and blocks are visible in Admin AI Ops and can be reviewed as confirmed unsafe, false positive, dismissed, or needing reprocessing
 
 ## Post-Launch Checks
 
@@ -187,6 +202,7 @@ Production promotion requires:
 - save a job through the extension
 - verify the worker processes scheduled tasks
 - confirm logs, Sentry, and metrics are visible
+- confirm AI safety, budget, and rate-limit alerts appear for admin users
 - confirm Celery beat heartbeat freshness stays within threshold
 - confirm non-admin users receive 403 from audit, metrics, and extraction admin endpoints
 - confirm flipping `RADAR_ENABLED=false` blocks `/api/research/*` and stops scheduled Radar dispatch in the target environment
@@ -214,7 +230,7 @@ Production promotion requires:
 
 ### Database Backup And Restore
 
-1. Verify automated PostgreSQL backups are enabled before launch.
+1. Verify automated PostgreSQL backups are enabled before launch and record `POSTGRES_BACKUPS_ENABLED=true` plus `POSTGRES_BACKUP_PROVIDER`.
 2. Before high-risk migrations, take a manual backup/snapshot.
 3. Restore into staging first and run `alembic upgrade head`, `pytest` against staging-compatible config, and dashboard smoke checks.
 4. Restore production only after rollback/fix-forward options are rejected.

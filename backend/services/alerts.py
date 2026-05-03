@@ -6,11 +6,12 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.models import Alert, NotificationPreference
+from backend.models import Alert, NotificationPreference, User
 from backend.services.notification_preferences import is_alert_enabled
 
 
 RADAR_ALERT_TYPES = {"opportunity_signal", "research_report_ready", "research_run_failed"}
+ADMIN_AI_ALERT_TYPES = {"ai_safety_quarantine", "ai_safety_block", "ai_rate_limit", "ai_budget_block"}
 
 
 def _env_int(name: str, *, default: int, minimum: int = 0) -> int:
@@ -74,3 +75,52 @@ async def create_user_alert(
     )
     db.add(alert)
     return alert
+
+
+async def create_admin_operational_alert(
+    db: AsyncSession,
+    *,
+    alert_type: str,
+    title: str,
+    body: str | None = None,
+    action_url: str | None = None,
+    dedupe_key: str | None = None,
+) -> int:
+    """Create a low-volume in-app alert for each admin user.
+
+    The dedupe key prevents repeated safety events from flooding the admin
+    notification center while still preserving the full event ledger in AI Ops.
+    """
+    if alert_type not in ADMIN_AI_ALERT_TYPES:
+        return 0
+    if os.getenv("AI_ADMIN_ALERTS_ENABLED", "true").lower() not in {"1", "true", "yes", "on"}:
+        return 0
+
+    admins = list((await db.execute(select(User).where(User.is_admin.is_(True)))).scalars())
+    if not admins:
+        return 0
+
+    created = 0
+    since = datetime.now(timezone.utc) - timedelta(hours=6)
+    for admin in admins:
+        filters = [
+            Alert.user_id == admin.id,
+            Alert.alert_type == alert_type,
+            Alert.created_at >= since,
+        ]
+        if dedupe_key:
+            filters.append(Alert.action_url == dedupe_key)
+        existing = (await db.execute(select(Alert.id).where(*filters).limit(1))).scalar_one_or_none()
+        if existing:
+            continue
+        db.add(
+            Alert(
+                user_id=admin.id,
+                alert_type=alert_type,
+                title=title,
+                body=body,
+                action_url=dedupe_key or action_url,
+            )
+        )
+        created += 1
+    return created

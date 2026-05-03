@@ -8,6 +8,8 @@ async def write_report_node(state):
         state["normalized_brief"],
         state["diff_summary"],
         state.get("evidence_items", []),
+        db_session=state.get("db"),
+        user_id=state.get("user_id"),
     )
     result = {
         "final_report": final_report.model_dump(),

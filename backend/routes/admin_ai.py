@@ -26,6 +26,11 @@ class TraceAccessPayload(BaseModel):
     reason: str = Field(min_length=8, max_length=500)
 
 
+class SafetyReviewPayload(BaseModel):
+    review_status: str = Field(pattern="^(confirmed_unsafe|dismissed|needs_reprocessing|false_positive)$")
+    review_notes: str | None = Field(default=None, max_length=1000)
+
+
 async def _get_report(db: AsyncSession, report_id: str) -> AiPromotionReport:
     try:
         rid = uuid.UUID(report_id)
@@ -95,6 +100,8 @@ async def trace_access(
     try:
         cid = uuid.UUID(call_id)
         detail = await admin_ai.full_trace_with_access_log(db, call_id=cid, admin_user_id=admin.id, reason=payload.reason)
+    except admin_ai.FullTraceAccessDisabledError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if detail is None:
@@ -143,6 +150,54 @@ async def trace_access_logs(
     _admin: User = Depends(require_admin_user),
 ):
     return {"access_logs": await admin_ai.list_trace_access_logs(db, limit=min(max(limit, 1), 100))}
+
+
+@router.get("/safety-decisions")
+async def safety_decisions(
+    limit: int = 50,
+    surface: str | None = None,
+    task_name: str | None = None,
+    policy_decision: str | None = None,
+    stage: str | None = None,
+    min_risk: float | None = None,
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin_user),
+):
+    return {
+        "safety_decisions": await admin_ai.list_safety_decisions(
+            db,
+            limit=min(max(limit, 1), 100),
+            surface=surface,
+            task_name=task_name,
+            policy_decision=policy_decision,
+            stage=stage,
+            min_risk=min_risk,
+        )
+    }
+
+
+@router.patch("/safety-decisions/{decision_id}/review")
+async def review_safety_decision(
+    decision_id: str,
+    payload: SafetyReviewPayload,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_admin_user),
+):
+    try:
+        did = uuid.UUID(decision_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="AI safety decision not found") from exc
+    reviewed = await admin_ai.review_safety_decision(
+        db,
+        decision_id=did,
+        admin_user_id=admin.id,
+        review_status=payload.review_status,
+        review_notes=payload.review_notes,
+    )
+    if reviewed is None:
+        raise HTTPException(status_code=404, detail="AI safety decision not found")
+    await db.commit()
+    return reviewed
 
 
 @router.post("/promotion-reports/{report_id}/reject")

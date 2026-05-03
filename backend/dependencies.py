@@ -1,5 +1,6 @@
 import logging
 import os
+import time
 import uuid
 import hashlib
 import secrets
@@ -95,7 +96,30 @@ def is_token_blacklisted(jti: str) -> bool:
 
 _AUTH_CODE_PREFIX = "apptrail:authcode:"
 _AUTH_CODE_TTL = 120  # 2 minutes
-_auth_code_store: dict[str, str] = {}  # in-memory fallback
+_auth_code_store: dict[str, tuple[str, float]] = {}  # local dev/test fallback: code -> (payload, expires_at)
+
+
+class AuthCodeStoreUnavailableError(RuntimeError):
+    """Raised when production auth-code storage cannot safely issue or consume codes."""
+
+
+def _auth_code_memory_fallback_allowed() -> bool:
+    environment = os.getenv("ENVIRONMENT", "development").lower()
+    return os.getenv("TESTING") == "1" or environment == "development"
+
+
+def _require_auth_code_store_available() -> None:
+    if not _auth_code_memory_fallback_allowed():
+        raise AuthCodeStoreUnavailableError(
+            "Redis is required for OAuth auth-code exchange outside development."
+        )
+
+
+def _purge_expired_auth_codes(*, now: float | None = None) -> None:
+    current = time.time() if now is None else now
+    expired_codes = [code for code, (_, expires_at) in _auth_code_store.items() if expires_at <= current]
+    for code in expired_codes:
+        _auth_code_store.pop(code, None)
 
 
 def store_auth_code(code: str, payload_json: str) -> None:
@@ -106,8 +130,10 @@ def store_auth_code(code: str, payload_json: str) -> None:
             client.setex(f"{_AUTH_CODE_PREFIX}{code}", _AUTH_CODE_TTL, payload_json)
             return
         except Exception:
-            _logger.warning("Redis auth code store failed, using in-memory fallback")
-    _auth_code_store[code] = payload_json
+            _logger.warning("Redis auth code store failed")
+    _require_auth_code_store_available()
+    _purge_expired_auth_codes()
+    _auth_code_store[code] = (payload_json, time.time() + _AUTH_CODE_TTL)
 
 
 def consume_auth_code(code: str) -> str | None:
@@ -121,8 +147,16 @@ def consume_auth_code(code: str) -> str | None:
             results = pipe.execute()
             return results[0]
         except Exception:
-            _logger.warning("Redis auth code consume failed, using in-memory fallback")
-    return _auth_code_store.pop(code, None)
+            _logger.warning("Redis auth code consume failed")
+    _require_auth_code_store_available()
+    _purge_expired_auth_codes()
+    stored = _auth_code_store.pop(code, None)
+    if not stored:
+        return None
+    payload_json, expires_at = stored
+    if expires_at <= time.time():
+        return None
+    return payload_json
 
 
 # --- Token Creation ---

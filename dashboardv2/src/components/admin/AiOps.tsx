@@ -26,6 +26,7 @@ import type {
   AiPromotionReport,
   AiRun,
   AiRunDetail,
+  AiSafetyDecision,
   AiTelemetry,
   AiTraceAccessLog,
 } from '../../lib/adminAiApi';
@@ -37,13 +38,15 @@ import {
   fetchAiPromotionReports,
   fetchAiRunDetail,
   fetchAiRuns,
+  fetchAiSafetyDecisions,
   fetchAiTelemetry,
   fetchAiTraceAccessLogs,
   rejectPromotionReport,
+  reviewAiSafetyDecision,
   requestFullTrace,
 } from '../../lib/adminAiApi';
 
-type SectionId = 'overview' | 'runs' | 'artifacts' | 'experiments' | 'models' | 'promotions' | 'access';
+type SectionId = 'overview' | 'runs' | 'artifacts' | 'experiments' | 'models' | 'promotions' | 'safety' | 'access';
 
 const SECTIONS: Array<{ id: SectionId; label: string; icon: typeof Activity }> = [
   { id: 'overview', label: 'Overview', icon: Activity },
@@ -52,6 +55,7 @@ const SECTIONS: Array<{ id: SectionId; label: string; icon: typeof Activity }> =
   { id: 'experiments', label: 'Experiments', icon: FlaskConical },
   { id: 'models', label: 'Models', icon: BrainCircuit },
   { id: 'promotions', label: 'Promotions', icon: CheckCircle2 },
+  { id: 'safety', label: 'Safety', icon: ShieldCheck },
   { id: 'access', label: 'Access Logs', icon: LockKeyhole },
 ];
 
@@ -149,6 +153,7 @@ export function AiOps() {
   const [experiments, setExperiments] = useState<AiExperiment[]>([]);
   const [modelCards, setModelCards] = useState<AiModelCard[]>([]);
   const [promotionReports, setPromotionReports] = useState<AiPromotionReport[]>([]);
+  const [safetyDecisions, setSafetyDecisions] = useState<AiSafetyDecision[]>([]);
   const [accessLogs, setAccessLogs] = useState<AiTraceAccessLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -164,18 +169,31 @@ export function AiOps() {
   const [surfaceFilter, setSurfaceFilter] = useState('');
   const [taskFilter, setTaskFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [safetySurfaceFilter, setSafetySurfaceFilter] = useState('');
+  const [safetyTaskFilter, setSafetyTaskFilter] = useState('');
+  const [safetyPolicyFilter, setSafetyPolicyFilter] = useState('');
+  const [safetyStageFilter, setSafetyStageFilter] = useState('');
+  const [safetyMinRiskFilter, setSafetyMinRiskFilter] = useState('');
+  const [safetyReviewBusyId, setSafetyReviewBusyId] = useState<string | null>(null);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const [telemetryData, runsData, artifactData, experimentData, modelCardData, promotionData, accessLogData] = await Promise.all([
+      const [telemetryData, runsData, artifactData, experimentData, modelCardData, promotionData, safetyData, accessLogData] = await Promise.all([
         fetchAiTelemetry(),
         fetchAiRuns(),
         fetchAiArtifacts(),
         fetchAiExperiments(),
         fetchAiModelCards(),
         fetchAiPromotionReports(),
+        fetchAiSafetyDecisions({
+          surface: safetySurfaceFilter,
+          task_name: safetyTaskFilter,
+          policy_decision: safetyPolicyFilter,
+          stage: safetyStageFilter,
+          min_risk: safetyMinRiskFilter,
+        }),
         fetchAiTraceAccessLogs(),
       ]);
       setTelemetry(telemetryData);
@@ -184,13 +202,14 @@ export function AiOps() {
       setExperiments(experimentData);
       setModelCards(modelCardData);
       setPromotionReports(promotionData);
+      setSafetyDecisions(safetyData);
       setAccessLogs(accessLogData);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load AI Ops data.');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [safetyMinRiskFilter, safetyPolicyFilter, safetyStageFilter, safetySurfaceFilter, safetyTaskFilter]);
 
   useEffect(() => {
     void loadAll();
@@ -258,6 +277,24 @@ export function AiOps() {
       setError(err instanceof Error ? err.message : `Failed to ${action} promotion report.`);
     } finally {
       setPromotionBusyId(null);
+    }
+  }, []);
+
+  const handleSafetyReview = useCallback(async (decision: AiSafetyDecision, reviewStatus: string) => {
+    setSafetyReviewBusyId(decision.id);
+    setError('');
+    try {
+      const reviewed = await reviewAiSafetyDecision(decision.id, {
+        review_status: reviewStatus,
+        review_notes: reviewStatus === 'confirmed_unsafe'
+          ? 'Reviewed in AI Ops and confirmed unsafe for model processing.'
+          : 'Reviewed in AI Ops.',
+      });
+      setSafetyDecisions((current) => current.map((item) => (item.id === reviewed.id ? reviewed : item)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to review safety decision.');
+    } finally {
+      setSafetyReviewBusyId(null);
     }
   }, []);
 
@@ -391,6 +428,20 @@ export function AiOps() {
                       {formatNumber(telemetry.experiment_guardrails.pending_promotion_reports)} promotion reports pending review
                     </p>
                   </div>
+                  {telemetry.safety_guardrails && (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Safety Gateway</p>
+                      <p className="mt-1 text-lg font-semibold text-slate-900">
+                        {formatNumber(telemetry.safety_guardrails.redacted_decisions)} redacted
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {formatNumber(telemetry.safety_guardrails.blocked_decisions)} blocked, {formatNumber(telemetry.safety_guardrails.quarantined_decisions)} quarantined
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {formatNumber(telemetry.safety_guardrails.unreviewed_decisions)} awaiting admin review
+                      </p>
+                    </div>
+                  )}
                 </div>
               </SectionShell>
             </div>
@@ -639,6 +690,154 @@ export function AiOps() {
           </SectionShell>
         )}
 
+        {activeSection === 'safety' && (
+          <SectionShell title="Safety Decisions" icon={ShieldCheck}>
+            <div className="mb-4 grid gap-2 rounded-2xl border border-slate-200 bg-slate-50/70 p-3 md:grid-cols-2 xl:grid-cols-5">
+              <label className="grid gap-1 text-xs font-medium text-slate-600">
+                Surface
+                <input
+                  value={safetySurfaceFilter}
+                  onChange={(event) => setSafetySurfaceFilter(event.target.value)}
+                  placeholder="copilot"
+                  className="min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-slate-400"
+                />
+              </label>
+              <label className="grid gap-1 text-xs font-medium text-slate-600">
+                Task
+                <input
+                  value={safetyTaskFilter}
+                  onChange={(event) => setSafetyTaskFilter(event.target.value)}
+                  placeholder="copilot_answer"
+                  className="min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-slate-400"
+                />
+              </label>
+              <label className="grid gap-1 text-xs font-medium text-slate-600">
+                Decision
+                <select
+                  value={safetyPolicyFilter}
+                  onChange={(event) => setSafetyPolicyFilter(event.target.value)}
+                  className="min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-slate-400"
+                >
+                  <option value="">All decisions</option>
+                  <option value="allow">Allow</option>
+                  <option value="allow_redacted">Allow redacted</option>
+                  <option value="quarantine">Quarantine</option>
+                  <option value="block">Block</option>
+                </select>
+              </label>
+              <label className="grid gap-1 text-xs font-medium text-slate-600">
+                Stage
+                <select
+                  value={safetyStageFilter}
+                  onChange={(event) => setSafetyStageFilter(event.target.value)}
+                  className="min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-slate-400"
+                >
+                  <option value="">All stages</option>
+                  <option value="preflight">Preflight</option>
+                  <option value="postflight">Postflight</option>
+                </select>
+              </label>
+              <label className="grid gap-1 text-xs font-medium text-slate-600">
+                Minimum risk
+                <input
+                  type="number"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={safetyMinRiskFilter}
+                  onChange={(event) => setSafetyMinRiskFilter(event.target.value)}
+                  placeholder="0.70"
+                  className="min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-slate-400"
+                />
+              </label>
+            </div>
+            {safetyDecisions.length === 0 ? (
+              <EmptyState label="No safety gateway decisions have been recorded yet." />
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[1080px] text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-100 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      <th className="py-2 pr-4">Time</th>
+                      <th className="py-2 pr-4">Surface</th>
+                      <th className="py-2 pr-4">Stage</th>
+                      <th className="py-2 pr-4">Decision</th>
+                      <th className="py-2 pr-4">Review</th>
+                      <th className="py-2 pr-4 text-right">Risk</th>
+                      <th className="py-2 pr-4">Redactions</th>
+                      <th className="py-2">Reasons</th>
+                      <th className="py-2 pl-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {safetyDecisions.map((decision) => (
+                      <tr key={decision.id} className="text-slate-700">
+                        <td className="py-3 pr-4 whitespace-nowrap">{formatDate(decision.created_at)}</td>
+                        <td className="py-3 pr-4">
+                          <p className="font-medium text-slate-900">{decision.surface}</p>
+                          <p className="text-xs text-slate-500">{decision.task_name}</p>
+                        </td>
+                        <td className="py-3 pr-4 capitalize">{decision.stage}</td>
+                        <td className="py-3 pr-4"><StatusPill status={decision.policy_decision} /></td>
+                        <td className="py-3 pr-4">
+                          <StatusPill status={decision.review_status || 'unreviewed'} />
+                          {decision.review_notes && (
+                            <p className="mt-1 max-w-[11rem] truncate text-xs text-slate-500" title={decision.review_notes}>
+                              {decision.review_notes}
+                            </p>
+                          )}
+                        </td>
+                        <td className="py-3 pr-4 text-right">
+                          <p className="font-medium text-slate-900">{decision.risk_score.toFixed(2)}</p>
+                          <p className="text-xs text-slate-500">PI {formatNumber(Math.round((decision.prompt_injection_score ?? 0) * 100))}%</p>
+                        </td>
+                        <td className="py-3 pr-4">
+                          <pre className="max-h-28 max-w-xs overflow-auto rounded-xl bg-slate-50 p-2 text-xs">{jsonPreview(decision.redaction_counts)}</pre>
+                        </td>
+                        <td className="py-3">
+                          <div className="flex max-w-sm flex-wrap gap-1">
+                            {decision.reasons.length === 0 ? (
+                              <span className="text-xs text-slate-500">No issues detected</span>
+                            ) : (
+                              decision.reasons.map((reason) => (
+                                <span key={reason} className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                                  {reason.replaceAll('_', ' ')}
+                                </span>
+                              ))
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-3 pl-4 text-right">
+                          {['quarantine', 'block'].includes(decision.policy_decision) ? (
+                            <div className="flex justify-end gap-2">
+                              <button
+                                onClick={() => void handleSafetyReview(decision, 'confirmed_unsafe')}
+                                disabled={safetyReviewBusyId === decision.id}
+                                className="rounded-xl border border-red-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-red-700 transition-colors hover:bg-red-50 disabled:opacity-50"
+                              >
+                                Confirm unsafe
+                              </button>
+                              <button
+                                onClick={() => void handleSafetyReview(decision, 'false_positive')}
+                                disabled={safetyReviewBusyId === decision.id}
+                                className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
+                              >
+                                Mark safe
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-slate-400">No review needed</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </SectionShell>
+        )}
+
         {activeSection === 'access' && (
           <SectionShell title="Trace Access Audit Log" icon={LockKeyhole}>
             {accessLogs.length === 0 ? (
@@ -775,30 +974,38 @@ function RunDetailPanel({
           <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
             <div className="mb-3 flex items-start gap-2 text-sm text-amber-900">
               <LockKeyhole className="mt-0.5 h-4 w-4 shrink-0" />
-              <p>Full trace access can expose raw prompts and sensitive metadata. A reason is required and every access is written to the admin audit log.</p>
+              <p>
+                Full trace access can expose raw prompts and sensitive metadata. Redacted lineage stays available; raw payloads require explicit environment approval.
+              </p>
             </div>
-            <form onSubmit={onTraceAccess} className="space-y-2">
-              <label className="block text-xs font-semibold uppercase tracking-wide text-amber-800" htmlFor="ai-trace-reason">
-                Access Reason
-              </label>
-              <textarea
-                id="ai-trace-reason"
-                value={traceReason}
-                onChange={(event) => onTraceReasonChange(event.target.value)}
-                minLength={8}
-                rows={3}
-                placeholder="Example: Debugging groundedness issue in copilot run"
-                className="w-full resize-none rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition-colors focus:border-amber-400"
-              />
-              <button
-                type="submit"
-                disabled={traceLoading || traceReason.trim().length < 8}
-                className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {traceLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Eye className="h-3.5 w-3.5" />}
-                Request Full Trace
-              </button>
-            </form>
+            {detail.full_trace_available ? (
+              <form onSubmit={onTraceAccess} className="space-y-2">
+                <label className="block text-xs font-semibold uppercase tracking-wide text-amber-800" htmlFor="ai-trace-reason">
+                  Access Reason
+                </label>
+                <textarea
+                  id="ai-trace-reason"
+                  value={traceReason}
+                  onChange={(event) => onTraceReasonChange(event.target.value)}
+                  minLength={8}
+                  rows={3}
+                  placeholder="Example: Debugging groundedness issue in copilot run"
+                  className="w-full resize-none rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition-colors focus:border-amber-400"
+                />
+                <button
+                  type="submit"
+                  disabled={traceLoading || traceReason.trim().length < 8}
+                  className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {traceLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Eye className="h-3.5 w-3.5" />}
+                  Request Full Trace
+                </button>
+              </form>
+            ) : (
+              <div className="rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm text-amber-900">
+                Raw trace payload access is disabled for this environment. Use the redacted metadata above or enable full trace access temporarily during a controlled incident review.
+              </div>
+            )}
             {traceError && <p className="mt-2 text-sm text-red-700">{traceError}</p>}
             {fullTrace && (
               <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">

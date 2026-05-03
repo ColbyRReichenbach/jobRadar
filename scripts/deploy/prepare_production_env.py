@@ -9,10 +9,15 @@ from __future__ import annotations
 import base64
 import os
 import secrets
+import sys
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
+
+from backend.services.production_readiness import PRODUCTION_AI_CAP_DEFAULTS  # noqa: E402
+
 SOURCE_FILES = [
     ROOT / ".env",
     ROOT / ".deploy.secrets.local",
@@ -166,6 +171,41 @@ def main() -> int:
         )
         or "50",
         "AI_MODEL_PRICING_CONFIG": first_present(source, "AI_MODEL_PRICING_CONFIG"),
+        "AI_MAX_INPUT_TOKENS_PER_REQUEST": first_present(
+            source, "AI_MAX_INPUT_TOKENS_PER_REQUEST"
+        )
+        or PRODUCTION_AI_CAP_DEFAULTS["AI_MAX_INPUT_TOKENS_PER_REQUEST"],
+        "AI_DAILY_TOKEN_CAP_PER_USER": first_present(source, "AI_DAILY_TOKEN_CAP_PER_USER")
+        or PRODUCTION_AI_CAP_DEFAULTS["AI_DAILY_TOKEN_CAP_PER_USER"],
+        "AI_GLOBAL_DAILY_TOKEN_CAP": first_present(source, "AI_GLOBAL_DAILY_TOKEN_CAP")
+        or PRODUCTION_AI_CAP_DEFAULTS["AI_GLOBAL_DAILY_TOKEN_CAP"],
+        "AI_TASK_DAILY_TOKEN_CAP": first_present(source, "AI_TASK_DAILY_TOKEN_CAP")
+        or PRODUCTION_AI_CAP_DEFAULTS["AI_TASK_DAILY_TOKEN_CAP"],
+        "AI_RATE_LIMIT_PER_MINUTE_PER_USER": first_present(
+            source, "AI_RATE_LIMIT_PER_MINUTE_PER_USER"
+        )
+        or PRODUCTION_AI_CAP_DEFAULTS["AI_RATE_LIMIT_PER_MINUTE_PER_USER"],
+        "AI_RATE_LIMIT_PER_MINUTE_PER_TASK": first_present(
+            source, "AI_RATE_LIMIT_PER_MINUTE_PER_TASK"
+        )
+        or PRODUCTION_AI_CAP_DEFAULTS["AI_RATE_LIMIT_PER_MINUTE_PER_TASK"],
+        "AI_RATE_LIMIT_PER_MINUTE_GLOBAL": first_present(
+            source, "AI_RATE_LIMIT_PER_MINUTE_GLOBAL"
+        )
+        or PRODUCTION_AI_CAP_DEFAULTS["AI_RATE_LIMIT_PER_MINUTE_GLOBAL"],
+        "AI_QUARANTINE_PROMPT_RISK_THRESHOLD": first_present(
+            source, "AI_QUARANTINE_PROMPT_RISK_THRESHOLD"
+        )
+        or PRODUCTION_AI_CAP_DEFAULTS["AI_QUARANTINE_PROMPT_RISK_THRESHOLD"],
+        "AI_ADMIN_ALERTS_ENABLED": first_present(source, "AI_ADMIN_ALERTS_ENABLED")
+        or PRODUCTION_AI_CAP_DEFAULTS["AI_ADMIN_ALERTS_ENABLED"],
+        "AI_SEMANTIC_PROMPT_GUARD_ENABLED": first_present(
+            source, "AI_SEMANTIC_PROMPT_GUARD_ENABLED"
+        )
+        or "false",
+        "POSTGRES_BACKUPS_ENABLED": first_present(source, "POSTGRES_BACKUPS_ENABLED")
+        or "false",
+        "POSTGRES_BACKUP_PROVIDER": first_present(source, "POSTGRES_BACKUP_PROVIDER"),
     }
 
     missing_required = [

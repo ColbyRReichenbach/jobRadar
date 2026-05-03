@@ -6,7 +6,7 @@ Critical: never invents experience, only reframes existing content.
 
 import logging
 
-from backend.services import ai_orchestrator
+from backend.services import ai_orchestrator, ai_safety
 
 logger = logging.getLogger(__name__)
 
@@ -66,13 +66,20 @@ async def tailor_resume(
 Remember: DO NOT invent any new experience or skills. Only reframe and reorder existing content."""
 
     try:
-        result = await ai_orchestrator.run_json_task(
+        result = await ai_safety.run_json_task(
             TAILOR_TASK,
             user_message,
             metadata={"surface": "resume_tailor", "company": company, "role": role},
+            data_classes=[ai_safety.DATA_CLASS_CAREER_PRIVATE, ai_safety.DATA_CLASS_PUBLIC_RESEARCH],
+            allow_identity=False,
+            untrusted_input=True,
         )
 
-        normalized = _normalize_tailor_result(result)
+        normalized = _normalize_tailor_result(
+            result,
+            original_text=original_text,
+            verified_skills=skills or [],
+        )
         if normalized is None:
             ai_orchestrator.record_fallback(TAILOR_TASK, "invalid_payload", {"surface": "resume_tailor", "company": company, "role": role})
             return _fallback_tailor(original_text, role, company)
@@ -98,10 +105,27 @@ def _clean_text(value: object) -> str:
     return value.strip() if isinstance(value, str) else ""
 
 
-def _normalize_tailor_result(result: dict) -> dict | None:
+def _extract_skill_names(text: str) -> set[str]:
+    from backend.services.tech_extractor import extract_tech_stack
+
+    return {item["name"].lower() for item in extract_tech_stack(text or "") if item.get("name")}
+
+
+def _has_unverified_skill_additions(tailored_text: str, original_text: str, verified_skills: list[str]) -> bool:
+    original_skills = _extract_skill_names(original_text)
+    verified = {skill.strip().lower() for skill in verified_skills if isinstance(skill, str) and skill.strip()}
+    tailored_skills = _extract_skill_names(tailored_text)
+    additions = tailored_skills - original_skills - verified
+    return bool(additions)
+
+
+def _normalize_tailor_result(result: dict, original_text: str = "", verified_skills: list[str] | None = None) -> dict | None:
     tailored_text = _clean_text(result.get("tailored_text"))
     if not tailored_text:
         logger.warning("Resume tailor returned invalid payload with tailored_text missing")
+        return None
+    if original_text and _has_unverified_skill_additions(tailored_text, original_text, verified_skills or []):
+        logger.warning("Resume tailor returned unverified skill additions")
         return None
 
     return {

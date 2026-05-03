@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from backend.services import ai_orchestrator
+from backend.services import ai_orchestrator, ai_safety
 
 
 async def extract_text_from_pdf(pdf_bytes: bytes) -> str:
@@ -41,10 +41,13 @@ Resume text:
 {text[:8000]}"""
 
     try:
-        result = await ai_orchestrator.run_json_task(
+        result = await ai_safety.run_json_task(
             "resume_parser",
             prompt,
             metadata={"surface": "resume_parser"},
+            data_classes=[ai_safety.DATA_CLASS_CAREER_PRIVATE],
+            allow_identity=False,
+            untrusted_input=True,
         )
         return _normalize_parse_result(result)
     except Exception:

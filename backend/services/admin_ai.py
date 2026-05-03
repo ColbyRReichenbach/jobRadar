@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -16,11 +17,21 @@ from backend.models import (
     AiModelCall,
     AiModelCard,
     AiPromotionReport,
+    AiSafetyDecision,
     AiShadowRun,
     SearchDocument,
 )
 
 REDACTED_KEYS = {"raw_prompt", "system_prompt", "email_body", "body", "access_token", "refresh_token", "api_key"}
+_TRUTHY_VALUES = {"1", "true", "yes", "on"}
+
+
+class FullTraceAccessDisabledError(RuntimeError):
+    """Raised when raw AI trace payload access is disabled by deployment policy."""
+
+
+def full_trace_payload_access_enabled() -> bool:
+    return os.getenv("AI_TRACE_FULL_PAYLOADS_ENABLED", "false").strip().lower() in _TRUTHY_VALUES
 
 
 def _iso(value) -> str | None:
@@ -113,6 +124,41 @@ async def telemetry_overview(db: AsyncSession) -> dict[str, Any]:
     pending_promotions = int(
         (await db.execute(select(func.count(AiPromotionReport.id)).where(AiPromotionReport.status == "pending_review"))).scalar_one() or 0
     )
+    blocked_safety_decisions = int(
+        (
+            await db.execute(
+                select(func.count(AiSafetyDecision.id)).where(AiSafetyDecision.policy_decision == "block")
+            )
+        ).scalar_one()
+        or 0
+    )
+    redacted_safety_decisions = int(
+        (
+            await db.execute(
+                select(func.count(AiSafetyDecision.id)).where(AiSafetyDecision.policy_decision == "allow_redacted")
+            )
+        ).scalar_one()
+        or 0
+    )
+    quarantined_safety_decisions = int(
+        (
+            await db.execute(
+                select(func.count(AiSafetyDecision.id)).where(AiSafetyDecision.policy_decision == "quarantine")
+            )
+        ).scalar_one()
+        or 0
+    )
+    unreviewed_safety_decisions = int(
+        (
+            await db.execute(
+                select(func.count(AiSafetyDecision.id)).where(
+                    AiSafetyDecision.policy_decision.in_(("block", "quarantine")),
+                    AiSafetyDecision.review_status == "unreviewed",
+                )
+            )
+        ).scalar_one()
+        or 0
+    )
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "overview": {
@@ -136,6 +182,12 @@ async def telemetry_overview(db: AsyncSession) -> dict[str, Any]:
             "running_experiments": running_experiments,
             "paused_experiments": paused_experiments,
             "pending_promotion_reports": pending_promotions,
+        },
+        "safety_guardrails": {
+            "blocked_decisions": blocked_safety_decisions,
+            "redacted_decisions": redacted_safety_decisions,
+            "quarantined_decisions": quarantined_safety_decisions,
+            "unreviewed_decisions": unreviewed_safety_decisions,
         },
     }
 
@@ -175,7 +227,7 @@ async def run_detail(db: AsyncSession, *, call_id: uuid.UUID) -> dict[str, Any] 
         "request_metadata": _redact_mapping(call.request_metadata or {}),
         "response_metadata": _redact_mapping(call.response_metadata or {}),
         "artifacts": [serialize_artifact(item) for item in artifacts],
-        "full_trace_available": True,
+        "full_trace_available": full_trace_payload_access_enabled(),
         "full_trace_requires_reason": True,
     }
 
@@ -189,6 +241,8 @@ async def full_trace_with_access_log(
 ) -> dict[str, Any] | None:
     if len(reason.strip()) < 8:
         raise ValueError("A specific access reason is required")
+    if not full_trace_payload_access_enabled():
+        raise FullTraceAccessDisabledError("Full trace payload access is disabled for this environment")
     call = await db.get(AiModelCall, call_id)
     if call is None:
         return None
@@ -307,3 +361,81 @@ async def list_trace_access_logs(db: AsyncSession, *, limit: int = 50) -> list[d
         }
         for row in rows
     ]
+
+
+def serialize_safety_decision(row: AiSafetyDecision) -> dict[str, Any]:
+    return {
+        "id": str(row.id),
+        "user_id": str(row.user_id) if row.user_id else None,
+        "model_call_id": str(row.model_call_id) if row.model_call_id else None,
+        "surface": row.surface,
+        "task_name": row.task_name,
+        "stage": row.stage,
+        "policy_decision": row.policy_decision,
+        "risk_score": row.risk_score,
+        "prompt_injection_score": row.prompt_injection_score,
+        "input_data_classes": row.input_data_classes or [],
+        "consent_snapshot": _redact_mapping(row.consent_snapshot or {}),
+        "redaction_counts": row.redaction_counts or {},
+        "reasons": row.reasons or [],
+        "token_estimate": row.token_estimate,
+        "metadata": _redact_mapping(row.metadata_json or {}),
+        "review_status": row.review_status or "unreviewed",
+        "reviewed_by_user_id": str(row.reviewed_by_user_id) if row.reviewed_by_user_id else None,
+        "reviewed_at": _iso(row.reviewed_at),
+        "review_notes": row.review_notes,
+        "created_at": _iso(row.created_at),
+    }
+
+
+async def list_safety_decisions(
+    db: AsyncSession,
+    *,
+    limit: int = 50,
+    surface: str | None = None,
+    task_name: str | None = None,
+    policy_decision: str | None = None,
+    stage: str | None = None,
+    min_risk: float | None = None,
+) -> list[dict[str, Any]]:
+    filters = []
+    if surface:
+        filters.append(AiSafetyDecision.surface == surface)
+    if task_name:
+        filters.append(AiSafetyDecision.task_name == task_name)
+    if policy_decision:
+        filters.append(AiSafetyDecision.policy_decision == policy_decision)
+    if stage:
+        filters.append(AiSafetyDecision.stage == stage)
+    if min_risk is not None:
+        filters.append(AiSafetyDecision.risk_score >= min_risk)
+    rows = list(
+        (
+            await db.execute(
+                select(AiSafetyDecision)
+                .where(*filters)
+                .order_by(AiSafetyDecision.created_at.desc())
+                .limit(limit)
+            )
+        ).scalars()
+    )
+    return [serialize_safety_decision(row) for row in rows]
+
+
+async def review_safety_decision(
+    db: AsyncSession,
+    *,
+    decision_id: uuid.UUID,
+    admin_user_id: uuid.UUID,
+    review_status: str,
+    review_notes: str | None = None,
+) -> dict[str, Any] | None:
+    row = await db.get(AiSafetyDecision, decision_id)
+    if row is None:
+        return None
+    row.review_status = review_status
+    row.reviewed_by_user_id = admin_user_id
+    row.reviewed_at = datetime.now(timezone.utc)
+    row.review_notes = review_notes.strip() if review_notes else None
+    await db.flush()
+    return serialize_safety_decision(row)
