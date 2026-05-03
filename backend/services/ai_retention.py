@@ -17,6 +17,7 @@ from backend.models import (
     AiModelCall,
     AiModelCard,
     AiPromotionReport,
+    AiSafetyDecision,
     AiShadowRun,
 )
 from backend.services.ai_usage import trace_retention_days
@@ -67,7 +68,16 @@ async def redact_expired_ai_trace_payloads(
             error_message=None,
         )
     )
-    return int(result.rowcount or 0)
+    model_call_count = int(result.rowcount or 0)
+    safety_result = await db.execute(
+        update(AiSafetyDecision)
+        .where(AiSafetyDecision.created_at < cutoff)
+        .values(
+            consent_snapshot=REDACTED_TRACE_PAYLOAD,
+            metadata_json=REDACTED_TRACE_PAYLOAD,
+        )
+    )
+    return model_call_count + int(safety_result.rowcount or 0)
 
 
 async def anonymize_user_ai_records(db: AsyncSession, *, user_id: uuid.UUID | str) -> dict[str, int]:
@@ -77,6 +87,7 @@ async def anonymize_user_ai_records(db: AsyncSession, *, user_id: uuid.UUID | st
 
     updates = [
         ("ai_model_calls", update(AiModelCall).where(AiModelCall.user_id == uid).values(user_id=None)),
+        ("ai_safety_decisions", update(AiSafetyDecision).where(AiSafetyDecision.user_id == uid).values(user_id=None)),
         ("ai_artifacts", update(AiArtifact).where(AiArtifact.user_id == uid).values(user_id=None)),
         ("ai_shadow_runs", update(AiShadowRun).where(AiShadowRun.user_id == uid).values(user_id=None)),
         ("ai_admin_access_logs", update(AiAdminAccessLog).where(AiAdminAccessLog.admin_user_id == uid).values(admin_user_id=None)),

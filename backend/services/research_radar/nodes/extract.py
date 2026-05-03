@@ -8,7 +8,12 @@ async def extract_evidence_node(state):
     evidence_items: list[dict] = []
     llm_calls: list[dict] = []
     for source_item in state.get("source_items", []):
-        extracted, llm_call = await extract_evidence_with_metrics(normalized_brief, source_item)
+        extracted, llm_call = await extract_evidence_with_metrics(
+            normalized_brief,
+            source_item,
+            db_session=state.get("db"),
+            user_id=str(state.get("user_id")),
+        )
         for item in extracted:
             evidence_items.append(item.model_dump())
         if llm_call:

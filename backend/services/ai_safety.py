@@ -9,14 +9,17 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import uuid
 from dataclasses import dataclass, replace
+from datetime import datetime, timezone
 from typing import Any, Iterable
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.models import AiSafetyDecision
+from backend.models import AiModelCall, AiSafetyDecision
 from backend.services import ai_orchestrator
 
 logger = logging.getLogger(__name__)
@@ -83,6 +86,10 @@ class AiSafetyBlockedError(RuntimeError):
     """Raised when a request should not be sent to the model."""
 
 
+class AiSafetyBudgetExceededError(AiSafetyBlockedError):
+    """Raised when configured AI token budgets would be exceeded."""
+
+
 @dataclass(frozen=True)
 class PromptRisk:
     score: float
@@ -112,6 +119,34 @@ class SafetyEvaluation:
 def estimate_tokens(value: Any) -> int:
     text = value if isinstance(value, str) else json.dumps(value, sort_keys=True, default=str)
     return max(1, int(len(text) / 4))
+
+
+def _env_int(name: str, default: int = 0) -> int:
+    try:
+        return max(0, int(os.getenv(name, str(default))))
+    except ValueError:
+        return default
+
+
+def max_input_tokens_per_request() -> int:
+    return _env_int("AI_MAX_INPUT_TOKENS_PER_REQUEST", 25000)
+
+
+def per_user_daily_token_cap() -> int:
+    return _env_int("AI_DAILY_TOKEN_CAP_PER_USER", 0)
+
+
+def global_daily_token_cap() -> int:
+    return _env_int("AI_GLOBAL_DAILY_TOKEN_CAP", 0)
+
+
+def per_task_daily_token_cap() -> int:
+    return _env_int("AI_TASK_DAILY_TOKEN_CAP", 0)
+
+
+def _day_start() -> datetime:
+    now = datetime.now(timezone.utc)
+    return now.replace(hour=0, minute=0, second=0, microsecond=0)
 
 
 def _add_count(counts: dict[str, int], key: str, amount: int = 1) -> None:
@@ -344,6 +379,74 @@ async def record_safety_decision(
     await db_session.flush()
 
 
+async def _sum_daily_tokens(
+    db_session: AsyncSession,
+    *,
+    user_id: uuid.UUID | str | None = None,
+    surface: str | None = None,
+    task_name: str | None = None,
+) -> int:
+    filters = [AiModelCall.created_at >= _day_start()]
+    uid = _uuid_or_none(user_id)
+    if uid is not None:
+        filters.append(AiModelCall.user_id == uid)
+    if surface:
+        filters.append(AiModelCall.surface == surface)
+    if task_name:
+        filters.append(AiModelCall.task_name == task_name)
+    value = (
+        await db_session.execute(
+            select(func.coalesce(func.sum(AiModelCall.total_tokens), 0)).where(*filters)
+        )
+    ).scalar_one()
+    return int(value or 0)
+
+
+def _blocked_evaluation(evaluation: SafetyEvaluation, reason: str) -> SafetyEvaluation:
+    return replace(
+        evaluation,
+        policy_decision=POLICY_BLOCK,
+        risk_score=max(evaluation.risk_score, 0.8),
+        reasons=sorted(set([*evaluation.reasons, reason])),
+    )
+
+
+async def enforce_ai_token_budget(
+    db_session: AsyncSession | None,
+    evaluation: SafetyEvaluation,
+    *,
+    surface: str,
+    task_name: str,
+    user_id: uuid.UUID | str | None = None,
+) -> SafetyEvaluation:
+    request_cap = max_input_tokens_per_request()
+    if request_cap and evaluation.token_estimate > request_cap:
+        return _blocked_evaluation(evaluation, "input_token_cap_exceeded")
+
+    if db_session is None:
+        return evaluation
+
+    user_cap = per_user_daily_token_cap()
+    if user_cap and user_id is not None:
+        used = await _sum_daily_tokens(db_session, user_id=user_id)
+        if used + evaluation.token_estimate > user_cap:
+            return _blocked_evaluation(evaluation, "user_daily_token_cap_exceeded")
+
+    global_cap = global_daily_token_cap()
+    if global_cap:
+        used = await _sum_daily_tokens(db_session)
+        if used + evaluation.token_estimate > global_cap:
+            return _blocked_evaluation(evaluation, "global_daily_token_cap_exceeded")
+
+    task_cap = per_task_daily_token_cap()
+    if task_cap:
+        used = await _sum_daily_tokens(db_session, surface=surface, task_name=task_name)
+        if used + evaluation.token_estimate > task_cap:
+            return _blocked_evaluation(evaluation, "task_daily_token_cap_exceeded")
+
+    return evaluation
+
+
 def _safe_metadata(metadata: dict[str, Any] | None, evaluation: SafetyEvaluation) -> dict[str, Any]:
     base = redact_sensitive_value(metadata or {}, allow_identity=False).value
     if not isinstance(base, dict):
@@ -385,6 +488,13 @@ async def run_json_task_with_safety(
         untrusted_input=untrusted_input,
         block_on_high_risk=block_on_high_risk,
     )
+    preflight = await enforce_ai_token_budget(
+        db_session,
+        preflight,
+        surface=surface,
+        task_name=task_config.name,
+        user_id=user_id or (metadata or {}).get("user_id"),
+    )
     await record_safety_decision(
         db_session,
         preflight,
@@ -395,6 +505,8 @@ async def run_json_task_with_safety(
         metadata=metadata,
     )
     if preflight.policy_decision == POLICY_BLOCK:
+        if any(reason.endswith("_token_cap_exceeded") for reason in preflight.reasons):
+            raise AiSafetyBudgetExceededError(f"AI token budget blocked {task_config.name}: {', '.join(preflight.reasons)}")
         raise AiSafetyBlockedError(f"AI request blocked by safety policy for {task_config.name}: {', '.join(preflight.reasons)}")
 
     result = await ai_orchestrator.run_json_task_with_metadata(
@@ -439,6 +551,7 @@ async def run_json_task(
 
     task_config = ai_orchestrator.get_task(task) if isinstance(task, str) else task
     metadata = kwargs.get("metadata")
+    effective_user_id = kwargs.get("user_id") or ((metadata or {}).get("user_id") if isinstance(metadata, dict) else None)
     preflight = evaluate_payload(
         user_message,
         data_classes=kwargs.get("data_classes") or (),
@@ -447,7 +560,16 @@ async def run_json_task(
         untrusted_input=bool(kwargs.get("untrusted_input", False)),
         block_on_high_risk=bool(kwargs.get("block_on_high_risk", False)),
     )
+    preflight = await enforce_ai_token_budget(
+        None,
+        preflight,
+        surface=str((metadata or {}).get("surface") or task_config.service_path),
+        task_name=task_config.name,
+        user_id=effective_user_id,
+    )
     if preflight.policy_decision == POLICY_BLOCK:
+        if any(reason.endswith("_token_cap_exceeded") for reason in preflight.reasons):
+            raise AiSafetyBudgetExceededError(f"AI token budget blocked {task_config.name}: {', '.join(preflight.reasons)}")
         raise AiSafetyBlockedError(f"AI request blocked by safety policy for {task_config.name}: {', '.join(preflight.reasons)}")
 
     payload = await ai_orchestrator.run_json_task(

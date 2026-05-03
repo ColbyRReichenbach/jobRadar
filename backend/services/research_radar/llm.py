@@ -6,6 +6,8 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from backend.services import ai_orchestrator, ai_safety
 from backend.services.research_radar.config import DEPTH_TASK_LIMITS, DEFAULT_MAX_RESULTS_PER_TASK
 from backend.services.research_radar.prompts import (
@@ -398,6 +400,9 @@ def deterministic_normalized_brief(tracker: dict[str, Any], user_context: dict[s
 async def normalize_brief_with_metrics(
     tracker: dict[str, Any],
     user_context: dict[str, Any],
+    *,
+    db_session: AsyncSession | None = None,
+    user_id: str | None = None,
 ) -> tuple[NormalizedResearchBrief, dict[str, Any] | None]:
     fallback = deterministic_normalized_brief(tracker, user_context)
     if not ai_orchestrator.has_configured_api_key():
@@ -414,6 +419,8 @@ async def normalize_brief_with_metrics(
             data_classes=[ai_safety.DATA_CLASS_CAREER_PRIVATE, ai_safety.DATA_CLASS_UNTRUSTED_INBOUND],
             allow_identity=False,
             untrusted_input=True,
+            db_session=db_session,
+            user_id=user_id,
         )
         return _normalize_brief_payload(result.payload, tracker=tracker, user_context=user_context), _task_call_metric(result)
     except Exception as exc:  # noqa: BLE001
@@ -492,6 +499,9 @@ async def plan_research_tasks_with_metrics(
     normalized_brief: dict[str, Any],
     depth: str,
     max_queries: int,
+    *,
+    db_session: AsyncSession | None = None,
+    user_id: str | None = None,
 ) -> tuple[list[ResearchSearchTask], dict[str, Any] | None]:
     fallback = deterministic_research_plan(normalized_brief, depth, max_queries)
     if not ai_orchestrator.has_configured_api_key():
@@ -512,6 +522,8 @@ async def plan_research_tasks_with_metrics(
             data_classes=[ai_safety.DATA_CLASS_CAREER_PRIVATE],
             allow_identity=False,
             untrusted_input=True,
+            db_session=db_session,
+            user_id=user_id,
         )
         tasks_payload = result.payload.get("tasks", result.payload)
         if not isinstance(tasks_payload, list):
@@ -579,6 +591,9 @@ def deterministic_extract_evidence(normalized_brief: dict[str, Any], source_docu
 async def extract_evidence_with_metrics(
     normalized_brief: dict[str, Any],
     source_document: dict[str, Any],
+    *,
+    db_session: AsyncSession | None = None,
+    user_id: str | None = None,
 ) -> tuple[list[ExtractedEvidence], dict[str, Any] | None]:
     fallback = deterministic_extract_evidence(normalized_brief, source_document)
     if not ai_orchestrator.has_configured_api_key():
@@ -596,6 +611,8 @@ async def extract_evidence_with_metrics(
             data_classes=[ai_safety.DATA_CLASS_PUBLIC_RESEARCH, ai_safety.DATA_CLASS_UNTRUSTED_INBOUND],
             allow_identity=False,
             untrusted_input=True,
+            db_session=db_session,
+            user_id=user_id,
         )
         evidence_payload = result.payload.get("evidence_items", result.payload)
         if not isinstance(evidence_payload, list):
@@ -671,6 +688,9 @@ async def write_report_with_metrics(
     normalized_brief: dict[str, Any],
     diff_summary: dict[str, Any],
     evidence_items: list[dict[str, Any]],
+    *,
+    db_session: AsyncSession | None = None,
+    user_id: str | None = None,
 ) -> tuple[FinalReportDraft, list[ReportSectionDraft], dict[str, Any] | None]:
     fallback_report, fallback_sections = deterministic_report(normalized_brief, diff_summary, evidence_items)
     if not ai_orchestrator.has_configured_api_key():
@@ -692,6 +712,8 @@ async def write_report_with_metrics(
             data_classes=[ai_safety.DATA_CLASS_PUBLIC_RESEARCH, ai_safety.DATA_CLASS_GENERATED_OUTPUT],
             allow_identity=False,
             untrusted_input=False,
+            db_session=db_session,
+            user_id=user_id,
         )
         payload = result.payload
         title = payload.get("title")
@@ -762,6 +784,9 @@ async def verify_report_with_metrics(
     normalized_brief: dict[str, Any],
     report_sections: list[dict[str, Any]],
     evidence_items: list[dict[str, Any]],
+    *,
+    db_session: AsyncSession | None = None,
+    user_id: str | None = None,
 ) -> tuple[VerificationResult, dict[str, Any] | None]:
     fallback = deterministic_verification(report_sections, evidence_items)
     if not ai_orchestrator.has_configured_api_key():
@@ -783,6 +808,8 @@ async def verify_report_with_metrics(
             data_classes=[ai_safety.DATA_CLASS_PUBLIC_RESEARCH, ai_safety.DATA_CLASS_GENERATED_OUTPUT],
             allow_identity=False,
             untrusted_input=False,
+            db_session=db_session,
+            user_id=user_id,
         )
         return _normalize_verification_payload(result.payload, fallback), _task_call_metric(result)
     except Exception as exc:  # noqa: BLE001

@@ -7,7 +7,12 @@ from backend.services.research_radar.llm import normalize_brief_with_metrics
 async def normalize_research_brief(state):
     tracker = state["tracker"]
     user_context = state["user_context"]
-    normalized, llm_call = await normalize_brief_with_metrics(tracker, user_context)
+    normalized, llm_call = await normalize_brief_with_metrics(
+        tracker,
+        user_context,
+        db_session=state.get("db"),
+        user_id=str(state.get("user_id")),
+    )
     normalized_dict = normalized.model_dump()
     if not normalized_dict["ideal_role_titles"] and user_context.get("role_interest_labels"):
         normalized_dict["ideal_role_titles"] = user_context["role_interest_labels"][:6]

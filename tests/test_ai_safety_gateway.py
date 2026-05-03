@@ -3,7 +3,7 @@ import uuid
 import pytest
 from sqlalchemy import select
 
-from backend.models import AiSafetyDecision
+from backend.models import AiModelCall, AiSafetyDecision
 
 
 def test_ai_safety_redacts_secrets_and_identity_by_default():
@@ -108,6 +108,65 @@ async def test_ai_safety_wrapper_records_preflight_and_postflight(db_session, mo
     assert rows[0].policy_decision == ai_safety.POLICY_ALLOW_REDACTED
     assert rows[0].redaction_counts["prompt_injection_line"] == 1
     assert rows[1].model_call_id == uuid.UUID("11111111-1111-4111-8111-111111111111")
+
+
+@pytest.mark.asyncio
+async def test_ai_safety_blocks_request_over_input_token_cap(monkeypatch):
+    from backend.services import ai_orchestrator, ai_safety
+
+    monkeypatch.setenv("AI_MAX_INPUT_TOKENS_PER_REQUEST", "5")
+
+    async def _unexpected_model_call(*args, **kwargs):
+        raise AssertionError("model should not be called after token cap block")
+
+    monkeypatch.setattr(ai_orchestrator, "run_json_task", _unexpected_model_call)
+
+    with pytest.raises(ai_safety.AiSafetyBudgetExceededError):
+        await ai_safety.run_json_task(
+            "email_classifier",
+            "x" * 200,
+            metadata={"surface": "email_classifier"},
+            data_classes=[ai_safety.DATA_CLASS_UNTRUSTED_INBOUND],
+        )
+
+
+@pytest.mark.asyncio
+async def test_ai_safety_records_budget_block_before_provider_call(db_session, monkeypatch):
+    from backend.services import ai_orchestrator, ai_safety
+
+    monkeypatch.setenv("AI_DAILY_TOKEN_CAP_PER_USER", "100")
+    db_session.add(
+        AiModelCall(
+            user_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+            surface="copilot",
+            task_name="copilot_answer",
+            model="test-model",
+            prompt_version="test",
+            status="success",
+            total_tokens=95,
+        )
+    )
+    await db_session.commit()
+
+    async def _unexpected_model_call(*args, **kwargs):
+        raise AssertionError("model should not be called after budget block")
+
+    monkeypatch.setattr(ai_orchestrator, "run_json_task_with_metadata", _unexpected_model_call)
+
+    with pytest.raises(ai_safety.AiSafetyBudgetExceededError):
+        await ai_safety.run_json_task_with_safety(
+            "copilot_answer",
+            "Tell me about my pipeline status.",
+            metadata={"surface": "copilot"},
+            db_session=db_session,
+            user_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+            data_classes=[ai_safety.DATA_CLASS_CAREER_PRIVATE],
+        )
+
+    row = (await db_session.execute(select(AiSafetyDecision).order_by(AiSafetyDecision.created_at.desc()))).scalars().first()
+    assert row.policy_decision == ai_safety.POLICY_BLOCK
+    assert "user_daily_token_cap_exceeded" in row.reasons
+    assert row.model_call_id is None
 
 
 def test_network_contact_policy_blocks_self_and_digest_senders():

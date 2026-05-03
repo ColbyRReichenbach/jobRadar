@@ -12,6 +12,7 @@ from backend.models import (
     AiModelCall,
     AiModelCard,
     AiPromotionReport,
+    AiSafetyDecision,
     AiShadowRun,
 )
 from backend.services.ai_retention import anonymize_user_ai_records, redact_expired_ai_trace_payloads
@@ -38,7 +39,28 @@ async def test_retention_redacts_old_trace_payloads_but_keeps_ledger_rows(db_ses
     now = datetime(2026, 5, 2, tzinfo=timezone.utc)
     old_call = _call(created_at=now - timedelta(days=45))
     recent_call = _call(created_at=now - timedelta(days=5), prompt_version="copilot_v2")
-    db_session.add_all([old_call, recent_call])
+    old_safety = AiSafetyDecision(
+        user_id=TEST_USER_ID,
+        surface="copilot",
+        task_name="copilot_answer",
+        stage="preflight",
+        policy_decision="allow_redacted",
+        risk_score=0.7,
+        consent_snapshot={"ai": True, "email": "private@example.com"},
+        metadata_json={"raw_prompt": "private prompt"},
+        created_at=now - timedelta(days=45),
+    )
+    recent_safety = AiSafetyDecision(
+        user_id=TEST_USER_ID,
+        surface="copilot",
+        task_name="copilot_answer",
+        stage="preflight",
+        policy_decision="allow",
+        risk_score=0.0,
+        metadata_json={"summary": "recent"},
+        created_at=now - timedelta(days=5),
+    )
+    db_session.add_all([old_call, recent_call, old_safety, recent_safety])
     await db_session.commit()
 
     redacted_count = await redact_expired_ai_trace_payloads(db_session, now=now, retention_days=30)
@@ -46,12 +68,17 @@ async def test_retention_redacts_old_trace_payloads_but_keeps_ledger_rows(db_ses
 
     saved_old = await db_session.get(AiModelCall, old_call.id)
     saved_recent = await db_session.get(AiModelCall, recent_call.id)
-    assert redacted_count == 1
+    assert redacted_count == 2
     assert saved_old is not None
     assert saved_old.request_metadata["retention_redacted"] is True
     assert saved_old.response_metadata["retention_redacted"] is True
     assert saved_recent is not None
     assert saved_recent.request_metadata["raw_prompt"] == "user private prompt"
+    saved_old_safety = await db_session.get(AiSafetyDecision, old_safety.id)
+    saved_recent_safety = await db_session.get(AiSafetyDecision, recent_safety.id)
+    assert saved_old_safety.metadata_json["retention_redacted"] is True
+    assert saved_old_safety.consent_snapshot["retention_redacted"] is True
+    assert saved_recent_safety.metadata_json["summary"] == "recent"
 
 
 @pytest.mark.asyncio
@@ -106,17 +133,28 @@ async def test_user_deletion_policy_anonymizes_nullable_ai_records_and_deletes_s
         target_id=call.id,
         reason="policy test",
     )
-    db_session.add_all([call, artifact, shadow, assignment, promotion, model_card, access_log])
+    safety = AiSafetyDecision(
+        user_id=TEST_USER_ID,
+        model_call_id=call.id,
+        surface="copilot",
+        task_name="copilot_answer",
+        stage="preflight",
+        policy_decision="allow",
+        risk_score=0.0,
+    )
+    db_session.add_all([call, artifact, shadow, assignment, promotion, model_card, access_log, safety])
     await db_session.commit()
 
     counts = await anonymize_user_ai_records(db_session, user_id=TEST_USER_ID)
     await db_session.commit()
 
     assert counts["ai_model_calls"] == 1
+    assert counts["ai_safety_decisions"] == 1
     assert counts["ai_artifacts"] == 1
     assert counts["ai_shadow_runs"] == 1
     assert counts["ai_experiment_assignments"] == 1
     assert (await db_session.get(AiModelCall, call.id)).user_id is None
+    assert (await db_session.get(AiSafetyDecision, safety.id)).user_id is None
     assert (await db_session.get(AiArtifact, artifact.id)).user_id is None
     assert (await db_session.get(AiShadowRun, shadow.id)).user_id is None
     assert (await db_session.get(AiPromotionReport, promotion.id)).reviewed_by_user_id is None
