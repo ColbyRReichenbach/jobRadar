@@ -1,6 +1,6 @@
 """add email suggestion decisions
 
-Revision ID: 046_add_email_suggestion_decisions
+Revision ID: 046_email_suggestion_decisions
 Revises: 045_add_email_sync_audit
 Create Date: 2026-05-02
 """
@@ -11,7 +11,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "046_add_email_suggestion_decisions"
+revision = "046_email_suggestion_decisions"
 down_revision = "045_add_email_sync_audit"
 branch_labels = None
 depends_on = None
