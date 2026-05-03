@@ -286,6 +286,41 @@ async function mockLoggedInApi(page: Page, initialState: MockState = {}) {
       return;
     }
 
+    if (path === '/api/research/feedback/stats' && method === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          total_feedback: 0,
+          useful: 0,
+          not_useful: 0,
+          notes_count: 0,
+          usefulness_rate: 0,
+          recent_feedback: [],
+        }),
+      });
+      return;
+    }
+
+    if (
+      [
+        '/api/research/profiles',
+        '/api/research/signals',
+        '/api/research/briefs',
+        '/api/research/actions',
+        '/api/research/runs',
+        '/api/research/reports',
+      ].includes(path) &&
+      method === 'GET'
+    ) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([]),
+      });
+      return;
+    }
+
     if (path === '/api/alerts/read-all' && method === 'PATCH') {
       const unread = state.alerts.filter((alert) => !alert.read).length;
       state.alerts = state.alerts.map((alert) => ({ ...alert, read: true }));
@@ -800,6 +835,60 @@ test.describe('desktop app flows', () => {
     await expect(page.getByPlaceholder('Search messages, people, or companies...')).toBeVisible();
     await expect(page.locator('h2', { hasText: 'Sharron just messaged you' })).toBeVisible();
     await expect(page.getByText(longLinkedInUrl)).toBeVisible();
+
+    const fitsViewport = await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
+    expect(fitsViewport).toBeTruthy();
+  });
+
+  test('radar tracker form stays readable with the updates rail open', async ({ page }) => {
+    await page.setViewportSize({ width: 2048, height: 1320 });
+    await mockLoggedInApi(page, {
+      emails: [
+        {
+          id: 'email-interview-1',
+          sender: 'Global HR Interviews',
+          sender_email: 'global.hr@example.com',
+          subject: 'You are confirmed for an interview on 05/07/2026',
+          snippet: 'Your interview is confirmed for 05/07/2026.',
+          body: 'Your interview is confirmed.',
+          received_at: '2026-05-01T12:00:00Z',
+          classification: 'interview_request',
+          email_type: 'job_update',
+          category: 'interview_request',
+          company_name: 'Bank of America',
+          sender_domain: 'example.com',
+          resolved: false,
+        },
+      ],
+    });
+
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Radar' }).click();
+
+    await expect(page.getByRole('heading', { name: 'Opportunity Radar' })).toBeVisible();
+    await expect(page.getByText('Tracker mode')).toBeVisible();
+    await expect(page.getByText('Activity + research')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Updates' })).toBeVisible();
+
+    const modeOptionBoxes = await page.locator('label:has(input[name="tracker-mode"])').evaluateAll((nodes) =>
+      nodes.map((node) => {
+        const rect = node.getBoundingClientRect();
+        return {
+          width: rect.width,
+          height: rect.height,
+          left: rect.left,
+          top: rect.top,
+        };
+      }),
+    );
+
+    expect(modeOptionBoxes).toHaveLength(3);
+    for (const box of modeOptionBoxes) {
+      expect(box.width).toBeGreaterThan(280);
+      expect(box.height).toBeLessThan(96);
+    }
+    expect(modeOptionBoxes[1].top).toBeGreaterThan(modeOptionBoxes[0].top);
+    expect(modeOptionBoxes[2].top).toBeGreaterThan(modeOptionBoxes[1].top);
 
     const fitsViewport = await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
     expect(fitsViewport).toBeTruthy();

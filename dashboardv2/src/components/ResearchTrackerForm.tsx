@@ -254,11 +254,11 @@ export function ResearchTrackerForm({
           title="Tracker mode"
           body="Choose whether Radar should focus on your AppTrail activity, public research, or both."
         />
-        <div className="grid gap-2 sm:grid-cols-3">
+        <div className="grid gap-2">
           {[
             ['internal', 'Activity'],
             ['research', 'Research'],
-            ['hybrid', 'Activity + Research'],
+            ['hybrid', 'Activity + research'],
           ].map(([value, label]) => {
             const needsConsent = value !== 'internal';
             const disabled = needsConsent && !researchConsentEnabled;
@@ -266,8 +266,8 @@ export function ResearchTrackerForm({
             return (
               <label
                 key={value}
-                className={`rounded-xl border px-3 py-3 text-sm ${
-                  checked ? 'border-slate-900 bg-white text-slate-900' : 'border-slate-200 bg-white text-slate-600'
+                className={`block rounded-xl border px-3 py-3 text-sm transition-colors ${
+                  checked ? 'border-slate-900 bg-white text-slate-900 shadow-sm' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
                 } ${disabled ? 'opacity-50' : 'cursor-pointer'}`}
               >
                 <div className="flex items-start gap-2">
@@ -279,7 +279,7 @@ export function ResearchTrackerForm({
                     onChange={() => setForm((current) => ({ ...current, mode: value as ResearchProfile['mode'] }))}
                     className="mt-0.5"
                   />
-                  <div>
+                  <div className="min-w-0">
                     <div className="font-medium">{label}</div>
                     <div className="mt-1 text-xs leading-5 text-slate-500">
                       {value === 'internal'
