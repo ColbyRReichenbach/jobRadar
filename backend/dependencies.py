@@ -199,7 +199,7 @@ def decode_access_token(token: str) -> dict:
 # --- Auth Dependencies ---
 
 async def verify_api_key(
-    authorization: str = Header(...),
+    authorization: str | None = Header(None),
     db: AsyncSession = Depends(get_db),
 ):
     """Accepts either a Bearer API key or a Bearer JWT token.
@@ -208,7 +208,7 @@ async def verify_api_key(
     - For JWT: {"user_id": <uuid>, "auth_type": "jwt"}
     - For API key: {"user_id": <uuid>, "auth_type": "api_key"}
     """
-    if not authorization.startswith("Bearer "):
+    if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing Bearer token")
 
     token = authorization[7:]
@@ -236,9 +236,9 @@ async def verify_api_key(
     raise HTTPException(status_code=401, detail="Invalid credentials")
 
 
-async def get_current_user(authorization: str = Header(...), db: AsyncSession = Depends(get_db)):
+async def get_current_user(authorization: str | None = Header(None), db: AsyncSession = Depends(get_db)):
     """Extract current user from JWT. Raises 401 if not a valid JWT session."""
-    if not authorization.startswith("Bearer "):
+    if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing Bearer token")
 
     token = authorization[7:]
