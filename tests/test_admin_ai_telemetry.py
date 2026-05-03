@@ -11,6 +11,7 @@ from backend.models import (
     AiModelCall,
     AiModelCard,
     AiPromotionReport,
+    AiSafetyDecision,
     AiShadowRun,
     SearchDocument,
     User,
@@ -91,6 +92,23 @@ async def _seed_ai_ops_data(db_session):
         generated_after_feedback=0,
     )
     db_session.add_all([artifact, shadow, promotion])
+    db_session.add(
+        AiSafetyDecision(
+            user_id=TEST_USER_ID,
+            model_call_id=call.id,
+            surface="copilot",
+            task_name="copilot_answer",
+            stage="preflight",
+            policy_decision="allow_redacted",
+            risk_score=0.72,
+            prompt_injection_score=0.36,
+            input_data_classes=["career_private", "untrusted_inbound"],
+            redaction_counts={"email": 1},
+            reasons=["redacted_email"],
+            token_estimate=250,
+            metadata_json={"raw_prompt": "secret prompt"},
+        )
+    )
     await db_session.commit()
     return call
 
@@ -106,12 +124,14 @@ async def test_admin_ai_ops_telemetry_and_lineage_endpoints(client, db_session):
     experiments = await client.get("/api/admin/ai/experiments", headers=AUTH_HEADER)
     model_cards = await client.get("/api/admin/ai/model-cards", headers=AUTH_HEADER)
     promotions = await client.get("/api/admin/ai/promotion-reports", headers=AUTH_HEADER)
+    safety = await client.get("/api/admin/ai/safety-decisions", headers=AUTH_HEADER)
 
     assert telemetry.status_code == 200
     assert telemetry.json()["overview"]["total_calls"] == 1
     assert telemetry.json()["search_freshness"]["stale_document_count"] == 1
     assert telemetry.json()["queue_health"]["queued_shadow_runs"] == 1
     assert telemetry.json()["experiment_guardrails"]["pending_promotion_reports"] == 1
+    assert telemetry.json()["safety_guardrails"]["redacted_decisions"] == 1
     assert runs.json()["runs"][0]["id"] == str(call.id)
     assert detail.json()["request_metadata"]["raw_prompt"] == "[redacted]"
     assert detail.json()["response_metadata"]["email_body"] == "[redacted]"
@@ -120,6 +140,8 @@ async def test_admin_ai_ops_telemetry_and_lineage_endpoints(client, db_session):
     assert experiments.json()["experiments"][0]["experiment_key"] == "copilot_ops"
     assert model_cards.json()["model_cards"][0]["task_name"] == "copilot_answer"
     assert promotions.json()["promotion_reports"][0]["status"] == "pending_review"
+    assert safety.json()["safety_decisions"][0]["policy_decision"] == "allow_redacted"
+    assert safety.json()["safety_decisions"][0]["metadata"]["raw_prompt"] == "[redacted]"
 
 
 @pytest.mark.asyncio

@@ -10,7 +10,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models import CopilotConversation
-from backend.services import ai_orchestrator
+from backend.services import ai_orchestrator, ai_safety
 from backend.services.copilot.citations import InvalidCitationError, validate_model_citations
 from backend.services.copilot.guardrails import sanitize_context_snippet, sanitize_suggested_actions
 from backend.services.copilot.retrieval import retrieve_copilot_context
@@ -106,7 +106,7 @@ async def answer_copilot_question(
         raise CopilotModelUnavailableError("OPENAI_API_KEY is not configured for Copilot")
 
     try:
-        result = await ai_orchestrator.run_json_task_with_metadata(
+        result = await ai_safety.run_json_task_with_safety(
             COPILOT_TASK,
             build_copilot_prompt(question=question, citations=citations),
             metadata={
@@ -117,6 +117,14 @@ async def answer_copilot_question(
             },
             db_session=db,
             user_id=str(user_id),
+            data_classes=[
+                ai_safety.DATA_CLASS_CAREER_PRIVATE,
+                ai_safety.DATA_CLASS_UNTRUSTED_INBOUND,
+                ai_safety.DATA_CLASS_USER_IDENTITY,
+            ],
+            allow_identity=False,
+            untrusted_input=True,
+            block_on_high_risk=True,
         )
         payload = result.payload
         answer = str(payload.get("answer") or "").strip()

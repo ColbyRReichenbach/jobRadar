@@ -6,7 +6,7 @@ Critical: never invents experience, only reframes existing content.
 
 import logging
 
-from backend.services import ai_orchestrator
+from backend.services import ai_orchestrator, ai_safety
 
 logger = logging.getLogger(__name__)
 
@@ -66,10 +66,13 @@ async def tailor_resume(
 Remember: DO NOT invent any new experience or skills. Only reframe and reorder existing content."""
 
     try:
-        result = await ai_orchestrator.run_json_task(
+        result = await ai_safety.run_json_task(
             TAILOR_TASK,
             user_message,
             metadata={"surface": "resume_tailor", "company": company, "role": role},
+            data_classes=[ai_safety.DATA_CLASS_CAREER_PRIVATE, ai_safety.DATA_CLASS_PUBLIC_RESEARCH],
+            allow_identity=False,
+            untrusted_input=True,
         )
 
         normalized = _normalize_tailor_result(result)

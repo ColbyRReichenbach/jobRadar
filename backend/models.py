@@ -1109,6 +1109,33 @@ class AiModelCall(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+class AiSafetyDecision(Base):
+    __tablename__ = "ai_safety_decisions"
+    __table_args__ = (
+        Index("ix_ai_safety_decisions_user_created", "user_id", "created_at"),
+        Index("ix_ai_safety_decisions_surface_task_created", "surface", "task_name", "created_at"),
+        Index("ix_ai_safety_decisions_decision_created", "policy_decision", "created_at"),
+        Index("ix_ai_safety_decisions_risk_created", "risk_score", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    model_call_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("ai_model_calls.id", ondelete="SET NULL"), nullable=True)
+    surface: Mapped[str] = mapped_column(Text, nullable=False)
+    task_name: Mapped[str] = mapped_column(Text, nullable=False)
+    stage: Mapped[str] = mapped_column(Text, nullable=False, default="preflight")
+    policy_decision: Mapped[str] = mapped_column(Text, nullable=False)
+    risk_score: Mapped[float] = mapped_column(Float, default=0.0)
+    prompt_injection_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    input_data_classes: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    consent_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    redaction_counts: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    reasons: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    token_estimate: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class AiArtifact(Base):
     __tablename__ = "ai_artifacts"
     __table_args__ = (

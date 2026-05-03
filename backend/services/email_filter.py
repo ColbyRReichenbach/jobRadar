@@ -14,6 +14,9 @@ NON_JOB_NOTIFICATION_DOMAINS = {
     "vercel.com",
     "mailer.vercel.com",
     "linear.app",
+    "linkedin.com",
+    "email.linkedin.com",
+    "messaging.linkedin.com",
 }
 
 AUTOMATED_LOCAL_PART_HINTS = {

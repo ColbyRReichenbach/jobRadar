@@ -16,6 +16,7 @@ from backend.models import (
     AiModelCall,
     AiModelCard,
     AiPromotionReport,
+    AiSafetyDecision,
     AiShadowRun,
     SearchDocument,
 )
@@ -113,6 +114,22 @@ async def telemetry_overview(db: AsyncSession) -> dict[str, Any]:
     pending_promotions = int(
         (await db.execute(select(func.count(AiPromotionReport.id)).where(AiPromotionReport.status == "pending_review"))).scalar_one() or 0
     )
+    blocked_safety_decisions = int(
+        (
+            await db.execute(
+                select(func.count(AiSafetyDecision.id)).where(AiSafetyDecision.policy_decision == "block")
+            )
+        ).scalar_one()
+        or 0
+    )
+    redacted_safety_decisions = int(
+        (
+            await db.execute(
+                select(func.count(AiSafetyDecision.id)).where(AiSafetyDecision.policy_decision == "allow_redacted")
+            )
+        ).scalar_one()
+        or 0
+    )
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "overview": {
@@ -136,6 +153,10 @@ async def telemetry_overview(db: AsyncSession) -> dict[str, Any]:
             "running_experiments": running_experiments,
             "paused_experiments": paused_experiments,
             "pending_promotion_reports": pending_promotions,
+        },
+        "safety_guardrails": {
+            "blocked_decisions": blocked_safety_decisions,
+            "redacted_decisions": redacted_safety_decisions,
         },
     }
 
@@ -307,3 +328,37 @@ async def list_trace_access_logs(db: AsyncSession, *, limit: int = 50) -> list[d
         }
         for row in rows
     ]
+
+
+def serialize_safety_decision(row: AiSafetyDecision) -> dict[str, Any]:
+    return {
+        "id": str(row.id),
+        "user_id": str(row.user_id) if row.user_id else None,
+        "model_call_id": str(row.model_call_id) if row.model_call_id else None,
+        "surface": row.surface,
+        "task_name": row.task_name,
+        "stage": row.stage,
+        "policy_decision": row.policy_decision,
+        "risk_score": row.risk_score,
+        "prompt_injection_score": row.prompt_injection_score,
+        "input_data_classes": row.input_data_classes or [],
+        "consent_snapshot": _redact_mapping(row.consent_snapshot or {}),
+        "redaction_counts": row.redaction_counts or {},
+        "reasons": row.reasons or [],
+        "token_estimate": row.token_estimate,
+        "metadata": _redact_mapping(row.metadata_json or {}),
+        "created_at": _iso(row.created_at),
+    }
+
+
+async def list_safety_decisions(db: AsyncSession, *, limit: int = 50) -> list[dict[str, Any]]:
+    rows = list(
+        (
+            await db.execute(
+                select(AiSafetyDecision)
+                .order_by(AiSafetyDecision.created_at.desc())
+                .limit(limit)
+            )
+        ).scalars()
+    )
+    return [serialize_safety_decision(row) for row in rows]

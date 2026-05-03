@@ -68,6 +68,7 @@ _USER_SCOPED_MODELS = {
     "AiFeedbackRewardEvent",
     "AiShadowRun",
     "AiModelCall",
+    "AiSafetyDecision",
     "AiArtifact",
     "EmailSyncAudit",
     "ApplicationSuggestionDecision",

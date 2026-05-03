@@ -3434,7 +3434,7 @@ async def sync_gmail(
         if (
             sender_email_addr
             and CLASSIFICATION_TO_EMAIL_TYPE.get(cls) == "conversation"
-            and should_create_network_contact(sender_name, sender_email_addr, cls)
+            and should_create_network_contact(sender_name, sender_email_addr, cls, user_email=current_user.email)
             and not contact_id
         ):
             prior_sender_stmt = select(EmailEvent.id).where(

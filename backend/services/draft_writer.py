@@ -5,7 +5,7 @@ Generates context-aware email drafts for follow-ups, introductions, and replies.
 
 import logging
 
-from backend.services import ai_orchestrator
+from backend.services import ai_orchestrator, ai_safety
 
 logger = logging.getLogger(__name__)
 
@@ -71,10 +71,13 @@ async def generate_draft(
     user_message = f"{type_prompt}\n\nContext:\n" + "\n".join(context_parts)
 
     try:
-        result = await ai_orchestrator.run_json_task(
+        result = await ai_safety.run_json_task(
             DRAFT_TASK,
             user_message,
             metadata={"surface": "draft_writer", "draft_type": draft_type},
+            data_classes=[ai_safety.DATA_CLASS_CAREER_PRIVATE, ai_safety.DATA_CLASS_UNTRUSTED_INBOUND],
+            allow_identity=True,
+            untrusted_input=True,
         )
 
         normalized = _normalize_draft_result(result, draft_type)

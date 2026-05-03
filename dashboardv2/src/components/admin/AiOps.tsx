@@ -26,6 +26,7 @@ import type {
   AiPromotionReport,
   AiRun,
   AiRunDetail,
+  AiSafetyDecision,
   AiTelemetry,
   AiTraceAccessLog,
 } from '../../lib/adminAiApi';
@@ -37,13 +38,14 @@ import {
   fetchAiPromotionReports,
   fetchAiRunDetail,
   fetchAiRuns,
+  fetchAiSafetyDecisions,
   fetchAiTelemetry,
   fetchAiTraceAccessLogs,
   rejectPromotionReport,
   requestFullTrace,
 } from '../../lib/adminAiApi';
 
-type SectionId = 'overview' | 'runs' | 'artifacts' | 'experiments' | 'models' | 'promotions' | 'access';
+type SectionId = 'overview' | 'runs' | 'artifacts' | 'experiments' | 'models' | 'promotions' | 'safety' | 'access';
 
 const SECTIONS: Array<{ id: SectionId; label: string; icon: typeof Activity }> = [
   { id: 'overview', label: 'Overview', icon: Activity },
@@ -52,6 +54,7 @@ const SECTIONS: Array<{ id: SectionId; label: string; icon: typeof Activity }> =
   { id: 'experiments', label: 'Experiments', icon: FlaskConical },
   { id: 'models', label: 'Models', icon: BrainCircuit },
   { id: 'promotions', label: 'Promotions', icon: CheckCircle2 },
+  { id: 'safety', label: 'Safety', icon: ShieldCheck },
   { id: 'access', label: 'Access Logs', icon: LockKeyhole },
 ];
 
@@ -149,6 +152,7 @@ export function AiOps() {
   const [experiments, setExperiments] = useState<AiExperiment[]>([]);
   const [modelCards, setModelCards] = useState<AiModelCard[]>([]);
   const [promotionReports, setPromotionReports] = useState<AiPromotionReport[]>([]);
+  const [safetyDecisions, setSafetyDecisions] = useState<AiSafetyDecision[]>([]);
   const [accessLogs, setAccessLogs] = useState<AiTraceAccessLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -169,13 +173,14 @@ export function AiOps() {
     setLoading(true);
     setError('');
     try {
-      const [telemetryData, runsData, artifactData, experimentData, modelCardData, promotionData, accessLogData] = await Promise.all([
+      const [telemetryData, runsData, artifactData, experimentData, modelCardData, promotionData, safetyData, accessLogData] = await Promise.all([
         fetchAiTelemetry(),
         fetchAiRuns(),
         fetchAiArtifacts(),
         fetchAiExperiments(),
         fetchAiModelCards(),
         fetchAiPromotionReports(),
+        fetchAiSafetyDecisions(),
         fetchAiTraceAccessLogs(),
       ]);
       setTelemetry(telemetryData);
@@ -184,6 +189,7 @@ export function AiOps() {
       setExperiments(experimentData);
       setModelCards(modelCardData);
       setPromotionReports(promotionData);
+      setSafetyDecisions(safetyData);
       setAccessLogs(accessLogData);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load AI Ops data.');
@@ -391,6 +397,17 @@ export function AiOps() {
                       {formatNumber(telemetry.experiment_guardrails.pending_promotion_reports)} promotion reports pending review
                     </p>
                   </div>
+                  {telemetry.safety_guardrails && (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Safety Gateway</p>
+                      <p className="mt-1 text-lg font-semibold text-slate-900">
+                        {formatNumber(telemetry.safety_guardrails.redacted_decisions)} redacted
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {formatNumber(telemetry.safety_guardrails.blocked_decisions)} blocked before model access
+                      </p>
+                    </div>
+                  )}
                 </div>
               </SectionShell>
             </div>
@@ -634,6 +651,63 @@ export function AiOps() {
                     <pre className="mt-3 max-h-80 overflow-auto rounded-xl bg-white p-3 text-xs text-slate-700">{jsonPreview(report.report)}</pre>
                   </article>
                 ))}
+              </div>
+            )}
+          </SectionShell>
+        )}
+
+        {activeSection === 'safety' && (
+          <SectionShell title="Safety Decisions" icon={ShieldCheck}>
+            {safetyDecisions.length === 0 ? (
+              <EmptyState label="No safety gateway decisions have been recorded yet." />
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[900px] text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-100 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      <th className="py-2 pr-4">Time</th>
+                      <th className="py-2 pr-4">Surface</th>
+                      <th className="py-2 pr-4">Stage</th>
+                      <th className="py-2 pr-4">Decision</th>
+                      <th className="py-2 pr-4 text-right">Risk</th>
+                      <th className="py-2 pr-4">Redactions</th>
+                      <th className="py-2">Reasons</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {safetyDecisions.map((decision) => (
+                      <tr key={decision.id} className="text-slate-700">
+                        <td className="py-3 pr-4 whitespace-nowrap">{formatDate(decision.created_at)}</td>
+                        <td className="py-3 pr-4">
+                          <p className="font-medium text-slate-900">{decision.surface}</p>
+                          <p className="text-xs text-slate-500">{decision.task_name}</p>
+                        </td>
+                        <td className="py-3 pr-4 capitalize">{decision.stage}</td>
+                        <td className="py-3 pr-4"><StatusPill status={decision.policy_decision} /></td>
+                        <td className="py-3 pr-4 text-right">
+                          <p className="font-medium text-slate-900">{decision.risk_score.toFixed(2)}</p>
+                          <p className="text-xs text-slate-500">PI {formatNumber(Math.round((decision.prompt_injection_score ?? 0) * 100))}%</p>
+                        </td>
+                        <td className="py-3 pr-4">
+                          <pre className="max-h-28 max-w-xs overflow-auto rounded-xl bg-slate-50 p-2 text-xs">{jsonPreview(decision.redaction_counts)}</pre>
+                        </td>
+                        <td className="py-3">
+                          <div className="flex max-w-sm flex-wrap gap-1">
+                            {decision.reasons.length === 0 ? (
+                              <span className="text-xs text-slate-500">No issues detected</span>
+                            ) : (
+                              decision.reasons.map((reason) => (
+                                <span key={reason} className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                                  {reason.replaceAll('_', ' ')}
+                                </span>
+                              ))
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </SectionShell>

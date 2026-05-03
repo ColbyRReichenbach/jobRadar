@@ -140,6 +140,10 @@ async function mockApp(page: Page, options: MockOptions = {}) {
           paused_experiments: 1,
           pending_promotion_reports: promotionStatus === 'pending_review' ? 1 : 0,
         },
+        safety_guardrails: {
+          blocked_decisions: 1,
+          redacted_decisions: 3,
+        },
       });
       return;
     }
@@ -331,6 +335,32 @@ async function mockApp(page: Page, options: MockOptions = {}) {
       return;
     }
 
+    if (path === '/api/admin/ai/safety-decisions' && method === 'GET') {
+      await fulfillJson(route, {
+        safety_decisions: [
+          {
+            id: '88888888-8888-4888-8888-888888888888',
+            user_id: '00000000-0000-0000-0000-000000000001',
+            model_call_id: RUN_ID,
+            surface: 'copilot',
+            task_name: 'copilot_answer',
+            stage: 'preflight',
+            policy_decision: 'allow_redacted',
+            risk_score: 0.72,
+            prompt_injection_score: 0.36,
+            input_data_classes: ['career_private', 'untrusted_inbound'],
+            consent_snapshot: { ai: true },
+            redaction_counts: { email: 1 },
+            reasons: ['reveal_prompt', 'redacted_email'],
+            token_estimate: 431,
+            metadata: { raw_prompt: '[redacted]' },
+            created_at: '2026-05-02T14:33:00Z',
+          },
+        ],
+      });
+      return;
+    }
+
     await fulfillJson(route, {});
   });
 }
@@ -366,6 +396,11 @@ test('admin can review AI Ops telemetry, traces, and promotion reports', async (
   await page.getByRole('button', { name: 'Access Logs' }).click();
   await expect(page.getByText('Debugging groundedness issue')).toBeVisible();
   await expect(page.getByText('view full ai trace')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Safety' }).click();
+  await expect(page.getByText('Safety Decisions')).toBeVisible();
+  await expect(page.getByText('allow redacted')).toBeVisible();
+  await expect(page.getByText('redacted email')).toBeVisible();
 
   await page.getByRole('button', { name: 'Promotions' }).click();
   await expect(page.getByText('keep control collect more data')).toBeVisible();

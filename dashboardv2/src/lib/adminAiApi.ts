@@ -30,6 +30,10 @@ export interface AiTelemetry {
     paused_experiments: number;
     pending_promotion_reports: number;
   };
+  safety_guardrails?: {
+    blocked_decisions: number;
+    redacted_decisions: number;
+  };
 }
 
 export interface AiRun {
@@ -122,6 +126,25 @@ export interface AiTraceAccessLog {
   created_at: string | null;
 }
 
+export interface AiSafetyDecision {
+  id: string;
+  user_id: string | null;
+  model_call_id: string | null;
+  surface: string;
+  task_name: string;
+  stage: string;
+  policy_decision: string;
+  risk_score: number;
+  prompt_injection_score: number | null;
+  input_data_classes: string[];
+  consent_snapshot: Record<string, unknown>;
+  redaction_counts: Record<string, number>;
+  reasons: string[];
+  token_estimate: number | null;
+  metadata: Record<string, unknown>;
+  created_at: string | null;
+}
+
 async function readErrorDetail(res: Response, fallback: string): Promise<string> {
   const payload = await res.json().catch(() => null);
   if (typeof payload?.detail === 'string') return payload.detail;
@@ -190,6 +213,11 @@ export async function fetchAiPromotionReports(): Promise<AiPromotionReport[]> {
 export async function fetchAiTraceAccessLogs(): Promise<AiTraceAccessLog[]> {
   const payload = await requestJson<{ access_logs: AiTraceAccessLog[] }>('/api/admin/ai/trace-access-logs', {}, 'Failed to load AI trace access logs.');
   return payload.access_logs;
+}
+
+export async function fetchAiSafetyDecisions(): Promise<AiSafetyDecision[]> {
+  const payload = await requestJson<{ safety_decisions: AiSafetyDecision[] }>('/api/admin/ai/safety-decisions', {}, 'Failed to load AI safety decisions.');
+  return payload.safety_decisions;
 }
 
 export function approvePromotionReport(reportId: string): Promise<{ status: string; recommendation: string }> {

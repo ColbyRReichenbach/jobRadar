@@ -13,7 +13,7 @@ Categories:
 
 import logging
 
-from backend.services import ai_orchestrator
+from backend.services import ai_orchestrator, ai_safety
 from backend.services.email_filter import (
     ATS_DOMAINS,
     AUTOMATED_LOCAL_PART_HINTS,
@@ -74,10 +74,13 @@ Subject: {subject}
 {truncated_body}"""
 
     try:
-        result = await ai_orchestrator.run_json_task(
+        result = await ai_safety.run_json_task(
             CLASSIFIER_TASK,
             user_prompt,
             metadata={"surface": "email_classifier"},
+            data_classes=[ai_safety.DATA_CLASS_UNTRUSTED_INBOUND, ai_safety.DATA_CLASS_CAREER_PRIVATE],
+            allow_identity=True,
+            untrusted_input=True,
         )
 
         normalized_result = _normalize_model_result(result, subject, sender_email, sender)
@@ -180,8 +183,16 @@ def is_likely_person_sender(sender: str, sender_email: str) -> bool:
     ) or bool(sender_local and sender_local.isalpha() and len(sender_local) >= 5)
 
 
-def should_create_network_contact(sender: str, sender_email: str, classification: str | None = None) -> bool:
+def should_create_network_contact(
+    sender: str,
+    sender_email: str,
+    classification: str | None = None,
+    *,
+    user_email: str | None = None,
+) -> bool:
     if classification == "not_relevant":
+        return False
+    if sender_email and user_email and sender_email.strip().lower() == user_email.strip().lower():
         return False
     return is_likely_person_sender(sender, sender_email)
 

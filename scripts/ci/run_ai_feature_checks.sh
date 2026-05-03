@@ -12,6 +12,8 @@ export VITE_LOCAL_DEV_AUTH="${VITE_LOCAL_DEV_AUTH:-false}"
 pytest_targets=(
   tests/test_admin_security.py
   tests/test_ai_hardening.py
+  tests/test_ai_safety_gateway.py
+  tests/test_live_openai_hardening.py
   tests/test_copilot_api.py
   tests/test_copilot_security.py
   tests/test_copilot_abuse_controls.py

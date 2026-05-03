@@ -6,7 +6,7 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
-from backend.services import ai_orchestrator
+from backend.services import ai_orchestrator, ai_safety
 from backend.services.research_radar.config import DEPTH_TASK_LIMITS, DEFAULT_MAX_RESULTS_PER_TASK
 from backend.services.research_radar.prompts import (
     build_brief_normalization_prompt,
@@ -407,10 +407,13 @@ async def normalize_brief_with_metrics(
 
     metadata = {"surface": "research_radar", "profile_name": tracker.get("name")}
     try:
-        result = await ai_orchestrator.run_json_task_with_metadata(
+        result = await ai_safety.run_json_task_with_safety(
             "research_brief_normalizer",
             build_brief_normalization_prompt(tracker=tracker, user_context=user_context),
             metadata=metadata,
+            data_classes=[ai_safety.DATA_CLASS_CAREER_PRIVATE, ai_safety.DATA_CLASS_UNTRUSTED_INBOUND],
+            allow_identity=False,
+            untrusted_input=True,
         )
         return _normalize_brief_payload(result.payload, tracker=tracker, user_context=user_context), _task_call_metric(result)
     except Exception as exc:  # noqa: BLE001
@@ -498,7 +501,7 @@ async def plan_research_tasks_with_metrics(
 
     metadata = {"surface": "research_radar", "depth": depth}
     try:
-        result = await ai_orchestrator.run_json_task_with_metadata(
+        result = await ai_safety.run_json_task_with_safety(
             "research_planner",
             build_research_plan_prompt(
                 normalized_brief=normalized_brief,
@@ -506,6 +509,9 @@ async def plan_research_tasks_with_metrics(
                 max_tasks=min(max_queries, DEPTH_TASK_LIMITS.get(depth, DEPTH_TASK_LIMITS["standard"])),
             ),
             metadata=metadata,
+            data_classes=[ai_safety.DATA_CLASS_CAREER_PRIVATE],
+            allow_identity=False,
+            untrusted_input=True,
         )
         tasks_payload = result.payload.get("tasks", result.payload)
         if not isinstance(tasks_payload, list):
@@ -582,11 +588,14 @@ async def extract_evidence_with_metrics(
 
     metadata = {"surface": "research_radar", "source_url": source_document.get("source_url")}
     try:
-        result = await ai_orchestrator.run_json_task_with_metadata(
+        result = await ai_safety.run_json_task_with_safety(
             "research_evidence_extractor",
             build_evidence_extraction_prompt(normalized_brief=normalized_brief, source_document=source_document),
             metadata=metadata,
             max_tokens=1800,
+            data_classes=[ai_safety.DATA_CLASS_PUBLIC_RESEARCH, ai_safety.DATA_CLASS_UNTRUSTED_INBOUND],
+            allow_identity=False,
+            untrusted_input=True,
         )
         evidence_payload = result.payload.get("evidence_items", result.payload)
         if not isinstance(evidence_payload, list):
@@ -671,7 +680,7 @@ async def write_report_with_metrics(
 
     metadata = {"surface": "research_radar", "evidence_count": len(evidence_items)}
     try:
-        result = await ai_orchestrator.run_json_task_with_metadata(
+        result = await ai_safety.run_json_task_with_safety(
             "research_report_writer",
             build_report_prompt(
                 normalized_brief=normalized_brief,
@@ -680,6 +689,9 @@ async def write_report_with_metrics(
             ),
             metadata=metadata,
             max_tokens=3000,
+            data_classes=[ai_safety.DATA_CLASS_PUBLIC_RESEARCH, ai_safety.DATA_CLASS_GENERATED_OUTPUT],
+            allow_identity=False,
+            untrusted_input=False,
         )
         payload = result.payload
         title = payload.get("title")
@@ -759,7 +771,7 @@ async def verify_report_with_metrics(
 
     metadata = {"surface": "research_radar", "section_count": len(report_sections)}
     try:
-        result = await ai_orchestrator.run_json_task_with_metadata(
+        result = await ai_safety.run_json_task_with_safety(
             "research_report_verifier",
             build_verification_prompt(
                 normalized_brief=normalized_brief,
@@ -768,6 +780,9 @@ async def verify_report_with_metrics(
             ),
             metadata=metadata,
             max_tokens=1200,
+            data_classes=[ai_safety.DATA_CLASS_PUBLIC_RESEARCH, ai_safety.DATA_CLASS_GENERATED_OUTPUT],
+            allow_identity=False,
+            untrusted_input=False,
         )
         return _normalize_verification_payload(result.payload, fallback), _task_call_metric(result)
     except Exception as exc:  # noqa: BLE001

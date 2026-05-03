@@ -145,6 +145,15 @@ async def trace_access_logs(
     return {"access_logs": await admin_ai.list_trace_access_logs(db, limit=min(max(limit, 1), 100))}
 
 
+@router.get("/safety-decisions")
+async def safety_decisions(
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin_user),
+):
+    return {"safety_decisions": await admin_ai.list_safety_decisions(db, limit=min(max(limit, 1), 100))}
+
+
 @router.post("/promotion-reports/{report_id}/reject")
 async def reject_report(
     report_id: str,
