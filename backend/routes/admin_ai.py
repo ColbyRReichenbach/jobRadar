@@ -100,6 +100,8 @@ async def trace_access(
     try:
         cid = uuid.UUID(call_id)
         detail = await admin_ai.full_trace_with_access_log(db, call_id=cid, admin_user_id=admin.id, reason=payload.reason)
+    except admin_ai.FullTraceAccessDisabledError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if detail is None:

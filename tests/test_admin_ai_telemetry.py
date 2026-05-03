@@ -135,6 +135,7 @@ async def test_admin_ai_ops_telemetry_and_lineage_endpoints(client, db_session):
     assert runs.json()["runs"][0]["id"] == str(call.id)
     assert detail.json()["request_metadata"]["raw_prompt"] == "[redacted]"
     assert detail.json()["response_metadata"]["email_body"] == "[redacted]"
+    assert detail.json()["full_trace_available"] is False
     assert detail.json()["full_trace_requires_reason"] is True
     assert artifacts.json()["artifacts"][0]["metadata"]["raw_prompt"] == "[redacted]"
     assert experiments.json()["experiments"][0]["experiment_key"] == "copilot_ops"
@@ -202,7 +203,22 @@ async def test_admin_can_review_safety_decision(client, db_session):
 
 
 @pytest.mark.asyncio
-async def test_full_trace_access_requires_reason_and_writes_log(client, db_session):
+async def test_full_trace_access_disabled_by_default(client, db_session):
+    call = await _seed_ai_ops_data(db_session)
+
+    response = await client.post(
+        f"/api/admin/ai/runs/{call.id}/trace-access",
+        json={"reason": "debugging groundedness issue"},
+        headers=AUTH_HEADER,
+    )
+
+    assert response.status_code == 403
+    assert "disabled" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_full_trace_access_requires_reason_and_writes_log(client, db_session, monkeypatch):
+    monkeypatch.setenv("AI_TRACE_FULL_PAYLOADS_ENABLED", "true")
     call = await _seed_ai_ops_data(db_session)
 
     denied = await client.post(

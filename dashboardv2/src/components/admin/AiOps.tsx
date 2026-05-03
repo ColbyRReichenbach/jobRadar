@@ -974,30 +974,38 @@ function RunDetailPanel({
           <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
             <div className="mb-3 flex items-start gap-2 text-sm text-amber-900">
               <LockKeyhole className="mt-0.5 h-4 w-4 shrink-0" />
-              <p>Full trace access can expose raw prompts and sensitive metadata. A reason is required and every access is written to the admin audit log.</p>
+              <p>
+                Full trace access can expose raw prompts and sensitive metadata. Redacted lineage stays available; raw payloads require explicit environment approval.
+              </p>
             </div>
-            <form onSubmit={onTraceAccess} className="space-y-2">
-              <label className="block text-xs font-semibold uppercase tracking-wide text-amber-800" htmlFor="ai-trace-reason">
-                Access Reason
-              </label>
-              <textarea
-                id="ai-trace-reason"
-                value={traceReason}
-                onChange={(event) => onTraceReasonChange(event.target.value)}
-                minLength={8}
-                rows={3}
-                placeholder="Example: Debugging groundedness issue in copilot run"
-                className="w-full resize-none rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition-colors focus:border-amber-400"
-              />
-              <button
-                type="submit"
-                disabled={traceLoading || traceReason.trim().length < 8}
-                className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {traceLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Eye className="h-3.5 w-3.5" />}
-                Request Full Trace
-              </button>
-            </form>
+            {detail.full_trace_available ? (
+              <form onSubmit={onTraceAccess} className="space-y-2">
+                <label className="block text-xs font-semibold uppercase tracking-wide text-amber-800" htmlFor="ai-trace-reason">
+                  Access Reason
+                </label>
+                <textarea
+                  id="ai-trace-reason"
+                  value={traceReason}
+                  onChange={(event) => onTraceReasonChange(event.target.value)}
+                  minLength={8}
+                  rows={3}
+                  placeholder="Example: Debugging groundedness issue in copilot run"
+                  className="w-full resize-none rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition-colors focus:border-amber-400"
+                />
+                <button
+                  type="submit"
+                  disabled={traceLoading || traceReason.trim().length < 8}
+                  className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {traceLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Eye className="h-3.5 w-3.5" />}
+                  Request Full Trace
+                </button>
+              </form>
+            ) : (
+              <div className="rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm text-amber-900">
+                Raw trace payload access is disabled for this environment. Use the redacted metadata above or enable full trace access temporarily during a controlled incident review.
+              </div>
+            )}
             {traceError && <p className="mt-2 text-sm text-red-700">{traceError}</p>}
             {fullTrace && (
               <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">

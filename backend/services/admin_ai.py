@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -22,6 +23,15 @@ from backend.models import (
 )
 
 REDACTED_KEYS = {"raw_prompt", "system_prompt", "email_body", "body", "access_token", "refresh_token", "api_key"}
+_TRUTHY_VALUES = {"1", "true", "yes", "on"}
+
+
+class FullTraceAccessDisabledError(RuntimeError):
+    """Raised when raw AI trace payload access is disabled by deployment policy."""
+
+
+def full_trace_payload_access_enabled() -> bool:
+    return os.getenv("AI_TRACE_FULL_PAYLOADS_ENABLED", "false").strip().lower() in _TRUTHY_VALUES
 
 
 def _iso(value) -> str | None:
@@ -217,7 +227,7 @@ async def run_detail(db: AsyncSession, *, call_id: uuid.UUID) -> dict[str, Any] 
         "request_metadata": _redact_mapping(call.request_metadata or {}),
         "response_metadata": _redact_mapping(call.response_metadata or {}),
         "artifacts": [serialize_artifact(item) for item in artifacts],
-        "full_trace_available": True,
+        "full_trace_available": full_trace_payload_access_enabled(),
         "full_trace_requires_reason": True,
     }
 
@@ -231,6 +241,8 @@ async def full_trace_with_access_log(
 ) -> dict[str, Any] | None:
     if len(reason.strip()) < 8:
         raise ValueError("A specific access reason is required")
+    if not full_trace_payload_access_enabled():
+        raise FullTraceAccessDisabledError("Full trace payload access is disabled for this environment")
     call = await db.get(AiModelCall, call_id)
     if call is None:
         return None
