@@ -32,6 +32,7 @@ interface EmailFeedProps {
   forceOpen?: boolean;
   onOpenAddJob?: (draft: Partial<Job>) => void;
   onNavigateToEmail?: (email: Email) => void;
+  headerAccessory?: React.ReactNode;
   focusRequest?: {
     emailId: string;
     threadId?: string;
@@ -133,6 +134,7 @@ export function EmailFeed({
   forceOpen,
   onOpenAddJob,
   onNavigateToEmail,
+  headerAccessory,
   focusRequest,
 }: EmailFeedProps) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -653,9 +655,12 @@ export function EmailFeed({
                 {!collapsed && <h2 className="text-3xl tracking-tight font-serif font-bold text-slate-900">Updates</h2>}
               </div>
               {!collapsed && (
-                <span className="text-xs px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full font-semibold">
-                  {activeThreads.reduce((count, thread) => count + thread.emails.filter((email) => !email.read).length, 0)} new
-                </span>
+                <div className="flex items-center gap-2">
+                  {headerAccessory}
+                  <span className="text-xs px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full font-semibold">
+                    {activeThreads.reduce((count, thread) => count + thread.emails.filter((email) => !email.read).length, 0)} new
+                  </span>
+                </div>
               )}
             </>
           )}

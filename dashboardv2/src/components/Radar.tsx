@@ -450,68 +450,69 @@ export function Radar({ focusRequest }: RadarProps) {
   };
 
   return (
-    <div className="flex-1 overflow-auto p-6 space-y-6">
-      <div className="rounded-2xl border border-slate-200 bg-white p-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <h1 className="text-2xl font-serif font-bold text-slate-900">Opportunity Radar</h1>
-            <p className="mt-2 max-w-3xl text-sm text-slate-600">
-              Radar now has two working lanes. Internal trackers turn your AppTrail activity into ranked opportunities. Research and hybrid trackers save dated reports with evidence, deltas, and follow-up actions.
-            </p>
+    <div className="flex-1 overflow-auto bg-[#F5F5F0] px-4 py-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-[118rem] space-y-5">
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <h1 className="text-2xl font-serif font-bold text-slate-900">Opportunity Radar</h1>
+              <p className="mt-2 max-w-3xl text-sm text-slate-600">
+                Radar now has two working lanes. Internal trackers turn your AppTrail activity into ranked opportunities. Research and hybrid trackers save dated reports with evidence, deltas, and follow-up actions.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2 sm:gap-3">
+              <button
+                type="button"
+                onClick={() => setEditingMode('create')}
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+              >
+                New tracker
+              </button>
+              <button
+                type="button"
+                onClick={runNow}
+                disabled={!selectedProfileId || running || Boolean(selectedProfile && supportsReportSurface(selectedProfile.mode) && !researchConsentEnabled)}
+                className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:opacity-50"
+              >
+                {running ? 'Running...' : 'Run now'}
+              </button>
+            </div>
           </div>
-          <div className="flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={() => setEditingMode('create')}
-              className="rounded-xl border border-slate-300 px-4 py-2 text-sm text-slate-700"
-            >
-              New tracker
-            </button>
-            <button
-              type="button"
-              onClick={runNow}
-              disabled={!selectedProfileId || running || Boolean(selectedProfile && supportsReportSurface(selectedProfile.mode) && !researchConsentEnabled)}
-              className="rounded-xl bg-slate-900 px-4 py-2 text-sm text-white disabled:opacity-50"
-            >
-              {running ? 'Running...' : 'Run now'}
-            </button>
+
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-4">
+            <div className="rounded-xl border border-slate-200 p-3">
+              <div className="text-xs uppercase tracking-wide text-slate-500">Trackers</div>
+              <div className="mt-1 text-xl font-semibold text-slate-900">{profiles.length}</div>
+            </div>
+            <div className="rounded-xl border border-slate-200 p-3">
+              <div className="text-xs uppercase tracking-wide text-slate-500">Signals in view</div>
+              <div className="mt-1 text-xl font-semibold text-slate-900">{signals.length}</div>
+            </div>
+            <div className="rounded-xl border border-slate-200 p-3">
+              <div className="text-xs uppercase tracking-wide text-slate-500">Reports in view</div>
+              <div className="mt-1 text-xl font-semibold text-slate-900">{reports.length}</div>
+            </div>
+            <div className="rounded-xl border border-slate-200 p-3">
+              <div className="text-xs uppercase tracking-wide text-slate-500">Latest run output</div>
+              <div className="mt-1 text-xl font-semibold text-slate-900">{latestRunSignalCount}</div>
+            </div>
           </div>
+
+          {selectedProfile && supportsReportSurface(selectedProfile.mode) && !researchConsentEnabled ? (
+            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              This tracker needs core, AI processing, and web research consent to run in report mode. Update privacy settings to enable saved reports and public-web evidence collection.
+            </div>
+          ) : null}
+
+          {errorMessage ? (
+            <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+              {errorMessage}
+            </div>
+          ) : null}
         </div>
 
-        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
-          <div className="rounded-xl border border-slate-200 p-3">
-            <div className="text-xs uppercase tracking-wide text-slate-500">Trackers</div>
-            <div className="mt-1 text-xl font-semibold text-slate-900">{profiles.length}</div>
-          </div>
-          <div className="rounded-xl border border-slate-200 p-3">
-            <div className="text-xs uppercase tracking-wide text-slate-500">Signals in view</div>
-            <div className="mt-1 text-xl font-semibold text-slate-900">{signals.length}</div>
-          </div>
-          <div className="rounded-xl border border-slate-200 p-3">
-            <div className="text-xs uppercase tracking-wide text-slate-500">Reports in view</div>
-            <div className="mt-1 text-xl font-semibold text-slate-900">{reports.length}</div>
-          </div>
-          <div className="rounded-xl border border-slate-200 p-3">
-            <div className="text-xs uppercase tracking-wide text-slate-500">Latest run output</div>
-            <div className="mt-1 text-xl font-semibold text-slate-900">{latestRunSignalCount}</div>
-          </div>
-        </div>
-
-        {selectedProfile && supportsReportSurface(selectedProfile.mode) && !researchConsentEnabled ? (
-          <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-            This tracker needs core, AI processing, and web research consent to run in report mode. Update privacy settings to enable saved reports and public-web evidence collection.
-          </div>
-        ) : null}
-
-        {errorMessage ? (
-          <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
-            {errorMessage}
-          </div>
-        ) : null}
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
-        <div className="space-y-4 xl:col-span-3">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(280px,340px)_minmax(0,1fr)] min-[1900px]:grid-cols-[minmax(280px,340px)_minmax(420px,0.95fr)_minmax(460px,1.15fr)]">
+        <div className="space-y-4">
           <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-2">
             <h2 className="font-semibold text-slate-800">Trackers</h2>
             {!profiles.length ? (
@@ -549,17 +550,32 @@ export function Radar({ focusRequest }: RadarProps) {
             onChange={(nextSurface) => setSurface(nextSurface)}
           />
 
-          <RadarProfileForm
-            mode={editingMode === 'create' || !selectedProfile ? 'create' : 'edit'}
-            profile={editingMode === 'edit' ? selectedProfile : null}
-            busy={creating || savingProfile}
-            deleting={deletingProfile}
-            researchConsentEnabled={researchConsentEnabled}
-            onCreate={createProfile}
-            onUpdate={saveProfile}
-            onDelete={removeProfile}
-            onCancelCreate={() => setEditingMode(selectedProfile ? 'edit' : 'create')}
-          />
+          <details
+            className="overflow-hidden rounded-2xl border border-slate-200 bg-white"
+            open={editingMode === 'create' || !selectedProfile}
+          >
+            <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-slate-800 transition-colors hover:bg-slate-50">
+              <div className="flex items-center justify-between gap-3">
+                <span>{editingMode === 'create' || !selectedProfile ? 'New tracker' : 'Tracker settings'}</span>
+                <span className="text-xs font-normal text-slate-500">
+                  {selectedProfile ? selectedProfile.name : 'Define scope'}
+                </span>
+              </div>
+            </summary>
+            <div className="border-t border-slate-200 p-4">
+              <RadarProfileForm
+                mode={editingMode === 'create' || !selectedProfile ? 'create' : 'edit'}
+                profile={editingMode === 'edit' ? selectedProfile : null}
+                busy={creating || savingProfile}
+                deleting={deletingProfile}
+                researchConsentEnabled={researchConsentEnabled}
+                onCreate={createProfile}
+                onUpdate={saveProfile}
+                onDelete={removeProfile}
+                onCancelCreate={() => setEditingMode(selectedProfile ? 'edit' : 'create')}
+              />
+            </div>
+          </details>
 
           <div className="rounded-2xl border border-slate-200 bg-white p-4">
             <div className="mb-2 flex items-center justify-between gap-3">
@@ -574,34 +590,36 @@ export function Radar({ focusRequest }: RadarProps) {
           </div>
         </div>
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 xl:col-span-4">
-          <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex min-h-[32rem] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm xl:min-h-[calc(100vh-13rem)]">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <h2 className="font-semibold text-slate-800">{surface === 'signals' ? 'Signal feed' : 'Report history'}</h2>
             {selectedProfile ? <div className="text-xs text-slate-500">Tracker: {selectedProfile.name}</div> : null}
           </div>
 
-          {surface === 'signals' ? (
-            <SignalFeed
-              loading={loading}
-              signals={signals}
-              selectedSignalId={selectedSignal?.id}
-              onSelectSignal={(signal) => setSelectedSignalId(signal.id)}
-            />
-          ) : (
-            <ResearchReportList
-              reports={reports}
-              selectedReportId={selectedReportId}
-              loading={loading}
-              onSelectReport={(report) => {
-                setSelectedReportId(report.id);
-                setSelectedRunId(report.run_id || null);
-                setSurface('reports');
-              }}
-            />
-          )}
+          <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+            {surface === 'signals' ? (
+              <SignalFeed
+                loading={loading}
+                signals={signals}
+                selectedSignalId={selectedSignal?.id}
+                onSelectSignal={(signal) => setSelectedSignalId(signal.id)}
+              />
+            ) : (
+              <ResearchReportList
+                reports={reports}
+                selectedReportId={selectedReportId}
+                loading={loading}
+                onSelectReport={(report) => {
+                  setSelectedReportId(report.id);
+                  setSelectedRunId(report.run_id || null);
+                  setSurface('reports');
+                }}
+              />
+            )}
+          </div>
         </div>
 
-        <div className="space-y-4 xl:col-span-5">
+        <div className="space-y-4 xl:col-span-2 min-[1900px]:col-span-1">
           {surface === 'signals' ? (
             <>
               <div className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -711,6 +729,7 @@ export function Radar({ focusRequest }: RadarProps) {
           ) : null}
         </div>
       </div>
+    </div>
     </div>
   );
 }

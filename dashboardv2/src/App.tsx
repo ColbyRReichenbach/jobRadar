@@ -13,6 +13,7 @@ import { AuthProvider, useAuth } from './lib/AuthContext';
 import { AddJobModal } from './components/AddJobModal';
 import { ConsentModal } from './components/ConsentModal';
 import { CopilotLauncher } from './components/copilot/CopilotLauncher';
+import { cn } from './lib/utils';
 
 // Lazy-loaded route components for code splitting
 const KanbanBoard = lazy(() => import('./components/KanbanBoard').then(m => ({ default: m.KanbanBoard })));
@@ -67,6 +68,7 @@ function AppContent() {
   const [jobs, setJobs] = useState<Job[]>(USE_API ? [] : initialJobs);
   const [emails, setEmails] = useState<Email[]>(USE_API ? [] : initialEmails);
   const [isInboxCollapsed, setIsInboxCollapsed] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [loading, setLoading] = useState(USE_API);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -273,6 +275,15 @@ function AppContent() {
   }
 
   const showInbox = activeTab !== 'emails' && activeTab !== 'conversations';
+  const dockNotificationsInInbox = isDesktop && showInbox && !isInboxCollapsed;
+  const notificationClassName = cn(
+    'fixed z-40 transition-[right,top] duration-300',
+    isDesktop
+      ? showInbox
+        ? 'top-4 right-24'
+        : 'top-4 right-4'
+      : 'top-3 right-16'
+  );
 
   if (loading || authLoading) {
     return (
@@ -308,7 +319,13 @@ function AppContent() {
 
       {/* Desktop Sidebar */}
       <div className="hidden md:block">
-        <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} onGmailSync={loadData} />
+        <Sidebar
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          onGmailSync={loadData}
+          collapsed={isSidebarCollapsed}
+          onToggleCollapsed={() => setIsSidebarCollapsed((current) => !current)}
+        />
       </div>
 
       {/* Mobile Sidebar Overlay */}
@@ -335,9 +352,11 @@ function AppContent() {
         )}
       </AnimatePresence>
 
-      <div className={isDesktop ? 'fixed top-4 right-4 z-40' : 'fixed top-3 right-16 z-40'}>
-        <NotificationCenter onNavigate={handleNotificationNavigate} />
-      </div>
+      {!dockNotificationsInInbox ? (
+        <div className={notificationClassName}>
+          <NotificationCenter onNavigate={handleNotificationNavigate} />
+        </div>
+      ) : null}
 
       <main className="flex-1 flex overflow-hidden pt-16 md:pt-0">
         <div className="flex-1 flex flex-col overflow-hidden">
@@ -411,6 +430,7 @@ function AppContent() {
             onOpenAddJob={handleOpenAddJob}
             onNavigateToEmail={handleOpenEmail}
             focusRequest={emailFocusRequest?.tab === 'emails' ? emailFocusRequest : null}
+            headerAccessory={dockNotificationsInInbox ? <NotificationCenter onNavigate={handleNotificationNavigate} /> : undefined}
           />
         </div>
       )}
