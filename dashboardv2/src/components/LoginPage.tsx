@@ -14,14 +14,14 @@ export function LoginPage() {
         className="w-full max-w-sm"
       >
         <div className="text-center mb-8">
-          <div className="w-14 h-14 flex items-center justify-center bg-slate-800 rounded-2xl shadow-sm mx-auto mb-4">
-            <Logo className="w-8 h-8 text-white" />
+          <div className="w-14 h-14 flex items-center justify-center bg-[#172033] rounded-2xl shadow-sm mx-auto mb-4">
+            <Logo className="w-9 h-9 text-white" />
           </div>
           <h1 className="text-3xl tracking-tight font-serif font-bold text-slate-900">
-            AppTrail
+            Opportunity Radar
           </h1>
           <p className="mt-2 text-slate-500 font-serif italic">
-            Track your job applications with ease.
+            Turn job-search signals into your next move.
           </p>
         </div>
 

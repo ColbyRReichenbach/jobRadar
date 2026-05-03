@@ -511,9 +511,9 @@ test('renders the login page when unauthenticated', async ({ page }) => {
   await mockLoggedOutApi(page);
   await page.goto('/');
 
-  await expect(page.getByRole('heading', { name: 'AppTrail' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Opportunity Radar' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Sign in with Google' })).toBeVisible();
-  await expect(page.getByText('Track your job applications with ease.')).toBeVisible();
+  await expect(page.getByText('Turn job-search signals into your next move.')).toBeVisible();
 });
 
 test.describe('desktop app flows', () => {

@@ -1195,7 +1195,7 @@ export async function exportCsv(): Promise<void> {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'apptrail_export.csv';
+  a.download = 'opportunity-radar-pipeline.csv';
   a.click();
   URL.revokeObjectURL(url);
 }

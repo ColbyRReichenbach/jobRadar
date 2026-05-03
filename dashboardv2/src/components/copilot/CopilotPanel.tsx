@@ -1,6 +1,6 @@
 import { FormEvent, KeyboardEvent, useEffect, useId, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Bot, Loader2, MessageSquarePlus, Send, Sparkles, X } from 'lucide-react';
+import { Loader2, MessageSquarePlus, Send, X } from 'lucide-react';
 import {
   CopilotApiError,
   CopilotConversation,
@@ -10,6 +10,7 @@ import {
 } from '../../lib/copilotApi';
 import { cn } from '../../lib/utils';
 import { CopilotMessage } from './CopilotMessage';
+import { ScoutLogo } from './ScoutLogo';
 
 interface CopilotPanelProps {
   isOpen: boolean;
@@ -20,7 +21,7 @@ interface CopilotPanelProps {
 const STARTER_PROMPTS = [
   'Which applications need follow-up?',
   'Summarize my latest recruiter conversations.',
-  'What Radar signals should I act on first?',
+  'What opportunity signals should I act on first?',
 ];
 
 function emptyMessage(conversationId: string, role: 'user' | 'assistant', content: string): CopilotMessageType {
@@ -160,12 +161,12 @@ export function CopilotPanel({ isOpen, onClose, onNavigate }: CopilotPanelProps)
           <div className="shrink-0 border-b border-slate-100 bg-slate-50/80 px-4 py-4 md:px-5">
             <div className="flex items-start justify-between gap-3">
               <div className="flex min-w-0 items-center gap-3">
-                <div className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-slate-800 text-white shadow-sm">
-                  <Sparkles className="h-4 w-4" />
+                <div className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#172033] text-white shadow-sm">
+                  <ScoutLogo className="h-7 w-7 text-white" />
                 </div>
                 <div className="min-w-0">
                   <h2 id={titleId} className="text-lg font-serif font-bold tracking-tight text-slate-900">
-                    Ask AppTrail
+                    Ask Scout
                   </h2>
                   <p id={descriptionId} className="text-xs text-slate-500">
                     {conversation?.title || 'Copilot'}
@@ -199,8 +200,8 @@ export function CopilotPanel({ isOpen, onClose, onNavigate }: CopilotPanelProps)
             {messages.length === 0 ? (
               <div className="flex min-h-full flex-col justify-end gap-4">
                 <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <div className="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 text-slate-500">
-                    <Bot className="h-5 w-5" />
+                  <div className="mb-3 inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-[#172033] text-white shadow-sm">
+                    <ScoutLogo className="h-7 w-7 text-white" />
                   </div>
                   <h3 className="text-xl font-serif font-bold tracking-tight text-slate-900">
                     Where should you focus next?
@@ -244,7 +245,7 @@ export function CopilotPanel({ isOpen, onClose, onNavigate }: CopilotPanelProps)
             ) : null}
             <div className="flex items-end gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-2 focus-within:border-indigo-300 focus-within:ring-2 focus-within:ring-indigo-500/10">
               <label htmlFor="copilot-message" className="sr-only">
-                Ask AppTrail a question
+                Ask Scout a question
               </label>
               <textarea
                 ref={inputRef}
@@ -253,7 +254,7 @@ export function CopilotPanel({ isOpen, onClose, onNavigate }: CopilotPanelProps)
                 onChange={(event) => setInput(event.target.value)}
                 onKeyDown={handleKeyDown}
                 rows={1}
-                placeholder="Ask about your pipeline..."
+                placeholder="Ask Scout about your pipeline..."
                 className="max-h-32 min-h-10 flex-1 resize-none bg-transparent px-2 py-2 text-sm leading-5 text-slate-900 outline-none placeholder:text-slate-400"
               />
               <button

@@ -14,11 +14,11 @@ import { AddJobModal } from './components/AddJobModal';
 import { ConsentModal } from './components/ConsentModal';
 import { CopilotLauncher } from './components/copilot/CopilotLauncher';
 import { cn } from './lib/utils';
+import { Logo } from './components/Logo';
 
 // Lazy-loaded route components for code splitting
 const KanbanBoard = lazy(() => import('./components/KanbanBoard').then(m => ({ default: m.KanbanBoard })));
 const JobSearch = lazy(() => import('./components/JobSearch').then(m => ({ default: m.JobSearch })));
-const ExportData = lazy(() => import('./components/ExportData').then(m => ({ default: m.ExportData })));
 const Analytics = lazy(() => import('./components/Analytics').then(m => ({ default: m.Analytics })));
 const Conversations = lazy(() => import('./components/Conversations').then(m => ({ default: m.Conversations })));
 const NetworkPage = lazy(() => import('./components/NetworkPage').then(m => ({ default: m.NetworkPage })));
@@ -38,7 +38,6 @@ const TAB_TITLES: Record<string, string> = {
   search: 'Job Search',
   radar: 'Opportunity Radar',
   analytics: 'Analytics',
-  export: 'Export Data',
   conversations: 'Conversations',
   network: 'Network',
   calendar: 'Calendar',
@@ -133,7 +132,7 @@ function AppContent() {
   // Dynamic page title
   useEffect(() => {
     const title = TAB_TITLES[activeTab];
-    document.title = title ? `${title} — AppTrail` : 'AppTrail';
+    document.title = title ? `${title} — Opportunity Radar` : 'Opportunity Radar';
   }, [activeTab]);
 
   useEffect(() => {
@@ -307,11 +306,11 @@ function AppContent() {
       {/* Mobile Header */}
       <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-[#F5F5F0] border-b border-slate-200/60 z-40 flex items-center justify-between px-4">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 flex items-center justify-center bg-slate-800 rounded-xl shadow-sm">
-            <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>
+          <div className="w-8 h-8 flex items-center justify-center bg-[#172033] rounded-xl shadow-sm">
+            <Logo className="w-6 h-6 text-white" />
           </div>
           <span className="text-lg tracking-tight font-serif font-bold text-slate-900">
-            AppTrail
+            Opportunity Radar
           </span>
         </div>
         <button
@@ -394,7 +393,6 @@ function AppContent() {
                 {activeTab === 'search' && <JobSearch jobs={jobs} setJobs={setJobs} />}
                 {activeTab === 'radar' && <Radar focusRequest={radarFocusRequest} />}
                 {activeTab === 'analytics' && <Analytics jobs={jobs} />}
-              {activeTab === 'export' && <ExportData />}
               {activeTab === 'conversations' && <Conversations emails={emails} jobs={jobs} focusRequest={emailFocusRequest?.tab === 'conversations' ? emailFocusRequest : null} />}
               {activeTab === 'network' && <NetworkPage onOpenEmail={handleOpenEmail} onRefreshData={loadData} focusRequest={networkFocusRequest} />}
               {activeTab === 'calendar' && <Calendar focusRequest={calendarFocusRequest} />}

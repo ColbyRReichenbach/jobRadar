@@ -14,6 +14,7 @@ import {
   updateConsent,
   updateNotificationPreferences,
   deleteAccount,
+  exportCsv,
   exportAccountData,
 } from '../lib/api';
 import { useAuth } from '../lib/AuthContext';
@@ -61,7 +62,8 @@ export function Settings() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [consent, setConsent] = useState<ConsentStatus | null>(null);
   const [savingConsent, setSavingConsent] = useState(false);
-  const [exporting, setExporting] = useState(false);
+  const [exportingAccount, setExportingAccount] = useState(false);
+  const [exportingCsv, setExportingCsv] = useState(false);
   const [gmailAuditRows, setGmailAuditRows] = useState<GmailSyncAuditRow[]>([]);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteInput, setDeleteInput] = useState('');
@@ -662,34 +664,57 @@ export function Settings() {
             <div className="mt-6 pt-5 border-t border-slate-200">
               <h3 className="text-sm font-semibold text-slate-900 mb-2">Export Your Data</h3>
               <p className="text-xs text-slate-500 mb-3">
-                Download all your AppTrail data as a JSON file — jobs, contacts, emails, interviews, and more.
+                Download either a spreadsheet-friendly pipeline CSV or a full account archive.
               </p>
-              <button
-                onClick={async () => {
-                  setExporting(true);
-                  setErrorMessage(null);
-                  try {
-                    const blob = await exportAccountData();
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = 'apptrail-export.json';
-                    a.click();
-                    URL.revokeObjectURL(url);
-                    setStatusMessage('Data exported successfully.');
-                    setTimeout(() => setStatusMessage(null), 3000);
-                  } catch (err) {
-                    setErrorMessage(err instanceof Error ? err.message : 'Failed to export data.');
-                  } finally {
-                    setExporting(false);
-                  }
-                }}
-                disabled={exporting}
-                className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-slate-700 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors disabled:opacity-50"
-              >
-                {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-                Export All Data
-              </button>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <button
+                  onClick={async () => {
+                    setExportingCsv(true);
+                    setErrorMessage(null);
+                    try {
+                      await exportCsv();
+                      setStatusMessage('Pipeline CSV exported successfully.');
+                      setTimeout(() => setStatusMessage(null), 3000);
+                    } catch (err) {
+                      setErrorMessage(err instanceof Error ? err.message : 'Failed to export pipeline CSV.');
+                    } finally {
+                      setExportingCsv(false);
+                    }
+                  }}
+                  disabled={exportingCsv}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium text-slate-700 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors disabled:opacity-50"
+                >
+                  {exportingCsv ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                  Download CSV
+                </button>
+
+                <button
+                  onClick={async () => {
+                    setExportingAccount(true);
+                    setErrorMessage(null);
+                    try {
+                      const blob = await exportAccountData();
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = 'opportunity-radar-export.json';
+                      a.click();
+                      URL.revokeObjectURL(url);
+                      setStatusMessage('Account archive exported successfully.');
+                      setTimeout(() => setStatusMessage(null), 3000);
+                    } catch (err) {
+                      setErrorMessage(err instanceof Error ? err.message : 'Failed to export account archive.');
+                    } finally {
+                      setExportingAccount(false);
+                    }
+                  }}
+                  disabled={exportingAccount}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium text-slate-700 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors disabled:opacity-50"
+                >
+                  {exportingAccount ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                  Download Archive
+                </button>
+              </div>
             </div>
           </motion.div>
 

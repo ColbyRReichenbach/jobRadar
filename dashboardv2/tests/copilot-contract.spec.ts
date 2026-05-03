@@ -6,13 +6,13 @@ test('opens Copilot, sends a backend-backed message, renders citations, and reco
   await page.goto('/');
 
   await expect(page.getByRole('heading', { name: 'Pipeline' })).toBeVisible();
-  await page.getByRole('button', { name: 'Ask AppTrail' }).click();
+  await page.getByRole('button', { name: 'Ask Scout' }).click();
 
-  const panel = page.getByRole('dialog', { name: 'Ask AppTrail' });
+  const panel = page.getByRole('dialog', { name: 'Ask Scout' });
   await expect(panel).toBeVisible();
   await expect(panel.getByRole('heading', { name: 'Where should you focus next?' })).toBeVisible();
 
-  await panel.getByLabel('Ask AppTrail a question').fill('Which applications need follow-up?');
+  await panel.getByLabel('Ask Scout a question').fill('Which applications need follow-up?');
   await panel.getByRole('button', { name: 'Send message' }).click();
 
   await expect(panel.locator('.whitespace-pre-wrap').filter({ hasText: 'Which applications need follow-up?' })).toBeVisible();
@@ -43,11 +43,11 @@ test('shows a clear limited-state message when backend guardrails reject a reque
   });
   await page.goto('/');
 
-  await page.getByRole('button', { name: 'Ask AppTrail' }).click();
-  const panel = page.getByRole('dialog', { name: 'Ask AppTrail' });
-  await panel.getByLabel('Ask AppTrail a question').fill('Summarize recruiter conversations');
+  await page.getByRole('button', { name: 'Ask Scout' }).click();
+  const panel = page.getByRole('dialog', { name: 'Ask Scout' });
+  await panel.getByLabel('Ask Scout a question').fill('Summarize recruiter conversations');
   await panel.getByRole('button', { name: 'Send message' }).click();
 
   await expect(panel.getByText('Copilot is paused by request or budget limits. Try again later.')).toBeVisible();
-  await expect(panel.getByLabel('Ask AppTrail a question')).toHaveValue('Summarize recruiter conversations');
+  await expect(panel.getByLabel('Ask Scout a question')).toHaveValue('Summarize recruiter conversations');
 });

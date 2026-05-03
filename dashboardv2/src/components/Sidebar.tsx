@@ -1,5 +1,5 @@
 import { motion } from 'motion/react';
-import { LayoutDashboard, Mail, Search, Download, BarChart2, MessageSquare, LogOut, RefreshCw, Users, CalendarDays, Settings, FlaskConical, Bug, Radar as RadarIcon, BrainCircuit, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { LayoutDashboard, Mail, Search, BarChart2, MessageSquare, LogOut, RefreshCw, Users, CalendarDays, Settings, FlaskConical, Bug, Radar as RadarIcon, BrainCircuit, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Logo } from './Logo';
 import { useAuth } from '../lib/AuthContext';
@@ -32,7 +32,6 @@ export function Sidebar({ activeTab, setActiveTab, onGmailSync, collapsed = fals
     { id: 'calendar', label: 'Calendar', icon: CalendarDays },
     { id: 'search', label: 'Job Search', icon: Search },
     { id: 'analytics', label: 'Analytics', icon: BarChart2 },
-    { id: 'export', label: 'Export Data', icon: Download },
     { id: 'audit', label: 'Classifier Audit', icon: FlaskConical, adminOnly: true },
     { id: 'extraction-reports', label: 'Extraction Reports', icon: Bug, adminOnly: true },
     ...(AI_OPS_ENABLED ? [{ id: 'ai-ops', label: 'AI Ops', icon: BrainCircuit, adminOnly: true }] : []),
@@ -88,13 +87,13 @@ export function Sidebar({ activeTab, setActiveTab, onGmailSync, collapsed = fals
         animate="animate"
         whileHover="hover"
         onClick={() => setActiveTab('dashboard')}
-        title={collapsed ? 'AppTrail' : undefined}
+        title={collapsed ? 'Opportunity Radar' : undefined}
       >
-        <div className="w-8 h-8 flex items-center justify-center bg-slate-800 rounded-xl shadow-sm">
-          <Logo className="w-5 h-5 text-white" />
+        <div className="w-8 h-8 flex items-center justify-center bg-[#172033] rounded-xl shadow-sm">
+          <Logo className="w-6 h-6 text-white" />
         </div>
         <span className={cn('text-lg tracking-tight font-serif font-bold text-slate-900', collapsed && 'sr-only')}>
-          AppTrail
+          Opportunity Radar
         </span>
       </motion.div>
 
