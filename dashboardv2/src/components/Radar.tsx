@@ -457,7 +457,7 @@ export function Radar({ focusRequest }: RadarProps) {
             <div>
               <h1 className="text-2xl font-serif font-bold text-slate-900">Opportunity Radar</h1>
               <p className="mt-2 max-w-3xl text-sm text-slate-600">
-                Radar now has two working lanes. Internal trackers turn your AppTrail activity into ranked opportunities. Research and hybrid trackers save dated reports with evidence, deltas, and follow-up actions.
+                Track the roles, companies, and market signals that matter to your search. Radar turns your activity and saved research into ranked opportunities, evidence-backed reports, and focused next steps.
               </p>
             </div>
             <div className="flex flex-wrap gap-2 sm:gap-3">
@@ -500,7 +500,7 @@ export function Radar({ focusRequest }: RadarProps) {
 
           {selectedProfile && supportsReportSurface(selectedProfile.mode) && !researchConsentEnabled ? (
             <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-              This tracker needs core, AI processing, and web research consent to run in report mode. Update privacy settings to enable saved reports and public-web evidence collection.
+              This tracker needs core, AI processing, and web research consent before Radar can create saved reports from public sources. Update privacy settings to enable research reports.
             </div>
           ) : null}
 
@@ -709,7 +709,7 @@ export function Radar({ focusRequest }: RadarProps) {
                 <div className="rounded-2xl border border-slate-200 bg-white p-4">
                   <h2 className="mb-2 font-semibold text-slate-800">Run trace</h2>
                   <p className="mb-3 text-xs text-slate-500">
-                    Local debug view for inspecting the stored run steps behind this report.
+                    Review the recorded steps and source activity behind this report.
                   </p>
                   <ResearchRunTracePanel trace={selectedTrace} loading={loadingTrace} />
                 </div>

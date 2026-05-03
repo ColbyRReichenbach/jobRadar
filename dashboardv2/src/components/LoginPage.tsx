@@ -50,7 +50,7 @@ export function LoginPage() {
 
           <p className="text-center text-xs text-slate-400 mt-6">
             {LOCAL_DEV_AUTH_ENABLED
-              ? 'Local mode signs you into a dev-only account on this machine. Add Google OAuth later only if you want Gmail sync.'
+              ? 'Local mode signs you into a test account on this machine. Connect Google when you want Gmail sync.'
               : 'Sign in to sync your Gmail and track applications automatically.'}
           </p>
         </div>

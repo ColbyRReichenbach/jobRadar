@@ -11,11 +11,11 @@ interface RadarModeSwitchProps {
 const SURFACE_COPY: Record<RadarSurface, { title: string; body: string }> = {
   signals: {
     title: 'Signals',
-    body: 'Ranked opportunities from your AppTrail activity, briefs, and action suggestions.',
+    body: 'Ranked opportunities based on your pipeline, messages, target roles, and follow-up actions.',
   },
   reports: {
     title: 'Reports',
-    body: 'Saved research runs with evidence, dated findings, and change tracking.',
+    body: 'Saved research reports with sources, dated findings, and changes since the last run.',
   },
 };
 

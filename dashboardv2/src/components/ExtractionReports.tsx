@@ -135,7 +135,7 @@ function VersionTimeline() {
             <XCircle className="w-4 h-4" />
             Classifier False Positives — {feedback.not_job_related} emails marked "Not Job Related" by user
           </h3>
-          <div className="flex gap-4 text-xs text-red-600">
+          <div className="flex flex-col gap-1 text-xs text-red-600 sm:flex-row sm:flex-wrap sm:gap-x-4">
             <span>Top domains: {feedback.top_blocked_domains.slice(0, 5).map(d => d.domain).join(', ') || 'none'}</span>
             {feedback.daily_trend.length > 0 && (
               <span>Latest: {feedback.daily_trend[feedback.daily_trend.length - 1].date}</span>
@@ -149,13 +149,13 @@ function VersionTimeline() {
 
       {/* Accuracy over versions chart */}
       {chartData.length > 0 && (
-        <div className="bg-white border rounded-xl p-5 mb-6">
+        <div className="min-w-0 overflow-hidden bg-white border rounded-xl p-4 mb-6 sm:p-5">
           <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
             <TrendingUp className="w-4 h-4 text-indigo-500" />
             Accuracy Trend Across Versions
           </h3>
           <ResponsiveContainer width="100%" height={250}>
-            <LineChart data={chartData} margin={{ left: 10, right: 10 }}>
+            <LineChart data={chartData} margin={{ left: 0, right: 8 }}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="version" tick={{ fontSize: 10 }} angle={-30} textAnchor="end" height={60} />
               <YAxis domain={[0, 100]} tickFormatter={v => `${v}%`} tick={{ fontSize: 11 }} />
@@ -169,10 +169,10 @@ function VersionTimeline() {
 
       {/* Report volume per version */}
       {chartData.length > 0 && (
-        <div className="bg-white border rounded-xl p-5 mb-6">
+        <div className="min-w-0 overflow-hidden bg-white border rounded-xl p-4 mb-6 sm:p-5">
           <h3 className="text-sm font-semibold text-slate-700 mb-3">Report Volume by Version</h3>
           <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={chartData} margin={{ left: 10, right: 10 }}>
+            <BarChart data={chartData} margin={{ left: 0, right: 8 }}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="version" tick={{ fontSize: 10 }} angle={-30} textAnchor="end" height={60} />
               <YAxis tick={{ fontSize: 11 }} />
@@ -233,8 +233,8 @@ function VersionTimeline() {
       )}
 
       {/* Changelog entries */}
-      <div className="bg-white border rounded-xl p-5">
-        <div className="flex items-center justify-between mb-4">
+      <div className="bg-white border rounded-xl p-4 sm:p-5">
+        <div className="flex flex-col gap-3 mb-4 sm:flex-row sm:items-center sm:justify-between">
           <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
             <GitCommitHorizontal className="w-4 h-4 text-slate-500" />
             Changelog
@@ -250,7 +250,7 @@ function VersionTimeline() {
         {/* Add form */}
         {showAddForm && (
           <div className="mb-4 p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-3">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <input
                 placeholder="Version (e.g. ext-2026.03.18a)"
                 value={form.version}
@@ -273,7 +273,7 @@ function VersionTimeline() {
               onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
               className="w-full text-sm border rounded-lg px-3 py-1.5"
             />
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <input
                 placeholder="Platforms affected (comma-separated)"
                 value={form.platforms}
@@ -287,7 +287,7 @@ function VersionTimeline() {
                 className="text-sm border rounded-lg px-3 py-1.5"
               />
             </div>
-            <div className="flex justify-end gap-2">
+            <div className="flex flex-col justify-end gap-2 sm:flex-row">
               <button
                 onClick={() => setShowAddForm(false)}
                 className="text-xs px-3 py-1.5 text-slate-500 hover:text-slate-700"
@@ -313,8 +313,8 @@ function VersionTimeline() {
           {changelog.map(entry => (
             <div key={entry.id} className="flex gap-3 items-start">
               <div className="w-2 h-2 rounded-full bg-indigo-500 mt-1.5 flex-shrink-0" />
-              <div>
-                <div className="flex items-center gap-2">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="text-sm font-mono font-medium text-slate-800">{entry.version}</span>
                   <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
                     entry.change_type === 'extraction' ? 'bg-blue-100 text-blue-700'
@@ -431,7 +431,7 @@ export function ExtractionReports() {
   }, [reports]);
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <div className="max-w-7xl mx-auto overflow-x-hidden p-4 sm:p-6">
       {error && (
         <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm flex items-center gap-2">
           <AlertTriangle className="w-4 h-4" />
@@ -441,7 +441,7 @@ export function ExtractionReports() {
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col items-start gap-4 mb-6 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
             <Bug className="w-6 h-6 text-amber-500" />
@@ -452,7 +452,7 @@ export function ExtractionReports() {
           </p>
         </div>
         {stats && activeSubTab === 'reports' && (
-          <div className="flex gap-3">
+          <div className="grid w-full grid-cols-2 gap-3 lg:w-auto">
             <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2 text-center">
               <p className="text-2xl font-bold text-amber-600">{stats.unresolved}</p>
               <p className="text-xs text-amber-500">Unresolved</p>
@@ -466,7 +466,8 @@ export function ExtractionReports() {
       </div>
 
       {/* Tab switcher */}
-      <div className="flex gap-1 mb-6 bg-slate-100 rounded-lg p-1 w-fit">
+      <div className="mb-6 max-w-full overflow-x-auto">
+        <div className="flex w-max gap-1 bg-slate-100 rounded-lg p-1">
         <button
           onClick={() => setActiveSubTab('reports')}
           className={`text-sm px-4 py-1.5 rounded-md transition font-medium ${
@@ -488,6 +489,7 @@ export function ExtractionReports() {
           <GitCommitHorizontal className="w-3.5 h-3.5" />
           Version Timeline
         </button>
+        </div>
       </div>
 
       {/* Version Timeline tab */}
@@ -497,15 +499,15 @@ export function ExtractionReports() {
       {activeSubTab === 'reports' && <>
       {/* Stats row */}
       {stats && (
-        <div className="grid lg:grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-1 gap-4 mb-6 lg:grid-cols-3">
           {/* By type */}
-          <div className="bg-white border rounded-xl p-5">
+          <div className="min-w-0 overflow-hidden bg-white border rounded-xl p-4 sm:p-5">
             <h3 className="text-sm font-semibold text-slate-700 mb-3">By Report Type</h3>
             <ResponsiveContainer width="100%" height={160}>
-              <BarChart data={typeChartData} layout="vertical" margin={{ left: 80 }}>
+              <BarChart data={typeChartData} layout="vertical" margin={{ left: 4, right: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis type="number" />
-                <YAxis type="category" dataKey="name" width={80} tick={{ fontSize: 11 }} />
+                <YAxis type="category" dataKey="name" width={88} tick={{ fontSize: 11 }} />
                 <Tooltip />
                 <Bar dataKey="count" radius={[0, 4, 4, 0]}>
                   {typeChartData.map(e => <Cell key={e.name} fill={e.fill} />)}
@@ -515,14 +517,14 @@ export function ExtractionReports() {
           </div>
 
           {/* By platform */}
-          <div className="bg-white border rounded-xl p-5">
+          <div className="min-w-0 overflow-hidden bg-white border rounded-xl p-4 sm:p-5">
             <h3 className="text-sm font-semibold text-slate-700 mb-3">By Platform</h3>
             {platformChartData.length > 0 ? (
               <ResponsiveContainer width="100%" height={160}>
-                <BarChart data={platformChartData} layout="vertical" margin={{ left: 80 }}>
+                <BarChart data={platformChartData} layout="vertical" margin={{ left: 4, right: 8 }}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis type="number" />
-                  <YAxis type="category" dataKey="name" width={80} tick={{ fontSize: 11 }} />
+                  <YAxis type="category" dataKey="name" width={88} tick={{ fontSize: 11 }} />
                   <Tooltip />
                   <Bar dataKey="count" radius={[0, 4, 4, 0]}>
                     {platformChartData.map(e => <Cell key={e.name} fill={e.fill} />)}
@@ -535,14 +537,14 @@ export function ExtractionReports() {
           </div>
 
           {/* By field */}
-          <div className="bg-white border rounded-xl p-5">
+          <div className="min-w-0 overflow-hidden bg-white border rounded-xl p-4 sm:p-5">
             <h3 className="text-sm font-semibold text-slate-700 mb-3">Most Reported Fields</h3>
             {fieldChartData.length > 0 ? (
               <ResponsiveContainer width="100%" height={160}>
-                <BarChart data={fieldChartData} layout="vertical" margin={{ left: 70 }}>
+                <BarChart data={fieldChartData} layout="vertical" margin={{ left: 4, right: 8 }}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis type="number" />
-                  <YAxis type="category" dataKey="name" width={70} tick={{ fontSize: 11 }} />
+                  <YAxis type="category" dataKey="name" width={88} tick={{ fontSize: 11 }} />
                   <Tooltip />
                   <Bar dataKey="count" fill="#f59e0b" radius={[0, 4, 4, 0]} />
                 </BarChart>
@@ -555,11 +557,11 @@ export function ExtractionReports() {
       )}
 
       {/* Filters */}
-      <div className="flex items-center gap-3 mb-4">
+      <div className="flex flex-col gap-2 mb-4 sm:flex-row sm:items-center sm:gap-3">
         <select
           value={typeFilter}
           onChange={e => setTypeFilter(e.target.value)}
-          className="text-sm border rounded-lg px-3 py-1.5 text-slate-600"
+          className="w-full text-sm border rounded-lg px-3 py-1.5 text-slate-600 sm:w-auto"
         >
           <option value="">All Types</option>
           {Object.entries(TYPE_LABELS).map(([k, v]) => (
@@ -569,7 +571,7 @@ export function ExtractionReports() {
         <select
           value={platformFilter}
           onChange={e => setPlatformFilter(e.target.value)}
-          className="text-sm border rounded-lg px-3 py-1.5 text-slate-600"
+          className="w-full text-sm border rounded-lg px-3 py-1.5 text-slate-600 sm:w-auto"
         >
           <option value="">All Platforms</option>
           {platforms.map(p => <option key={p} value={p!}>{p}</option>)}
@@ -577,13 +579,13 @@ export function ExtractionReports() {
         <select
           value={resolvedFilter}
           onChange={e => setResolvedFilter(e.target.value)}
-          className="text-sm border rounded-lg px-3 py-1.5 text-slate-600"
+          className="w-full text-sm border rounded-lg px-3 py-1.5 text-slate-600 sm:w-auto"
         >
           <option value="unresolved">Unresolved</option>
           <option value="resolved">Resolved</option>
           <option value="all">All</option>
         </select>
-        <span className="text-sm text-slate-400 ml-auto">{reports.length} reports</span>
+        <span className="text-sm text-slate-400 sm:ml-auto">{reports.length} reports</span>
       </div>
 
       {/* Reports list */}
@@ -617,7 +619,7 @@ export function ExtractionReports() {
                 }`}
               >
                 {/* Header row */}
-                <div className="flex items-start gap-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
                   <div
                     className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
                     style={{ backgroundColor: `${TYPE_COLORS[report.report_type] || '#94a3b8'}15` }}
@@ -626,7 +628,7 @@ export function ExtractionReports() {
                   </div>
 
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
+                    <div className="flex flex-wrap items-center gap-2 mb-1">
                       <span
                         className="text-xs font-medium px-2 py-0.5 rounded-full"
                         style={{
@@ -704,7 +706,7 @@ export function ExtractionReports() {
                       <div className="mt-4 pt-4 border-t border-slate-100">
                         {/* Extracted vs Corrected diff */}
                         {report.extracted_data && report.corrected_data && (
-                          <div className="grid grid-cols-2 gap-4 mb-4">
+                          <div className="grid grid-cols-1 gap-4 mb-4 md:grid-cols-2">
                             <div>
                               <h4 className="text-xs font-semibold text-slate-500 mb-2 flex items-center gap-1">
                                 <Eye className="w-3 h-3" /> Extracted (what we got)

@@ -144,10 +144,10 @@ export function ConsentModal({ onAccepted, onDeclined }: ConsentModalProps) {
             <div className="flex-1">
               <span className="text-sm font-semibold text-slate-900">Web Research</span>
               <p className="mt-1 text-xs text-slate-500">
-                Allow Radar research trackers to search the public web and save dated reports with external evidence.
+                Allow Radar to search public sources and save dated research reports with external evidence.
               </p>
               <p className="mt-1.5 text-xs text-slate-400">
-                If disabled, you can still use internal Radar, but research and hybrid trackers will not run public-web research.
+                If disabled, Radar can still use your AppTrail activity, but it will not create public-web research reports.
               </p>
             </div>
             <input

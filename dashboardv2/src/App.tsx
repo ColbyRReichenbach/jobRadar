@@ -155,6 +155,11 @@ function AppContent() {
     }
   }, [activeTab, user]);
 
+  const handleMobileSetActiveTab = useCallback((tab: string) => {
+    setActiveTab(tab);
+    setIsMobileMenuOpen(false);
+  }, []);
+
   const handleOpenEmail = useCallback((email: any) => {
     const emailKind = email.email_type || email.type;
     const tab = emailKind === 'conversation' ? 'conversations' : 'emails';
@@ -344,9 +349,15 @@ function AppContent() {
               animate={{ x: 0 }}
               exit={{ x: '-100%' }}
               transition={{ type: 'spring', bounce: 0, duration: 0.3 }}
+              onClick={(event) => {
+                const target = event.target as HTMLElement;
+                if (target.closest('button,[role="button"]')) {
+                  setIsMobileMenuOpen(false);
+                }
+              }}
               className="fixed inset-y-0 left-0 w-64 bg-[#F5F5F0] z-50 md:hidden shadow-2xl"
             >
-              <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} onGmailSync={loadData} />
+              <Sidebar activeTab={activeTab} setActiveTab={handleMobileSetActiveTab} onGmailSync={loadData} />
             </motion.div>
           </>
         )}
@@ -358,8 +369,8 @@ function AppContent() {
         </div>
       ) : null}
 
-      <main className="flex-1 flex overflow-hidden pt-16 md:pt-0">
-        <div className="flex-1 flex flex-col overflow-hidden">
+      <main className="min-w-0 flex-1 flex overflow-hidden pt-16 md:pt-0">
+        <div className="min-w-0 flex-1 flex flex-col overflow-hidden">
           {loadError && (
             <div className="px-4 md:px-6 pt-4 md:pt-5">
               <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -376,7 +387,7 @@ function AppContent() {
               </div>
             </div>
           )}
-          <div className="flex-1 flex overflow-hidden">
+          <div className="min-w-0 flex-1 flex overflow-hidden">
               <Suspense fallback={<LazyFallback />}>
                 {activeTab === 'dashboard' && <KanbanBoard jobs={jobs} setJobs={setJobs} focusRequest={dashboardFocusRequest} />}
                 {activeTab === 'search' && <JobSearch jobs={jobs} setJobs={setJobs} />}

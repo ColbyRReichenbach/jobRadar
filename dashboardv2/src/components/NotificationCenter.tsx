@@ -281,7 +281,7 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
   return (
     <div className="relative">
       {toasts.length > 0 && (
-        <div className="fixed top-16 right-4 z-[70] flex w-[360px] max-w-[calc(100vw-2rem)] flex-col gap-2 md:top-20">
+        <div className="fixed bottom-4 right-4 z-[70] flex w-[360px] max-w-[calc(100vw-2rem)] flex-col gap-2 md:bottom-auto md:top-20">
           {toasts.map((toast) => {
             const meta = alertMeta(toast.alertType);
             const Icon = meta.icon;

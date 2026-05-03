@@ -223,7 +223,7 @@ export function ResearchTrackerForm({
 
       {!researchConsentEnabled ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
-          Core, AI processing, and web research consent are required for `research` and `hybrid` trackers. You can still use internal Radar until those settings are enabled.
+          Research reports need core, AI processing, and web research consent. You can still use Radar with your AppTrail activity until those settings are enabled.
         </div>
       ) : null}
 
@@ -252,13 +252,13 @@ export function ResearchTrackerForm({
       <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
         <SectionLabel
           title="Tracker mode"
-          body="Internal trackers use AppTrail data. Research trackers generate dated reports from external research. Hybrid trackers combine both."
+          body="Choose whether Radar should focus on your AppTrail activity, public research, or both."
         />
         <div className="grid gap-2 sm:grid-cols-3">
           {[
-            ['internal', 'Internal'],
+            ['internal', 'Activity'],
             ['research', 'Research'],
-            ['hybrid', 'Hybrid'],
+            ['hybrid', 'Activity + Research'],
           ].map(([value, label]) => {
             const needsConsent = value !== 'internal';
             const disabled = needsConsent && !researchConsentEnabled;
@@ -283,10 +283,10 @@ export function ResearchTrackerForm({
                     <div className="font-medium">{label}</div>
                     <div className="mt-1 text-xs leading-5 text-slate-500">
                       {value === 'internal'
-                        ? 'Signals, briefs, and actions from AppTrail data only.'
+                        ? 'Signals and next steps from your pipeline and messages.'
                         : value === 'research'
-                          ? 'Saved reports, evidence, and dated research runs.'
-                          : 'Both internal signals and saved research reports.'}
+                          ? 'Saved reports with sourced findings and dated updates.'
+                          : 'Pipeline-aware signals plus saved research reports.'}
                     </div>
                   </div>
                 </div>

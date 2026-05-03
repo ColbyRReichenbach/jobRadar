@@ -598,6 +598,8 @@ export function EmailFeed({
         {!forceOpen && (
           <button
             onClick={() => setIsCollapsed(!collapsed)}
+            aria-label={collapsed ? 'Expand updates panel' : 'Collapse updates panel'}
+            title={collapsed ? 'Expand updates' : 'Collapse updates'}
             className="absolute -left-3 top-8 w-6 h-6 bg-white border border-slate-200 rounded-full flex items-center justify-center shadow-sm z-10 hover:bg-slate-50"
           >
             {collapsed ? <ChevronLeft className="w-3 h-3 text-slate-600" /> : <ChevronRight className="w-3 h-3 text-slate-600" />}

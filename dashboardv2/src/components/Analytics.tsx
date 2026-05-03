@@ -9,6 +9,8 @@ interface AnalyticsProps {
   jobs: Job[];
 }
 
+const CHART_INITIAL_DIMENSION = { width: 320, height: 240 };
+
 export function Analytics({ jobs }: AnalyticsProps) {
   const [timeRange, setTimeRange] = useState('30d');
 
@@ -81,7 +83,7 @@ export function Analytics({ jobs }: AnalyticsProps) {
 
   return (
     <div className="flex-1 h-full overflow-y-auto p-4 md:p-8 bg-[#F5F5F0]">
-      <div className="w-full">
+      <div className="w-full min-w-0">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
           <div>
             <h1 className="text-3xl tracking-tight font-serif font-bold text-slate-900">
@@ -145,13 +147,13 @@ export function Analytics({ jobs }: AnalyticsProps) {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
           
           {/* Activity Timeline - Spans full width */}
-          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.4 }} className="lg:col-span-3 bg-white p-6 rounded-3xl shadow-sm border border-slate-100 h-[400px] flex flex-col">
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.4 }} className="min-w-0 overflow-hidden lg:col-span-3 bg-white p-4 sm:p-6 rounded-3xl shadow-sm border border-slate-100 h-[400px] flex flex-col">
             <div className="mb-6">
               <h3 className="text-xl font-serif font-bold text-slate-900">Application Activity</h3>
               <p className="text-sm text-slate-500">Your momentum over {timeRangeText}</p>
             </div>
-            <div className="flex-1 min-h-0">
-              <ResponsiveContainer width="100%" height="100%">
+            <div className="h-[290px] min-w-0">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={200} initialDimension={CHART_INITIAL_DIMENSION}>
                 <AreaChart data={activityData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <defs>
                     <linearGradient id="colorApps" x1="0" y1="0" x2="0" y2="1">
@@ -173,13 +175,13 @@ export function Analytics({ jobs }: AnalyticsProps) {
           </motion.div>
 
           {/* Pipeline Funnel - Spans 2 columns */}
-          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.5 }} className="lg:col-span-2 bg-white p-6 rounded-3xl shadow-sm border border-slate-100 h-[400px] flex flex-col">
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.5 }} className="min-w-0 overflow-hidden lg:col-span-2 bg-white p-4 sm:p-6 rounded-3xl shadow-sm border border-slate-100 h-[400px] flex flex-col">
             <div className="mb-6">
               <h3 className="text-xl font-serif font-bold text-slate-900">Pipeline Funnel</h3>
               <p className="text-sm text-slate-500">Current status of all tracked jobs</p>
             </div>
-            <div className="flex-1 min-h-0">
-              <ResponsiveContainer width="100%" height="100%">
+            <div className="h-[290px] min-w-0">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={200} initialDimension={CHART_INITIAL_DIMENSION}>
                 <BarChart data={pipelineData} layout="vertical" margin={{ top: 0, right: 20, left: 80, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
                   <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} />
@@ -203,13 +205,13 @@ export function Analytics({ jobs }: AnalyticsProps) {
           </motion.div>
 
           {/* Roles Breakdown - Spans 1 column */}
-          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.7 }} className="lg:col-span-1 bg-white p-6 rounded-3xl shadow-sm border border-slate-100 h-[400px] flex flex-col">
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.7 }} className="min-w-0 overflow-hidden lg:col-span-1 bg-white p-4 sm:p-6 rounded-3xl shadow-sm border border-slate-100 h-[400px] flex flex-col">
             <div className="mb-2">
               <h3 className="text-xl font-serif font-bold text-slate-900">Roles Breakdown</h3>
               <p className="text-sm text-slate-500">Distribution of applied roles</p>
             </div>
-            <div className="flex-1 min-h-0 relative">
-              <ResponsiveContainer width="100%" height="100%">
+            <div className="h-[300px] min-w-0 relative">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={200} initialDimension={CHART_INITIAL_DIMENSION}>
                 <PieChart>
                   <Pie
                     data={pieData}
@@ -241,14 +243,14 @@ export function Analytics({ jobs }: AnalyticsProps) {
           </motion.div>
 
           {/* Top Companies - Spans 2 columns */}
-          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.6 }} className="lg:col-span-2 bg-white p-6 rounded-3xl shadow-sm border border-slate-100 h-[350px] flex flex-col">
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.6 }} className="min-w-0 overflow-hidden lg:col-span-2 bg-white p-4 sm:p-6 rounded-3xl shadow-sm border border-slate-100 h-[350px] flex flex-col">
             <div className="mb-6">
               <h3 className="text-xl font-serif font-bold text-slate-900">Top Companies</h3>
               <p className="text-sm text-slate-500">Where you've applied the most</p>
             </div>
-            <div className="flex-1 min-h-0">
+            <div className="h-[240px] min-w-0">
               {topCompaniesData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={180} initialDimension={CHART_INITIAL_DIMENSION}>
                   <BarChart data={topCompaniesData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                     <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} />
@@ -269,13 +271,13 @@ export function Analytics({ jobs }: AnalyticsProps) {
           </motion.div>
 
           {/* Application Sources - Spans 1 column */}
-          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.8 }} className="lg:col-span-1 bg-white p-6 rounded-3xl shadow-sm border border-slate-100 h-[350px] flex flex-col">
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.8 }} className="min-w-0 overflow-hidden lg:col-span-1 bg-white p-4 sm:p-6 rounded-3xl shadow-sm border border-slate-100 h-[350px] flex flex-col">
             <div className="mb-6">
               <h3 className="text-xl font-serif font-bold text-slate-900">Sources</h3>
               <p className="text-sm text-slate-500">Where you find your jobs</p>
             </div>
-            <div className="flex-1 min-h-0">
-              <ResponsiveContainer width="100%" height="100%">
+            <div className="h-[240px] min-w-0">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={180} initialDimension={CHART_INITIAL_DIMENSION}>
                 <BarChart data={[
                   { name: 'LinkedIn', count: filteredJobs.filter(j => j.source === 'linkedin').length },
                   { name: 'Company Site', count: filteredJobs.filter(j => j.source === 'company_site').length },

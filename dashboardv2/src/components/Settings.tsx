@@ -546,7 +546,7 @@ export function Settings() {
                     <span className="flex items-center gap-1.5 font-medium text-slate-900">
                       <Globe className="w-3.5 h-3.5 text-sky-500" /> Web Research
                     </span>
-                    Allow research and hybrid Radar trackers to search the public web and save dated research reports with evidence.
+                    Allow Radar to search public sources and save dated research reports with evidence.
                   </span>
                 </label>
 

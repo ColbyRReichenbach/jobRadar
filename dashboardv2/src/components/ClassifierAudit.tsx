@@ -116,7 +116,7 @@ export function ClassifierAudit() {
   }, []);
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <div className="max-w-7xl mx-auto overflow-x-hidden p-4 sm:p-6">
       {error && (
         <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm flex items-center gap-2">
           <AlertTriangle className="w-4 h-4" />
@@ -207,7 +207,7 @@ function FeedbackPanel() {
       </h2>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-3 gap-3 mb-4">
+      <div className="grid grid-cols-1 gap-3 mb-4 sm:grid-cols-3">
         <div className="border rounded-lg p-3 bg-red-50 border-red-200">
           <p className="text-xs text-slate-500 mb-1">Marked Not Job Related</p>
           <p className="text-2xl font-bold text-red-600">{stats.not_job_related}</p>
@@ -222,16 +222,16 @@ function FeedbackPanel() {
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-2 gap-4">
+      <div className="grid gap-4 lg:grid-cols-2">
         {/* Top blocked domains */}
         {domainData.length > 0 && (
-          <div className="bg-white border rounded-xl p-5">
+          <div className="min-w-0 overflow-hidden bg-white border rounded-xl p-4 sm:p-5">
             <h3 className="text-xs font-semibold text-slate-500 mb-3">Top Blocked Domains</h3>
             <ResponsiveContainer width="100%" height={Math.max(120, domainData.length * 28)}>
-              <BarChart data={domainData} layout="vertical" margin={{ left: 100 }}>
+              <BarChart data={domainData} layout="vertical" margin={{ left: 8, right: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis type="number" />
-                <YAxis type="category" dataKey="name" width={100} tick={{ fontSize: 10 }} />
+                <YAxis type="category" dataKey="name" width={88} tick={{ fontSize: 10 }} />
                 <Tooltip />
                 <Bar dataKey="count" fill="#ef4444" radius={[0, 4, 4, 0]} />
               </BarChart>
@@ -241,14 +241,14 @@ function FeedbackPanel() {
 
         {/* What classifier originally thought */}
         {clsData.length > 0 && (
-          <div className="bg-white border rounded-xl p-5">
+          <div className="min-w-0 overflow-hidden bg-white border rounded-xl p-4 sm:p-5">
             <h3 className="text-xs font-semibold text-slate-500 mb-3">Original Classification (Before User Override)</h3>
             <p className="text-[10px] text-slate-400 mb-2">What the classifier thought these non-job emails were</p>
             <ResponsiveContainer width="100%" height={Math.max(120, clsData.length * 28)}>
-              <BarChart data={clsData} layout="vertical" margin={{ left: 80 }}>
+              <BarChart data={clsData} layout="vertical" margin={{ left: 8, right: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis type="number" />
-                <YAxis type="category" dataKey="name" width={80} tick={{ fontSize: 10 }} />
+                <YAxis type="category" dataKey="name" width={88} tick={{ fontSize: 10 }} />
                 <Tooltip />
                 <Bar dataKey="count" radius={[0, 4, 4, 0]}>
                   {clsData.map((entry) => (
@@ -263,7 +263,7 @@ function FeedbackPanel() {
 
       {/* Daily trend */}
       {stats.daily_trend.length > 1 && (
-        <div className="bg-white border rounded-xl p-5 mt-4">
+        <div className="min-w-0 overflow-hidden bg-white border rounded-xl p-4 mt-4 sm:p-5">
           <h3 className="text-xs font-semibold text-slate-500 mb-3">Feedback Trend (Daily)</h3>
           <ResponsiveContainer width="100%" height={150}>
             <LineChart data={stats.daily_trend} margin={{ left: 10, right: 10 }}>
@@ -300,7 +300,7 @@ function RunList({
 }) {
   return (
     <>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col items-start gap-3 mb-6 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
             <FlaskConical className="w-6 h-6 text-indigo-600" />
@@ -310,13 +310,13 @@ function RunList({
             Track classifier accuracy across runs. Recall-first — never miss a real job email.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex w-full flex-wrap gap-2 lg:w-auto">
           {compareIds.size >= 2 && (
-            <button onClick={onCompare} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition">
+            <button onClick={onCompare} className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition lg:flex-none">
               Compare ({compareIds.size})
             </button>
           )}
-          <button onClick={onUpload} className="px-4 py-2 bg-slate-900 text-white rounded-lg text-sm font-medium hover:bg-slate-800 transition flex items-center gap-2">
+          <button onClick={onUpload} className="flex flex-1 items-center justify-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg text-sm font-medium hover:bg-slate-800 transition lg:flex-none">
             <Upload className="w-4 h-4" /> Upload Run
           </button>
         </div>
@@ -349,11 +349,11 @@ function RunList({
             <motion.div
               key={run.id}
               layout
-              className={`border rounded-xl p-5 bg-white shadow-sm hover:shadow-md transition ${compareIds.has(run.id) ? 'ring-2 ring-indigo-400' : ''}`}
+              className={`border rounded-xl p-4 bg-white shadow-sm hover:shadow-md transition sm:p-5 ${compareIds.has(run.id) ? 'ring-2 ring-indigo-400' : ''}`}
             >
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-2">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2 mb-2 sm:gap-3">
                     <h3 className="font-semibold text-slate-900">{run.name}</h3>
                     <span className="px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-600">
                       {run.classifier_engine} · {run.model}
@@ -368,7 +368,7 @@ function RunList({
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
                   <label className="flex items-center gap-1 text-xs text-slate-500 cursor-pointer">
                     <input
                       type="checkbox"
@@ -388,7 +388,7 @@ function RunList({
               </div>
 
               {/* Metrics row */}
-              <div className="grid grid-cols-4 gap-3 mt-4">
+              <div className="grid grid-cols-2 gap-3 mt-4 sm:grid-cols-4">
                 <MetricCard label="Decision Recall" value={dr} large />
                 <MetricCard label="Decision Precision" value={dp} />
                 <MetricCard label="Classification Recall" value={cr} />
@@ -481,7 +481,7 @@ function RunDetail({
         <ArrowLeft className="w-4 h-4" /> Back to runs
       </button>
 
-      <div className="flex items-center gap-3 mb-2">
+      <div className="flex flex-col items-start gap-2 mb-2 sm:flex-row sm:items-center sm:gap-3">
         <h2 className="text-xl font-bold text-slate-900">{meta.name}</h2>
         <span className="px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-600">
           {meta.classifier_engine} · {meta.model} · {meta.prompt_version}
@@ -493,7 +493,7 @@ function RunDetail({
       </p>
 
       {/* Top metrics */}
-      <div className="grid grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 gap-3 mb-8 sm:grid-cols-4 sm:gap-4">
         <MetricCard label="Decision Recall" value={dr} large />
         <MetricCard label="Decision Precision" value={dp} />
         <MetricCard label="Classification Accuracy" value={ca} />
@@ -507,15 +507,15 @@ function RunDetail({
         </div>
       )}
 
-      <div className="grid lg:grid-cols-3 gap-6 mb-8">
+      <div className="grid gap-6 mb-8 lg:grid-cols-3">
         {/* Classification distribution */}
-        <div className="lg:col-span-2 bg-white border rounded-xl p-5">
+        <div className="min-w-0 overflow-hidden bg-white border rounded-xl p-4 sm:p-5 lg:col-span-2">
           <h3 className="text-sm font-semibold text-slate-700 mb-3">Classification Distribution</h3>
           <ResponsiveContainer width="100%" height={250}>
-            <BarChart data={clsData} layout="vertical" margin={{ left: 100 }}>
+            <BarChart data={clsData} layout="vertical" margin={{ left: 8, right: 8 }}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis type="number" />
-              <YAxis type="category" dataKey="name" width={100} tick={{ fontSize: 12 }} />
+              <YAxis type="category" dataKey="name" width={96} tick={{ fontSize: 11 }} />
               <Tooltip />
               <Bar dataKey="count" radius={[0, 4, 4, 0]}>
                 {clsData.map((entry) => (
@@ -528,7 +528,7 @@ function RunDetail({
 
         {/* Decision confusion matrix */}
         {cm && cm.matrix.length > 0 && (
-          <div className="bg-white border rounded-xl p-5">
+          <div className="min-w-0 overflow-x-auto bg-white border rounded-xl p-4 sm:p-5">
             <h3 className="text-sm font-semibold text-slate-700 mb-3">Decision Confusion Matrix</h3>
             <div className="text-xs text-slate-400 mb-2">Rows = Actual, Cols = Predicted</div>
             <table className="w-full text-center text-sm">
@@ -560,7 +560,7 @@ function RunDetail({
 
       {/* Per-class recall table */}
       {Object.keys(perClass).length > 0 && (
-        <div className="bg-white border rounded-xl p-5 mb-8">
+        <div className="bg-white border rounded-xl p-4 mb-8 overflow-x-auto sm:p-5">
           <h3 className="text-sm font-semibold text-slate-700 mb-3">Per-Class Metrics</h3>
           <table className="w-full text-sm">
             <thead>
@@ -592,8 +592,8 @@ function RunDetail({
       )}
 
       {/* Email review table */}
-      <div className="bg-white border rounded-xl p-5">
-        <div className="flex items-center justify-between mb-4">
+      <div className="bg-white border rounded-xl p-4 sm:p-5">
+        <div className="flex flex-col gap-3 mb-4 sm:flex-row sm:items-center sm:justify-between">
           <h3 className="text-sm font-semibold text-slate-700">Email Reviews ({filteredEmails.length})</h3>
           <select
             value={filter}
@@ -725,7 +725,7 @@ function InlineReviewEditor({
 
   return (
     <div className="mt-4 p-4 bg-slate-50 border rounded-lg">
-      <div className="flex items-center gap-2 mb-3">
+      <div className="flex flex-col gap-1 mb-3 sm:flex-row sm:items-center sm:gap-2">
         <h4 className="text-sm font-semibold text-slate-700">Review: {email.subject}</h4>
         <span className="text-xs text-slate-400">from {email.sender_email}</span>
       </div>
@@ -734,7 +734,7 @@ function InlineReviewEditor({
         {email.body_snippet || email.predicted_summary || 'No body text'}
       </div>
 
-      <div className="grid grid-cols-3 gap-3 text-sm">
+      <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
         <div>
           <label className="block text-xs text-slate-500 mb-1">Correct?</label>
           <select value={correct} onChange={e => setCorrect(e.target.value)} className="w-full border rounded px-2 py-1 text-sm">
@@ -783,7 +783,7 @@ function InlineReviewEditor({
         </div>
       </div>
 
-      <div className="flex gap-2 mt-3">
+      <div className="flex flex-col gap-2 mt-3 sm:flex-row">
         <button
           onClick={handleSave}
           disabled={saving}
@@ -827,10 +827,10 @@ function CompareView({
       ) : (
         <>
           {/* Line chart */}
-          <div className="bg-white border rounded-xl p-5 mb-8">
+          <div className="min-w-0 overflow-hidden bg-white border rounded-xl p-4 mb-8 sm:p-5">
             <h3 className="text-sm font-semibold text-slate-700 mb-3">Metrics Over Time</h3>
             <ResponsiveContainer width="100%" height={350}>
-              <LineChart data={data} margin={{ left: 10, right: 30, top: 10 }}>
+              <LineChart data={data} margin={{ left: 0, right: 10, top: 10 }}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="name" tick={{ fontSize: 11 }} />
                 <YAxis domain={[0, 1]} tick={{ fontSize: 11 }} tickFormatter={(v: number) => `${(v * 100).toFixed(0)}%`} />
@@ -853,7 +853,7 @@ function CompareView({
           </div>
 
           {/* Delta table */}
-          <div className="bg-white border rounded-xl p-5">
+          <div className="bg-white border rounded-xl p-4 sm:p-5">
             <h3 className="text-sm font-semibold text-slate-700 mb-3">Run Details</h3>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -958,11 +958,11 @@ function UploadModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md"
+        className="bg-white rounded-xl shadow-xl p-5 w-full max-w-md sm:p-6"
         onClick={e => e.stopPropagation()}
       >
         <h3 className="text-lg font-bold text-slate-900 mb-4">Upload Audit Run</h3>
