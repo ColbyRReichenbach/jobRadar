@@ -81,6 +81,11 @@ jobs:
   dashboard-checks:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    env:
+      VITE_API_URL: http://localhost:8000
+      VITE_COPILOT_ENABLED: "true"
+      VITE_ADMIN_AI_OPS_ENABLED: "true"
+      VITE_LOCAL_DEV_AUTH: "false"
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -116,6 +121,11 @@ jobs:
   ai-feature-checks:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    env:
+      VITE_API_URL: http://localhost:8000
+      VITE_COPILOT_ENABLED: "true"
+      VITE_ADMIN_AI_OPS_ENABLED: "true"
+      VITE_LOCAL_DEV_AUTH: "false"
     steps:
       - name: Check out repository
         uses: actions/checkout@v4

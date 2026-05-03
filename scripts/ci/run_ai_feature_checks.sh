@@ -4,6 +4,11 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
+export VITE_API_URL="${VITE_API_URL:-http://localhost:8000}"
+export VITE_COPILOT_ENABLED="${VITE_COPILOT_ENABLED:-true}"
+export VITE_ADMIN_AI_OPS_ENABLED="${VITE_ADMIN_AI_OPS_ENABLED:-true}"
+export VITE_LOCAL_DEV_AUTH="${VITE_LOCAL_DEV_AUTH:-false}"
+
 pytest_targets=(
   tests/test_admin_security.py
   tests/test_ai_hardening.py
@@ -59,7 +64,7 @@ for target in "${playwright_targets[@]}"; do
 done
 
 if [ "${#existing_playwright_targets[@]}" -gt 0 ]; then
-  (cd dashboardv2 && VITE_COPILOT_ENABLED=true npx playwright test "${existing_playwright_targets[@]}")
+  (cd dashboardv2 && npx playwright test "${existing_playwright_targets[@]}")
 else
   echo "No targeted dashboard AI feature tests exist yet; skipping dashboard AI feature suite."
 fi
