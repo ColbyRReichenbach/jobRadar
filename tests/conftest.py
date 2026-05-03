@@ -69,6 +69,7 @@ _USER_SCOPED_MODELS = {
     "AiShadowRun",
     "AiModelCall",
     "AiArtifact",
+    "EmailSyncAudit",
 }
 
 

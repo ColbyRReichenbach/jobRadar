@@ -80,7 +80,7 @@ async def test_gmail_sync_matches_application_by_company_domain(client, db_sessi
 
 @pytest.mark.asyncio
 async def test_gmail_sync_skips_obvious_tooling_noise(client, db_session):
-    from backend.models import EmailEvent, GmailToken
+    from backend.models import EmailEvent, EmailSyncAudit, GmailToken
 
     token = GmailToken(
         user_id=TEST_USER_ID,
@@ -120,10 +120,20 @@ async def test_gmail_sync_skips_obvious_tooling_noise(client, db_session):
 
     assert resp.status_code == 200
     assert resp.json()["new_emails"] == 0
+    assert resp.json()["stats"]["skipped_noise"] == 1
     classifier.assert_not_awaited()
 
     event_result = await db_session.execute(select(EmailEvent).where(EmailEvent.gmail_message_id == "sync-msg-noise-1"))
     assert event_result.scalar_one_or_none() is None
+    audit_result = await db_session.execute(
+        select(EmailSyncAudit).where(EmailSyncAudit.gmail_message_id == "sync-msg-noise-1")
+    )
+    audit = audit_result.scalar_one()
+    assert audit.decision == "skipped"
+    assert audit.reason == "obvious_noise"
+    audit_resp = await client.get("/api/gmail/sync/audit", headers=AUTH_HEADER)
+    assert audit_resp.status_code == 200
+    assert audit_resp.json()[0]["gmail_message_id"] == "sync-msg-noise-1"
 
 
 @pytest.mark.asyncio

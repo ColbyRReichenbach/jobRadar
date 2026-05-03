@@ -263,6 +263,12 @@ def _admin_email_set() -> set[str]:
     }
 
 
+def is_admin_user(user) -> bool:
+    """Return whether a user should receive dashboard admin access."""
+    email = (getattr(user, "email", "") or "").lower()
+    return bool(getattr(user, "is_admin", False) or email in _admin_email_set())
+
+
 async def require_admin_user(
     auth: dict = Depends(verify_api_key),
     db: AsyncSession = Depends(get_db),
@@ -287,7 +293,7 @@ async def require_admin_user(
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
 
-    if user.is_admin or user.email.lower() in _admin_email_set():
+    if is_admin_user(user):
         return user
 
     raise HTTPException(status_code=403, detail="Admin access required")

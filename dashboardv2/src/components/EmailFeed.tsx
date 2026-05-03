@@ -19,9 +19,10 @@ import {
   ChevronUp,
   Trash2,
   Undo2,
+  CalendarPlus,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { submitEmailFeedback, checkEmailPipeline, updateEmail } from '../lib/api';
+import { submitEmailFeedback, checkEmailPipeline, updateEmail, createInterviewFromEmail } from '../lib/api';
 import { DialogShell } from './DialogShell';
 
 interface EmailFeedProps {
@@ -152,6 +153,8 @@ export function EmailFeed({
   const [hiddenEmailIds, setHiddenEmailIds] = useState<Set<string>>(new Set());
   const [threadResolutionOverrides, setThreadResolutionOverrides] = useState<Record<string, boolean>>({});
   const [threadPendingDeletion, setThreadPendingDeletion] = useState<EmailThread | null>(null);
+  const [creatingInterview, setCreatingInterview] = useState(false);
+  const [interviewStatus, setInterviewStatus] = useState<string | null>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const collapsed = forceOpen ? false : isCollapsed;
@@ -313,6 +316,7 @@ export function EmailFeed({
     setSelectedThreadId(threadId);
     setSelectedMessageId(email.id);
     setPipelineAlert(null);
+    setInterviewStatus(null);
     if (!email.jobId && email.companyName) {
       try {
         const result = await checkEmailPipeline(email.id);
@@ -456,6 +460,20 @@ export function EmailFeed({
       source: 'other',
     });
     setPipelineAlert(null);
+  };
+
+  const handleCreateInterviewFromEmail = async () => {
+    if (!selectedMessage) return;
+    setCreatingInterview(true);
+    setInterviewStatus(null);
+    try {
+      await createInterviewFromEmail(selectedMessage.id);
+      setInterviewStatus('Interview added to your calendar view.');
+    } catch (err) {
+      setInterviewStatus(err instanceof Error ? err.message : 'Could not create the interview.');
+    } finally {
+      setCreatingInterview(false);
+    }
   };
 
   const renderThreadCard = (thread: (typeof allThreads)[number], allowExpand = true) => {
@@ -959,6 +977,16 @@ export function EmailFeed({
                       Take Action
                     </button>
                   )}
+                  {selectedMessage.category === 'interview_request' && (
+                    <button
+                      onClick={() => void handleCreateInterviewFromEmail()}
+                      disabled={creatingInterview}
+                      className="px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-xl shadow-sm hover:bg-emerald-700 transition-colors inline-flex items-center gap-2 disabled:opacity-50"
+                    >
+                      <CalendarPlus className="w-4 h-4" />
+                      {creatingInterview ? 'Adding...' : 'Add Interview'}
+                    </button>
+                  )}
                   <button
                     onClick={() => handleResolveThread(!selectedThread.resolved)}
                     className="px-4 py-2 bg-white border border-slate-200 text-slate-700 text-sm font-medium rounded-xl shadow-sm hover:bg-slate-50 transition-colors inline-flex items-center gap-2"
@@ -980,6 +1008,11 @@ export function EmailFeed({
                     <ThumbsDown className="w-4 h-4" />
                     Not Job Related
                   </button>
+                  {interviewStatus && (
+                    <div className="basis-full text-sm text-slate-500">
+                      {interviewStatus}
+                    </div>
+                  )}
                 </div>
               </div>
             </>

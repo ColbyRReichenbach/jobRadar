@@ -24,9 +24,13 @@ ATS_DOMAIN_TO_SOURCE = {
 
 # Classification → application status mapping
 STATUS_UPDATES = {
+    "rejection": "rejected",
     "rejected": "rejected",
     "interview_request": "interviewing",
     "offer": "offer",
+    "job_update": "applied",
+    "action_item": "applied",
+    "conversation": "applied",
     "under_review": "applied",
     "applied_confirmed": "applied",
     "action_required": "applied",

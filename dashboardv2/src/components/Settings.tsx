@@ -4,9 +4,11 @@ import { Bell, Mail, Save, Loader2, KeyRound, Copy, RefreshCw, Chrome, ExternalL
 import {
   ApiKeyStatus,
   ConsentStatus,
+  GmailSyncAuditRow,
   NotificationPrefs,
   fetchApiKeyStatus,
   fetchConsent,
+  fetchGmailSyncAudit,
   fetchNotificationPreferences,
   generateApiKey,
   updateConsent,
@@ -16,6 +18,18 @@ import {
 } from '../lib/api';
 import { useAuth } from '../lib/AuthContext';
 import { DEFAULT_LOCAL_NOTIFICATION_PREFS, LocalNotificationPrefs, loadLocalNotificationPrefs, saveLocalNotificationPrefs } from '../lib/localNotificationPrefs';
+
+function formatSyncReason(reason: string) {
+  return reason
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function decisionClassName(decision: string) {
+  if (decision === 'stored') return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+  if (decision === 'filtered') return 'bg-amber-50 text-amber-700 border-amber-200';
+  return 'bg-slate-50 text-slate-600 border-slate-200';
+}
 
 export function Settings() {
   const [prefs, setPrefs] = useState<NotificationPrefs>({
@@ -48,6 +62,7 @@ export function Settings() {
   const [consent, setConsent] = useState<ConsentStatus | null>(null);
   const [savingConsent, setSavingConsent] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [gmailAuditRows, setGmailAuditRows] = useState<GmailSyncAuditRow[]>([]);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteInput, setDeleteInput] = useState('');
   const [deleting, setDeleting] = useState(false);
@@ -70,11 +85,13 @@ export function Settings() {
         fetchApiKeyStatus(),
         fetchConsent(),
       ]);
+      const auditRows = await fetchGmailSyncAudit(25).catch(() => []);
       setPrefs(prefsData);
       setLocalPrefs(loadLocalNotificationPrefs());
       setPhone(prefsData.sms_phone || '');
       setApiKeyStatus(keyStatus);
       setConsent(consentData);
+      setGmailAuditRows(auditRows);
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'Failed to load settings.');
     } finally {
@@ -198,7 +215,7 @@ export function Settings() {
 
   return (
     <div className="flex-1 overflow-auto p-8">
-      <div className="max-w-2xl mx-auto">
+      <div className="max-w-4xl mx-auto">
         <h1 className="text-2xl font-serif font-bold text-slate-900 mb-1">Settings</h1>
         <p className="text-sm text-slate-500 mb-8">Manage notifications, browser alerts, and account tools.</p>
 
@@ -345,6 +362,68 @@ export function Settings() {
                 Receive a weekly summary of applications, interviews, and follow-ups
               </span>
             </label>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.075 }}
+            className="bg-white rounded-2xl border border-slate-200/60 p-6 shadow-sm"
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
+                <RefreshCw className="w-5 h-5 text-blue-600" />
+              </div>
+              <div>
+                <h2 className="text-base font-semibold text-slate-900">Gmail Sync Diagnostics</h2>
+                <p className="text-xs text-slate-500">Recent messages checked during Gmail sync</p>
+              </div>
+            </div>
+
+            {gmailAuditRows.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-slate-200 px-4 py-3 text-sm text-slate-500">
+                Sync decisions will appear here after the next Gmail sync.
+              </div>
+            ) : (
+              <div className="overflow-x-auto rounded-xl border border-slate-200">
+                <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+                  <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+                    <tr>
+                      <th className="px-4 py-3">Message</th>
+                      <th className="px-4 py-3">Decision</th>
+                      <th className="px-4 py-3">Reason</th>
+                      <th className="px-4 py-3">When</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 bg-white">
+                    {gmailAuditRows.map((row) => (
+                      <tr key={row.id}>
+                        <td className="max-w-[24rem] px-4 py-3">
+                          <div className="font-medium text-slate-900 truncate">
+                            {row.subject || '(no subject)'}
+                          </div>
+                          <div className="text-xs text-slate-500 truncate">
+                            {[row.sender, row.sender_email || row.sender_domain].filter(Boolean).join(' • ') || 'Gmail message'}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex rounded-full border px-2 py-1 text-xs font-semibold capitalize ${decisionClassName(row.decision)}`}>
+                            {row.decision}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {formatSyncReason(row.reason)}
+                          {row.classification ? <span className="block text-xs text-slate-400">{formatSyncReason(row.classification)}</span> : null}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">
+                          {row.created_at ? new Date(row.created_at).toLocaleString() : 'Unknown'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </motion.div>
 
           <motion.div

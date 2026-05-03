@@ -47,10 +47,11 @@ export function Sidebar({ activeTab, setActiveTab, onGmailSync, collapsed = fals
     try {
       const result = await syncGmail();
       onGmailSync?.();
+      const checkedCount = result.stats?.fetched ?? result.total_found;
       setSyncMessage(
         result.new_emails > 0
-          ? `Synced ${result.new_emails} new emails from Gmail.`
-          : 'Gmail sync finished with no new emails.'
+          ? `Synced ${result.new_emails} new emails from ${checkedCount} checked.`
+          : `Gmail sync checked ${checkedCount} emails with no new matches.`
       );
     } catch (err) {
       setSyncError(err instanceof Error ? err.message : 'Gmail sync failed.');

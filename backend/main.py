@@ -39,6 +39,7 @@ from backend.dependencies import (
     generate_api_key,
     get_current_user,
     hash_api_key,
+    is_admin_user,
     require_admin_user,
     set_refresh_cookie,
     store_auth_code,
@@ -64,6 +65,7 @@ from backend.models import (
     DataConsent,
     EmailEvent,
     EmailFeedback,
+    EmailSyncAudit,
     ExtractionChangelog,
     ExtractionReport,
     GmailToken,
@@ -2448,7 +2450,7 @@ async def get_me(current_user: User = Depends(get_current_user)):
         "email": current_user.email,
         "name": current_user.name,
         "picture": current_user.picture,
-        "is_admin": current_user.is_admin,
+        "is_admin": is_admin_user(current_user),
         "gmail_connected": current_user.gmail_connected,
         "calendar_connected": current_user.calendar_connected,
         "data_consent_accepted_at": current_user.data_consent_accepted_at.isoformat() if current_user.data_consent_accepted_at else None,
@@ -2658,6 +2660,8 @@ async def validate_api_key(request: Request, auth: dict = Depends(verify_api_key
 @limiter.limit(_gmail_sync_rate_limit, error_message="Too many Gmail sync requests. Try again in a minute.")
 async def sync_gmail(
     request: Request,
+    days: Optional[int] = Query(None, ge=1, le=365),
+    max_messages: Optional[int] = Query(None, ge=1, le=500),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -2741,14 +2745,70 @@ async def sync_gmail(
     feedback_result = await db.execute(feedback_stmt)
     blocklist = {row[0] for row in feedback_result.all()}
 
-    # Fetch last 30 days of emails — let classifier decide relevance
-    messages_response = service.users().messages().list(
-        userId="me", q="newer_than:30d", maxResults=50
-    ).execute()
+    sync_days = days or int(os.getenv("APPTRAIL_GMAIL_SYNC_DAYS", "90"))
+    sync_limit = max_messages or int(os.getenv("APPTRAIL_GMAIL_SYNC_MAX_MESSAGES", "250"))
+    sync_days = max(1, min(sync_days, 365))
+    sync_limit = max(1, min(sync_limit, 500))
+    sync_query = f"newer_than:{sync_days}d"
 
-    messages = messages_response.get("messages", [])
+    messages: list[dict] = []
+    next_page_token = None
+    while len(messages) < sync_limit:
+        request_kwargs = {
+            "userId": "me",
+            "q": sync_query,
+            "maxResults": min(100, sync_limit - len(messages)),
+        }
+        if next_page_token:
+            request_kwargs["pageToken"] = next_page_token
+        messages_response = service.users().messages().list(**request_kwargs).execute()
+        messages.extend(messages_response.get("messages", []))
+        next_page_token = messages_response.get("nextPageToken")
+        if not next_page_token:
+            break
+
+    sync_run_id = _uuid.uuid4()
+    sync_stats = {
+        "fetched": len(messages),
+        "classified": 0,
+        "stored": 0,
+        "skipped_existing": 0,
+        "skipped_blocked": 0,
+        "skipped_noise": 0,
+        "skipped_not_relevant": 0,
+    }
     new_count = 0
     emails_synced = []
+
+    def record_sync_audit(
+        *,
+        gmail_message_id: str | None,
+        thread_id: str | None = None,
+        sender: str | None = None,
+        sender_email: str | None = None,
+        sender_domain: str | None = None,
+        subject: str | None = None,
+        received_at: datetime | None = None,
+        decision: str,
+        reason: str,
+        classification: str | None = None,
+        email_event_id=None,
+    ) -> None:
+        db.add(EmailSyncAudit(
+            sync_run_id=sync_run_id,
+            user_id=user_id,
+            email_event_id=email_event_id,
+            gmail_message_id=gmail_message_id,
+            thread_id=thread_id,
+            sender=sender,
+            sender_email=sender_email,
+            sender_domain=sender_domain,
+            subject=subject,
+            received_at=received_at,
+            decision=decision,
+            reason=reason,
+            classification=classification,
+        ))
 
     app_match_stmt = (
         select(Application.id, Application.company, Company.domain)
@@ -2761,9 +2821,18 @@ async def sync_gmail(
     for msg_meta in messages:
         msg_id = msg_meta["id"]
 
-        existing_stmt = select(EmailEvent).where(EmailEvent.gmail_message_id == msg_id)
+        existing_stmt = select(EmailEvent).where(
+            EmailEvent.user_id == user_id,
+            EmailEvent.gmail_message_id == msg_id,
+        )
         existing_result = await db.execute(existing_stmt)
         if existing_result.scalar_one_or_none():
+            sync_stats["skipped_existing"] += 1
+            record_sync_audit(
+                gmail_message_id=msg_id,
+                decision="skipped",
+                reason="already_synced",
+            )
             continue
 
         msg = service.users().messages().get(userId="me", id=msg_id, format="full").execute()
@@ -2779,6 +2848,17 @@ async def sync_gmail(
 
         # Skip blocked domains
         if sender_domain in blocklist:
+            sync_stats["skipped_blocked"] += 1
+            record_sync_audit(
+                gmail_message_id=msg_id,
+                thread_id=msg.get("threadId", ""),
+                sender=sender_name,
+                sender_email=sender_email_addr,
+                sender_domain=sender_domain,
+                subject=subject,
+                decision="skipped",
+                reason="user_blocked_sender_domain",
+            )
             continue
 
         # Parse date
@@ -2804,6 +2884,18 @@ async def sync_gmail(
             "subject": subject,
             "body": body_text,
         }):
+            sync_stats["skipped_noise"] += 1
+            record_sync_audit(
+                gmail_message_id=msg_id,
+                thread_id=msg.get("threadId", ""),
+                sender=sender_name,
+                sender_email=sender_email_addr,
+                sender_domain=sender_domain,
+                subject=subject,
+                received_at=received_at,
+                decision="skipped",
+                reason="obvious_noise",
+            )
             continue
 
         # Classify with LLM (or fallback if AI consent not granted)
@@ -2814,11 +2906,25 @@ async def sync_gmail(
             sender_email=sender_email_addr,
             ai_enabled=ai_enabled,
         )
+        sync_stats["classified"] += 1
 
         cls = classification.get("classification", "job_update")
 
         # Skip not_relevant
         if cls == "not_relevant":
+            sync_stats["skipped_not_relevant"] += 1
+            record_sync_audit(
+                gmail_message_id=msg_id,
+                thread_id=msg.get("threadId", ""),
+                sender=sender_name,
+                sender_email=sender_email_addr,
+                sender_domain=sender_domain,
+                subject=subject,
+                received_at=received_at,
+                decision="filtered",
+                reason="classifier_not_relevant",
+                classification=cls,
+            )
             continue
 
         # Company identity
@@ -2883,6 +2989,20 @@ async def sync_gmail(
         db.add(email_event)
         await db.flush()
         await index_record(db, email_event)
+        sync_stats["stored"] += 1
+        record_sync_audit(
+            gmail_message_id=msg_id,
+            thread_id=email_event.thread_id,
+            sender=sender_name,
+            sender_email=sender_email_addr,
+            sender_domain=sender_domain,
+            subject=subject,
+            received_at=received_at,
+            decision="stored",
+            reason="job_related",
+            classification=cls,
+            email_event_id=email_event.id,
+        )
 
         action_path = "/conversations" if email_event.email_type == "conversation" else "/emails"
         action_tab = "conversations" if email_event.email_type == "conversation" else "emails"
@@ -2924,15 +3044,62 @@ async def sync_gmail(
     if current_user.notifications_started_at is None:
         current_user.notifications_started_at = datetime.now(timezone.utc)
 
-    if new_count > 0 or current_user.notifications_started_at is not None:
+    if messages or new_count > 0 or current_user.notifications_started_at is not None:
         await db.commit()
 
     return {
         "status": "ok",
+        "sync_run_id": str(sync_run_id),
         "new_emails": new_count,
         "total_found": len(messages),
+        "sync_days": sync_days,
+        "max_messages": sync_limit,
+        "stats": sync_stats,
         "emails": emails_synced[:10],
     }
+
+
+@app.get("/api/gmail/sync/audit")
+async def list_gmail_sync_audit(
+    sync_run_id: Optional[str] = Query(None),
+    limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    """Return recent Gmail sync decisions for the authenticated user's mailbox."""
+    user_id = _require_user_id(auth)
+    stmt = select(EmailSyncAudit).where(EmailSyncAudit.user_id == user_id)
+    if sync_run_id:
+        import uuid as _uuid
+        try:
+            run_uuid = _uuid.UUID(sync_run_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid sync_run_id") from exc
+        stmt = stmt.where(EmailSyncAudit.sync_run_id == run_uuid)
+
+    stmt = stmt.order_by(EmailSyncAudit.created_at.desc()).offset(offset).limit(limit)
+    result = await db.execute(stmt)
+    rows = result.scalars().all()
+    return [
+        {
+            "id": str(row.id),
+            "sync_run_id": str(row.sync_run_id),
+            "email_event_id": str(row.email_event_id) if row.email_event_id else None,
+            "gmail_message_id": row.gmail_message_id,
+            "thread_id": row.thread_id,
+            "sender": row.sender,
+            "sender_email": row.sender_email,
+            "sender_domain": row.sender_domain,
+            "subject": row.subject,
+            "received_at": row.received_at.isoformat() if row.received_at else None,
+            "decision": row.decision,
+            "reason": row.reason,
+            "classification": row.classification,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+        }
+        for row in rows
+    ]
 
 
 @app.post("/api/calendar/sync")

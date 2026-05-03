@@ -46,6 +46,20 @@ async def test_non_admin_cannot_read_ai_metrics(client, db_session):
 
 
 @pytest.mark.asyncio
+async def test_auth_me_reports_env_admin_allowlist(client, db_session, monkeypatch):
+    user = await _create_non_admin_user(db_session)
+    monkeypatch.setenv("APPTRAIL_ADMIN_EMAILS", user.email)
+
+    response = await client.get(
+        "/api/auth/me",
+        headers=make_auth_header(user.id, user.email, user.name),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["is_admin"] is True
+
+
+@pytest.mark.asyncio
 async def test_authenticated_user_can_create_owned_extraction_report(client, db_session):
     user = await _create_non_admin_user(db_session)
 

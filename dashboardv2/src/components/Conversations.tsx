@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Search, Clock, AlertCircle, CheckCircle2, MessageSquare, ArrowRight, Send, ChevronDown, ChevronUp, Undo2, Trash2, Users } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { fetchReplyContext, sendEmail, generateDraft, updateEmail } from '../lib/api';
+import { useAuth } from '../lib/AuthContext';
 
 interface ReplyComposerState {
   to: string;
@@ -38,6 +39,7 @@ interface ConversationsProps {
 }
 
 export function Conversations({ emails, jobs, focusRequest }: ConversationsProps) {
+  const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<'all' | 'needs_reply' | 'waiting' | 'done'>('all');
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
@@ -104,32 +106,18 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
     [emails, hiddenEmailIds, localSentEmails, resolvedThreadOverrides],
   );
 
-  const conversations = effectiveEmails.filter((email) => {
+  const conversationEmails = useMemo(() => effectiveEmails.filter((email) => {
     if (email.type !== 'conversation' || email.hidden) return false;
     const senderDomain = (email.senderDomain || email.senderEmail?.split('@')[1] || '').toLowerCase();
     const noisyByDomain = senderDomain ? noisyConversationDomains.has(senderDomain) : false;
     const noisyByContent = noisyConversationPattern.test(`${email.subject} ${email.snippet}`);
-    if (email.inPipeline || email.requiresFollowUp) return true;
+    if (email.inPipeline || email.requiresFollowUp || email.isFromUser) return true;
     return !noisyByDomain && !noisyByContent;
-  });
+  }), [effectiveEmails]);
 
-  const filteredConversations = conversations.filter(email => {
-    const matchesSearch = email.sender.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          email.subject.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          jobs.find(j => j.id === email.jobId)?.company.toLowerCase().includes(searchQuery.toLowerCase());
-
-    if (!matchesSearch) return false;
-
-    if (filter === 'needs_reply') return email.requiresFollowUp;
-    if (filter === 'waiting') return !email.requiresFollowUp;
-    if (filter === 'done') return !!email.resolved;
-
-    return true;
-  });
-
-  const threads = useMemo(() => {
+  const allThreads = useMemo(() => {
     const grouped = new Map<string, Email[]>();
-    filteredConversations.forEach(email => {
+    conversationEmails.forEach(email => {
       const key = email.threadId || email.id;
       if (!grouped.has(key)) {
         grouped.set(key, []);
@@ -150,9 +138,40 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
         };
       })
       .sort((a, b) => new Date(b.latest.date).getTime() - new Date(a.latest.date).getTime());
-  }, [filteredConversations, resolvedThreadOverrides]);
+  }, [conversationEmails, resolvedThreadOverrides]);
 
-  const selectedThread = threads.find(t => t.id === selectedThreadId);
+  const threads = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return allThreads.filter((thread) => {
+      const matchesSearch =
+        !query ||
+        thread.emails.some((email) => {
+          const job = jobs.find((j) => j.id === email.jobId);
+          return [
+            email.sender,
+            email.senderEmail,
+            email.subject,
+            email.snippet,
+            email.companyName,
+            job?.company,
+            job?.role,
+          ]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase()
+            .includes(query);
+        });
+
+      if (!matchesSearch) return false;
+      if (filter === 'done') return thread.resolved;
+      if (thread.resolved) return filter === 'all';
+      if (filter === 'needs_reply') return !thread.latest.isFromUser;
+      if (filter === 'waiting') return !!thread.latest.isFromUser;
+      return true;
+    });
+  }, [allThreads, filter, jobs, searchQuery]);
+
+  const selectedThread = allThreads.find(t => t.id === selectedThreadId);
   const activeThreads = threads.filter((thread) => !thread.resolved);
   const doneThreads = threads.filter((thread) => thread.resolved);
   const selectedMessage =
@@ -257,11 +276,11 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
 
   useEffect(() => {
     if (!selectedThreadId) return;
-    if (!threads.some((thread) => thread.id === selectedThreadId)) {
+    if (!allThreads.some((thread) => thread.id === selectedThreadId)) {
       setSelectedThreadId(null);
       setSelectedMessageId(null);
     }
-  }, [selectedThreadId, threads]);
+  }, [allThreads, selectedThreadId]);
 
   useEffect(() => {
     if (!selectedThread || selectedThread.emails.some((email) => email.id === selectedMessageId)) {
@@ -278,7 +297,7 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
         icon: <CheckCircle2 className="w-3 h-3" />,
       };
     }
-    if (thread.latest.requiresFollowUp) {
+    if (!thread.latest.isFromUser) {
       return {
         label: 'Needs Reply',
         className: 'bg-amber-50 text-amber-700',
@@ -574,7 +593,7 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-3 md:p-4 lg:p-5">
+                <div className="flex-1 overflow-y-auto p-3 md:p-4 lg:p-5">
               <div className="mx-auto max-w-[72rem] space-y-3">
                 {selectedThread.latest.requiresFollowUp && !selectedThread.resolved && (
                   <div className="flex flex-col gap-3 rounded-xl border border-orange-200 bg-orange-50 p-4 sm:flex-row sm:items-start">
@@ -653,7 +672,7 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
                         )}
                         <div className="min-w-0">
                           <div className="font-bold text-slate-900 truncate">{email.isFromUser ? 'You' : email.sender}</div>
-                          <div className="text-xs text-slate-500 truncate">{email.isFromUser ? 'you@example.com' : (email.senderEmail || 'unknown@example.com')}</div>
+                          <div className="text-xs text-slate-500 truncate">{email.isFromUser ? (user?.email || 'Your email') : (email.senderEmail || 'unknown@example.com')}</div>
                         </div>
                       </div>
                       <span className="text-xs text-slate-400 font-medium shrink-0 sm:text-right">

@@ -222,6 +222,42 @@ export interface ApiKeyCreateResponse {
   created_at: string;
 }
 
+export interface GmailSyncStats {
+  fetched: number;
+  classified: number;
+  stored: number;
+  skipped_existing: number;
+  skipped_blocked: number;
+  skipped_noise: number;
+  skipped_not_relevant: number;
+}
+
+export interface GmailSyncResult {
+  sync_run_id?: string;
+  new_emails: number;
+  total_found: number;
+  sync_days?: number;
+  max_messages?: number;
+  stats?: GmailSyncStats;
+}
+
+export interface GmailSyncAuditRow {
+  id: string;
+  sync_run_id: string;
+  email_event_id: string | null;
+  gmail_message_id: string | null;
+  thread_id: string | null;
+  sender: string | null;
+  sender_email: string | null;
+  sender_domain: string | null;
+  subject: string | null;
+  received_at: string | null;
+  decision: 'stored' | 'skipped' | 'filtered' | string;
+  reason: string;
+  classification: string | null;
+  created_at: string | null;
+}
+
 export interface GoogleAuthOptions {
   connectGmail?: boolean;
   connectCalendar?: boolean;
@@ -338,7 +374,7 @@ export async function fetchMe(): Promise<UserProfile | null> {
   }
 }
 
-export async function syncGmail(): Promise<{ new_emails: number; total_found: number }> {
+export async function syncGmail(): Promise<GmailSyncResult> {
   const res = await apiFetch(`${API_BASE}/api/gmail/sync`, {
     method: 'POST',
     headers: authHeaders(),
@@ -347,6 +383,13 @@ export async function syncGmail(): Promise<{ new_emails: number; total_found: nu
     const err = await res.json().catch(() => ({ detail: 'Sync failed' }));
     throw new Error(err.detail || 'Gmail sync failed');
   }
+  return await res.json();
+}
+
+export async function fetchGmailSyncAudit(limit = 50): Promise<GmailSyncAuditRow[]> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  const res = await apiFetch(`${API_BASE}/api/gmail/sync/audit?${params.toString()}`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to load Gmail sync audit'));
   return await res.json();
 }
 
@@ -919,6 +962,15 @@ export async function createInterview(data: any): Promise<any> {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, `Failed to create interview: ${res.status}`));
+  return await res.json();
+}
+
+export async function createInterviewFromEmail(emailId: string): Promise<any> {
+  const res = await apiFetch(`${API_BASE}/api/interviews/from-email/${encodeURIComponent(emailId)}`, {
+    method: 'POST',
+    headers: authHeaders(),
   });
   if (!res.ok) throw new Error(await readErrorDetail(res, `Failed to create interview: ${res.status}`));
   return await res.json();
