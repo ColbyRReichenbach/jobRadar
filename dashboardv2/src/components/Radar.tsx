@@ -511,7 +511,7 @@ export function Radar({ focusRequest }: RadarProps) {
           ) : null}
         </div>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(280px,340px)_minmax(0,1fr)] min-[1900px]:grid-cols-[minmax(280px,340px)_minmax(420px,0.95fr)_minmax(460px,1.15fr)]">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(320px,420px)_minmax(0,1fr)]">
         <div className="space-y-4">
           <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-2">
             <h2 className="font-semibold text-slate-800">Trackers</h2>
@@ -619,7 +619,7 @@ export function Radar({ focusRequest }: RadarProps) {
           </div>
         </div>
 
-        <div className="space-y-4 xl:col-span-2 min-[1900px]:col-span-1">
+        <div className="space-y-4 xl:col-span-2">
           {surface === 'signals' ? (
             <>
               <div className="rounded-2xl border border-slate-200 bg-white p-4">
