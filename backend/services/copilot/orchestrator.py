@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from typing import Any
 
@@ -16,6 +17,16 @@ from backend.services.copilot.retrieval import retrieve_copilot_context
 from backend.services.copilot.schemas import CopilotCitation
 
 COPILOT_TASK = "copilot_answer"
+
+
+class CopilotModelUnavailableError(RuntimeError):
+    """Raised when Copilot cannot produce a governed OpenAI-backed answer."""
+
+
+def search_fallback_allowed() -> bool:
+    if os.getenv("TESTING") == "1":
+        return True
+    return os.getenv("COPILOT_ALLOW_SEARCH_FALLBACK", "false").lower() == "true"
 
 
 def build_copilot_prompt(*, question: str, citations: list[CopilotCitation]) -> str:
@@ -89,8 +100,10 @@ async def answer_copilot_question(
 ) -> dict[str, Any]:
     citations = await retrieve_copilot_context(db, user_id=user_id, query=question, source_types=source_types)
     if not ai_orchestrator.has_configured_api_key():
-        ai_orchestrator.record_fallback(COPILOT_TASK, "api_key_not_configured", {"surface": "copilot"})
-        return build_search_fallback_answer(question, citations)
+        if search_fallback_allowed():
+            ai_orchestrator.record_fallback(COPILOT_TASK, "api_key_not_configured", {"surface": "copilot"})
+            return build_search_fallback_answer(question, citations)
+        raise CopilotModelUnavailableError("OPENAI_API_KEY is not configured for Copilot")
 
     try:
         result = await ai_orchestrator.run_json_task_with_metadata(
@@ -121,6 +134,8 @@ async def answer_copilot_question(
             "prompt_version": result.prompt_version,
             "model_call_id": str(result.model_call_id) if result.model_call_id else None,
         }
-    except (InvalidCitationError, Exception) as exc:  # noqa: BLE001
-        ai_orchestrator.record_fallback(COPILOT_TASK, "model_failure_or_invalid_citation", {"surface": "copilot", "error": str(exc)[:300]})
-        return build_search_fallback_answer(question, citations)
+    except Exception as exc:  # noqa: BLE001
+        if search_fallback_allowed():
+            ai_orchestrator.record_fallback(COPILOT_TASK, "model_failure_or_invalid_citation", {"surface": "copilot", "error": str(exc)[:300]})
+            return build_search_fallback_answer(question, citations)
+        raise CopilotModelUnavailableError("Copilot OpenAI answer failed validation or generation") from exc

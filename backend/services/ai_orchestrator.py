@@ -264,7 +264,7 @@ If a field is not found, set it to null.
         prompt_version="v1",
         service_path="backend/services/research_radar/llm.py",
         purpose="Turn a Radar tracker plus AppTrail profile context into a strict research brief schema.",
-        fallback_behavior="Deterministic brief builder from tracker fields, saved profile context, and role interests.",
+        fallback_behavior="Production fails closed if OpenAI is unavailable; deterministic fallback is limited to tests/evals.",
         user_prompt_template="See `backend/services/research_radar/prompts.py::build_brief_normalization_prompt`.",
         system_prompt="""You normalize job-search research trackers into strict JSON.
 Do not add narrative. Return only valid JSON that matches the requested schema.
@@ -280,7 +280,7 @@ Prefer explicit tracker inputs, then use the AppTrail profile context to fill re
         prompt_version="v1",
         service_path="backend/services/research_radar/llm.py",
         purpose="Convert a normalized Radar brief into bounded research tasks with search queries and priorities.",
-        fallback_behavior="Deterministic planner based on tracker companies, role titles, and domains with depth-based caps.",
+        fallback_behavior="Production fails closed if OpenAI is unavailable; deterministic fallback is limited to tests/evals.",
         user_prompt_template="See `backend/services/research_radar/prompts.py::build_research_plan_prompt`.",
         system_prompt="""You plan bounded web research tasks for a job-search assistant.
 Return only valid JSON with a `tasks` array.
@@ -296,7 +296,7 @@ Do not create more tasks than requested. Each task must be concrete, externally 
         prompt_version="v1",
         service_path="backend/services/research_radar/llm.py",
         purpose="Extract grounded evidence items from fetched public documents for Radar reports.",
-        fallback_behavior="Deterministic classifier over document title, path, and excerpt.",
+        fallback_behavior="Production fails closed if OpenAI is unavailable; deterministic fallback is limited to tests/evals.",
         user_prompt_template="See `backend/services/research_radar/prompts.py::build_evidence_extraction_prompt`.",
         system_prompt="""You extract only grounded evidence from public documents for a job-search research report.
 Return only valid JSON with an `evidence_items` array.
@@ -312,7 +312,7 @@ Every evidence item must be directly supported by the supplied document and must
         prompt_version="v1",
         service_path="backend/services/research_radar/llm.py",
         purpose="Write the structured Radar research report from validated evidence and diff data.",
-        fallback_behavior="Deterministic section builder using the strongest evidence items and diff summary.",
+        fallback_behavior="Production fails closed if OpenAI is unavailable; deterministic fallback is limited to tests/evals.",
         user_prompt_template="See `backend/services/research_radar/prompts.py::build_report_prompt`.",
         system_prompt="""You write grounded research reports for a job-search assistant.
 Return only valid JSON with report title, summary markdown, and sections.
@@ -328,7 +328,7 @@ Every section must stay inside the provided evidence. Do not invent companies, r
         prompt_version="v1",
         service_path="backend/services/research_radar/llm.py",
         purpose="Check report grounding, citation coverage, and tracker fit before Radar exposes the report as ready.",
-        fallback_behavior="Deterministic verification of section presence and citation coverage.",
+        fallback_behavior="Production fails closed if OpenAI is unavailable; deterministic fallback is limited to tests/evals.",
         user_prompt_template="See `backend/services/research_radar/prompts.py::build_verification_prompt`.",
         system_prompt="""You verify whether a structured research report is grounded in its evidence.
 Return only valid JSON describing unsupported claims, citation coverage, tracker fit, hallucination risk, and final readiness.""",
@@ -343,7 +343,7 @@ Return only valid JSON describing unsupported claims, citation coverage, tracker
         prompt_version="copilot_v1",
         service_path="backend/services/copilot/orchestrator.py",
         purpose="Answer job-search questions using only backend-retrieved, user-owned context with citations.",
-        fallback_behavior="Search-only answer using the top retrieved documents and no model call.",
+        fallback_behavior="Production fails closed if OpenAI is unavailable; search-only fallback is limited to tests/evals.",
         user_prompt_template="See `backend/services/copilot/orchestrator.py::build_copilot_prompt`.",
         system_prompt="""You are AppTrail Copilot, a read-only job-search assistant.
 Use only the provided retrieved context.
@@ -359,6 +359,7 @@ Return only valid JSON with answer, citations, and suggested_actions.""",
 
 
 client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+_client_api_key: str | None = os.getenv("OPENAI_API_KEY")
 _AI_METRICS: dict[str, dict[str, Any]] = {}
 
 
@@ -374,6 +375,18 @@ def has_configured_api_key() -> bool:
         return False
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     return bool(api_key and api_key != "test-key")
+
+
+def get_openai_client() -> openai.AsyncOpenAI:
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        raise RuntimeError("OPENAI_API_KEY is not configured")
+
+    global client, _client_api_key
+    if _client_api_key != api_key:
+        client = openai.AsyncOpenAI(api_key=api_key)
+        _client_api_key = api_key
+    return client
 
 
 def parse_json_payload(content: str) -> dict[str, Any]:
@@ -529,6 +542,7 @@ def render_prompt_registry_markdown() -> str:
             "|------|-------|----------|-----|",
             "| High volume / Low cost | `gpt-4o-mini` | Email classifier, Resume parser | Runs on every email/resume; needs speed + low cost |",
             "| High quality | `gpt-4o` | Draft writer, Resume tailor, legacy extraction | User-facing output; quality matters more than cost |",
+            "| Governed AI features | `gpt-5.x` | Copilot and Radar research reports | Production requires OpenAI and fails closed rather than silently substituting fallback outputs |",
             "",
         ]
     )
@@ -580,7 +594,7 @@ async def run_json_task_with_metadata(
                 request_kwargs["messages"].append({"role": "system", "content": task_config.system_prompt})
             request_kwargs["messages"].append({"role": "user", "content": user_message})
 
-            response = await client.chat.completions.create(**request_kwargs)
+            response = await get_openai_client().chat.completions.create(**request_kwargs)
             parsed = parse_json_payload(response.choices[0].message.content or "")
             tokens_in, tokens_out = _extract_usage_counts(response)
             duration_ms = round((time.perf_counter() - started) * 1000, 2)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 from datetime import datetime, timezone
 from typing import Any
@@ -24,6 +25,21 @@ from backend.services.research_radar.schemas import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class ResearchModelUnavailableError(RuntimeError):
+    """Raised when Radar research cannot produce governed OpenAI-backed output."""
+
+
+def deterministic_fallbacks_allowed() -> bool:
+    if os.getenv("TESTING") == "1":
+        return True
+    return os.getenv("RESEARCH_RADAR_ALLOW_DETERMINISTIC_FALLBACKS", "false").lower() == "true"
+
+
+def _require_openai(task: str) -> None:
+    if not ai_orchestrator.has_configured_api_key():
+        raise ResearchModelUnavailableError(f"OPENAI_API_KEY is not configured for {task}")
 
 
 def _task_call_metric(result: ai_orchestrator.AiTaskRunResult) -> dict[str, Any]:
@@ -50,6 +66,19 @@ def _record_llm_fallback(
         "research_radar_llm_fallback task=%s reason=%s metadata=%s error=%s",
         task,
         reason,
+        metadata,
+        repr(exc),
+    )
+
+
+def _record_llm_failure(
+    task: str,
+    metadata: dict[str, Any],
+    exc: Exception,
+) -> None:
+    logger.warning(
+        "research_radar_llm_failure task=%s metadata=%s error=%s",
+        task,
         metadata,
         repr(exc),
     )
@@ -372,7 +401,9 @@ async def normalize_brief_with_metrics(
 ) -> tuple[NormalizedResearchBrief, dict[str, Any] | None]:
     fallback = deterministic_normalized_brief(tracker, user_context)
     if not ai_orchestrator.has_configured_api_key():
-        return fallback, None
+        if deterministic_fallbacks_allowed():
+            return fallback, None
+        _require_openai("research_brief_normalizer")
 
     metadata = {"surface": "research_radar", "profile_name": tracker.get("name")}
     try:
@@ -383,8 +414,11 @@ async def normalize_brief_with_metrics(
         )
         return _normalize_brief_payload(result.payload, tracker=tracker, user_context=user_context), _task_call_metric(result)
     except Exception as exc:  # noqa: BLE001
-        _record_llm_fallback("research_brief_normalizer", "task_failure_or_invalid_payload", metadata, exc)
-        return fallback, None
+        if deterministic_fallbacks_allowed():
+            _record_llm_fallback("research_brief_normalizer", "task_failure_or_invalid_payload", metadata, exc)
+            return fallback, None
+        _record_llm_failure("research_brief_normalizer", metadata, exc)
+        raise ResearchModelUnavailableError("Radar brief normalization failed") from exc
 
 
 async def normalize_brief(tracker: dict[str, Any], user_context: dict[str, Any]) -> NormalizedResearchBrief:
@@ -458,7 +492,9 @@ async def plan_research_tasks_with_metrics(
 ) -> tuple[list[ResearchSearchTask], dict[str, Any] | None]:
     fallback = deterministic_research_plan(normalized_brief, depth, max_queries)
     if not ai_orchestrator.has_configured_api_key():
-        return fallback, None
+        if deterministic_fallbacks_allowed():
+            return fallback, None
+        _require_openai("research_planner")
 
     metadata = {"surface": "research_radar", "depth": depth}
     try:
@@ -479,8 +515,11 @@ async def plan_research_tasks_with_metrics(
             raise ValueError("research_planner returned no tasks")
         return tasks, _task_call_metric(result)
     except Exception as exc:  # noqa: BLE001
-        _record_llm_fallback("research_planner", "task_failure_or_invalid_payload", metadata, exc)
-        return fallback, None
+        if deterministic_fallbacks_allowed():
+            _record_llm_fallback("research_planner", "task_failure_or_invalid_payload", metadata, exc)
+            return fallback, None
+        _record_llm_failure("research_planner", metadata, exc)
+        raise ResearchModelUnavailableError("Radar research planning failed") from exc
 
 
 async def plan_research_tasks(normalized_brief: dict[str, Any], depth: str, max_queries: int) -> list[ResearchSearchTask]:
@@ -537,7 +576,9 @@ async def extract_evidence_with_metrics(
 ) -> tuple[list[ExtractedEvidence], dict[str, Any] | None]:
     fallback = deterministic_extract_evidence(normalized_brief, source_document)
     if not ai_orchestrator.has_configured_api_key():
-        return fallback, None
+        if deterministic_fallbacks_allowed():
+            return fallback, None
+        _require_openai("research_evidence_extractor")
 
     metadata = {"surface": "research_radar", "source_url": source_document.get("source_url")}
     try:
@@ -552,8 +593,11 @@ async def extract_evidence_with_metrics(
             raise ValueError("research_evidence_extractor returned a non-list evidence payload")
         return [_normalize_evidence_payload(item, source_document) for item in evidence_payload if isinstance(item, dict)], _task_call_metric(result)
     except Exception as exc:  # noqa: BLE001
-        _record_llm_fallback("research_evidence_extractor", "task_failure_or_invalid_payload", metadata, exc)
-        return fallback, None
+        if deterministic_fallbacks_allowed():
+            _record_llm_fallback("research_evidence_extractor", "task_failure_or_invalid_payload", metadata, exc)
+            return fallback, None
+        _record_llm_failure("research_evidence_extractor", metadata, exc)
+        raise ResearchModelUnavailableError("Radar evidence extraction failed") from exc
 
 
 async def extract_evidence(normalized_brief: dict[str, Any], source_document: dict[str, Any]) -> list[ExtractedEvidence]:
@@ -621,7 +665,9 @@ async def write_report_with_metrics(
 ) -> tuple[FinalReportDraft, list[ReportSectionDraft], dict[str, Any] | None]:
     fallback_report, fallback_sections = deterministic_report(normalized_brief, diff_summary, evidence_items)
     if not ai_orchestrator.has_configured_api_key():
-        return fallback_report, fallback_sections, None
+        if deterministic_fallbacks_allowed():
+            return fallback_report, fallback_sections, None
+        _require_openai("research_report_writer")
 
     metadata = {"surface": "research_radar", "evidence_count": len(evidence_items)}
     try:
@@ -662,8 +708,11 @@ async def write_report_with_metrics(
         )
         return report, sections, _task_call_metric(result)
     except Exception as exc:  # noqa: BLE001
-        _record_llm_fallback("research_report_writer", "task_failure_or_invalid_payload", metadata, exc)
-        return fallback_report, fallback_sections, None
+        if deterministic_fallbacks_allowed():
+            _record_llm_fallback("research_report_writer", "task_failure_or_invalid_payload", metadata, exc)
+            return fallback_report, fallback_sections, None
+        _record_llm_failure("research_report_writer", metadata, exc)
+        raise ResearchModelUnavailableError("Radar report writing failed") from exc
 
 
 async def write_report(normalized_brief: dict[str, Any], diff_summary: dict[str, Any], evidence_items: list[dict[str, Any]]) -> tuple[FinalReportDraft, list[ReportSectionDraft]]:
@@ -704,7 +753,9 @@ async def verify_report_with_metrics(
 ) -> tuple[VerificationResult, dict[str, Any] | None]:
     fallback = deterministic_verification(report_sections, evidence_items)
     if not ai_orchestrator.has_configured_api_key():
-        return fallback, None
+        if deterministic_fallbacks_allowed():
+            return fallback, None
+        _require_openai("research_report_verifier")
 
     metadata = {"surface": "research_radar", "section_count": len(report_sections)}
     try:
@@ -720,8 +771,11 @@ async def verify_report_with_metrics(
         )
         return _normalize_verification_payload(result.payload, fallback), _task_call_metric(result)
     except Exception as exc:  # noqa: BLE001
-        _record_llm_fallback("research_report_verifier", "task_failure_or_invalid_payload", metadata, exc)
-        return fallback, None
+        if deterministic_fallbacks_allowed():
+            _record_llm_fallback("research_report_verifier", "task_failure_or_invalid_payload", metadata, exc)
+            return fallback, None
+        _record_llm_failure("research_report_verifier", metadata, exc)
+        raise ResearchModelUnavailableError("Radar report verification failed") from exc
 
 
 async def verify_report(normalized_brief: dict[str, Any], report_sections: list[dict[str, Any]], evidence_items: list[dict[str, Any]]) -> VerificationResult:

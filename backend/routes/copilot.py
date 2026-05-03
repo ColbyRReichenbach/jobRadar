@@ -14,7 +14,7 @@ from backend.models import CopilotConversation, CopilotFeedback, CopilotMessage
 from backend.services.copilot.budget import enforce_copilot_budget
 from backend.services.copilot.config import copilot_enabled, max_conversation_messages
 from backend.services.copilot.guardrails import enforce_copilot_rate_limit, validate_user_message
-from backend.services.copilot.orchestrator import answer_copilot_question
+from backend.services.copilot.orchestrator import CopilotModelUnavailableError, answer_copilot_question
 from backend.services.copilot.schemas import serialize_conversation, serialize_feedback, serialize_message
 from backend.services.experiments import record_feedback_reward_event
 from backend.services.search.indexer import search_user_documents
@@ -170,13 +170,17 @@ async def create_message(
     db.add(user_message)
     await db.flush()
 
-    answer = await answer_copilot_question(
-        db,
-        user_id=user_id,
-        conversation=conversation,
-        question=content,
-        source_types=payload.source_types,
-    )
+    try:
+        answer = await answer_copilot_question(
+            db,
+            user_id=user_id,
+            conversation=conversation,
+            question=content,
+            source_types=payload.source_types,
+        )
+    except CopilotModelUnavailableError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=503, detail="Copilot is temporarily unavailable. OpenAI-backed answers are required.") from exc
     assistant_message = CopilotMessage(
         conversation_id=conversation.id,
         user_id=user_id,

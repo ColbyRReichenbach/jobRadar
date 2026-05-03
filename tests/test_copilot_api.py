@@ -54,6 +54,27 @@ async def test_copilot_conversation_message_returns_search_fallback_with_citatio
 
 
 @pytest.mark.asyncio
+async def test_copilot_fails_closed_without_openai_when_fallback_disabled(client, db_session, monkeypatch):
+    monkeypatch.delenv("TESTING", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("COPILOT_ALLOW_SEARCH_FALLBACK", "false")
+
+    await _seed_search_doc(db_session)
+    conversation_resp = await client.post("/api/copilot/conversations", json={"title": "Interview prep"}, headers=AUTH_HEADER)
+    assert conversation_resp.status_code == 201
+    conversation_id = conversation_resp.json()["conversation"]["id"]
+
+    message_resp = await client.post(
+        f"/api/copilot/conversations/{conversation_id}/messages",
+        json={"content": "What assistant search roles am I tracking?"},
+        headers=AUTH_HEADER,
+    )
+
+    assert message_resp.status_code == 503
+    assert message_resp.json()["detail"] == "Copilot is temporarily unavailable. OpenAI-backed answers are required."
+
+
+@pytest.mark.asyncio
 async def test_copilot_lists_reads_searches_and_records_feedback(client, db_session):
     await _seed_search_doc(db_session)
     conversation_resp = await client.post("/api/copilot/conversations", json={}, headers=AUTH_HEADER)

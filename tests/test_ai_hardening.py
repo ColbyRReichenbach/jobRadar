@@ -186,6 +186,25 @@ async def test_research_llm_failures_use_deterministic_fallbacks(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_research_llm_fails_closed_without_openai_when_fallback_disabled(monkeypatch):
+    from backend.services.research_radar import llm
+
+    monkeypatch.delenv("TESTING", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("RESEARCH_RADAR_ALLOW_DETERMINISTIC_FALLBACKS", "false")
+
+    tracker = {
+        "name": "AI Jobs",
+        "objective": "Find AI platform roles.",
+        "selected_roles": ["Platform Engineer"],
+        "selected_companies": ["ExampleCo"],
+    }
+
+    with pytest.raises(llm.ResearchModelUnavailableError, match="OPENAI_API_KEY"):
+        await llm.normalize_brief_with_metrics(tracker, {"skills": ["Python"]})
+
+
+@pytest.mark.asyncio
 async def test_research_llm_normalizes_common_model_aliases(monkeypatch):
     from backend.services import ai_orchestrator
     from backend.services.research_radar import llm
