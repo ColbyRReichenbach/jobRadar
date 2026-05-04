@@ -70,6 +70,7 @@ type MockState = {
   user?: Record<string, unknown>;
   jobs?: any[];
   emails?: any[];
+  researchProfiles?: any[];
   profile?: MockProfile;
   alerts?: MockAlert[];
   networkContacts?: MockContact[];
@@ -104,6 +105,7 @@ async function mockLoggedInApi(page: Page, initialState: MockState = {}) {
     },
     jobs: [] as any[],
     emails: [] as any[],
+    researchProfiles: [] as any[],
     profile: null as MockProfile,
     alerts: [] as MockAlert[],
     networkContacts: [] as MockContact[],
@@ -310,9 +312,42 @@ async function mockLoggedInApi(page: Page, initialState: MockState = {}) {
       return;
     }
 
+    if (path === '/api/research/profiles' && method === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(state.researchProfiles),
+      });
+      return;
+    }
+
+    if (path.startsWith('/api/research/profiles/') && method === 'PATCH') {
+      const profileId = path.split('/').pop();
+      const body = await json();
+      const profile = state.researchProfiles.find((row) => row.id === profileId);
+      if (!profile) {
+        await route.fulfill({
+          status: 404,
+          contentType: 'application/json',
+          body: JSON.stringify({ detail: 'Profile not found' }),
+        });
+        return;
+      }
+
+      Object.assign(profile, body || {}, {
+        updated_at: '2026-05-02T14:45:00Z',
+        next_run_at: body?.active === false ? null : profile.next_run_at,
+      });
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(profile),
+      });
+      return;
+    }
+
     if (
       [
-        '/api/research/profiles',
         '/api/research/signals',
         '/api/research/briefs',
         '/api/research/actions',
@@ -936,6 +971,7 @@ test.describe('desktop app flows', () => {
 
     await page.getByRole('button', { name: 'New tracker' }).first().click();
     await expect(page.locator('#radar-tracker-form input').first()).toBeFocused();
+    await expect(page.getByRole('status').filter({ hasText: 'New tracker draft started' })).toBeVisible();
 
     const modeOptionBoxes = await page.locator('label:has(input[name="tracker-mode"])').evaluateAll((nodes) =>
       nodes.map((node) => {
@@ -966,6 +1002,58 @@ test.describe('desktop app flows', () => {
 
     const fitsViewport = await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
     expect(fitsViewport).toBeTruthy();
+  });
+
+  test('radar tracker cadence can be paused and resumed from the tracker card', async ({ page }) => {
+    await mockLoggedInApi(page, {
+      researchProfiles: [
+        {
+          id: 'profile-1',
+          name: 'BOA AI roles',
+          objective: 'Track AI and NLP roles at banks.',
+          selected_domains: [],
+          selected_roles: [],
+          selected_companies: [],
+          keywords: [],
+          excluded_keywords: [],
+          source_types: ['application'],
+          mode: 'internal',
+          frequency: 'weekly',
+          depth: 'standard',
+          notification_mode: 'in_app',
+          minimum_score: 70,
+          target_locations: [],
+          remote_types: [],
+          seniority_levels: [],
+          research_source_scopes: [],
+          use_profile_context: true,
+          include_public_web_research: false,
+          report_prompt_notes: null,
+          max_search_queries: 8,
+          max_sources_per_run: 20,
+          active: true,
+          last_run_at: null,
+          next_run_at: '2026-05-10T12:00:00Z',
+          last_successful_run_at: null,
+          created_at: '2026-05-02T14:30:00Z',
+          updated_at: '2026-05-02T14:30:00Z',
+        },
+      ],
+    });
+
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Radar' }).click();
+
+    await expect(page.getByRole('button', { name: /BOA AI roles/ })).toBeVisible();
+    await expect(page.locator('span').filter({ hasText: /^Active$/ })).toBeVisible();
+    await page.getByRole('button', { name: 'Pause cadence' }).click();
+    await expect(page.locator('span').filter({ hasText: /^Paused$/ })).toBeVisible();
+    await expect(page.getByText('Cadence paused')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Resume cadence' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Resume cadence' }).click();
+    await expect(page.locator('span').filter({ hasText: /^Active$/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Pause cadence' })).toBeVisible();
   });
 });
 
