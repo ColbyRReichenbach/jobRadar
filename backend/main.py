@@ -3721,10 +3721,11 @@ async def search_jobs_endpoint(
 
     from backend.models import JobListing
     from backend.dependencies import check_enrichment_consent
-    from backend.services.job_search import search_jobs
+    from backend.services.job_search import job_search_provider_status, search_jobs
 
     user_id = _require_user_id(auth)
     include_logo = await check_enrichment_consent(user_id, db)
+    provider_status = job_search_provider_status(q)
 
     # Check cache: listings saved within 24h matching this query
     cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
@@ -3752,6 +3753,7 @@ async def search_jobs_endpoint(
         return {
             "results": serialized_cached,
             "cached": True,
+            "provider_status": provider_status,
         }
 
     # Fresh search
@@ -3779,7 +3781,7 @@ async def search_jobs_endpoint(
             "logo_url": await _resolve_search_logo_url(db, r.get("company"), r.get("url"), include_logo),
         })
 
-    return {"results": serialized_results, "cached": False}
+    return {"results": serialized_results, "cached": False, "provider_status": provider_status}
 
 
 @app.get("/api/search/global")
@@ -4921,10 +4923,22 @@ def _detect_interview_type_from_email(event: EmailEvent) -> str:
     return "phone"
 
 
+def _interview_datetime_text(event: EmailEvent) -> str:
+    return "\n".join(
+        value
+        for value in [event.body, event.summary, event.snippet, event.key_sentence]
+        if value
+    )
+
+
 def _interview_values_from_email(event: EmailEvent, payload: InterviewSuggestionAccept | None = None) -> dict:
     from backend.services.calendar_sync import extract_interview_datetime
 
-    extracted = extract_interview_datetime(event.body or "", event.subject or "") or {}
+    extracted = extract_interview_datetime(
+        _interview_datetime_text(event),
+        event.subject or "",
+        event.received_at,
+    ) or {}
     scheduled_at = None
     scheduled_at_value = payload.scheduled_at if payload and payload.scheduled_at else extracted.get("scheduled_at")
     if scheduled_at_value:
@@ -5135,7 +5149,11 @@ async def create_interview_from_email(
         raise HTTPException(status_code=404, detail="Email not found")
 
     # Extract datetime from email
-    extracted = extract_interview_datetime(event.body or "", event.subject or "")
+    extracted = extract_interview_datetime(
+        _interview_datetime_text(event),
+        event.subject or "",
+        event.received_at,
+    )
 
     scheduled_at = None
     duration_minutes = None
@@ -5279,6 +5297,11 @@ async def accept_interview_suggestion(
             raise HTTPException(status_code=404, detail="Application not found")
 
     values = _interview_values_from_email(event, payload)
+    if not values["scheduled_at"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Choose a date and time before adding this interview to your calendar.",
+        )
     duplicate_interview = None
     if values["scheduled_at"] and values["interviewer_email"]:
         duplicate_interview = (

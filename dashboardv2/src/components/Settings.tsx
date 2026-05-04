@@ -65,6 +65,7 @@ export function Settings() {
   const [exportingAccount, setExportingAccount] = useState(false);
   const [exportingCsv, setExportingCsv] = useState(false);
   const [gmailAuditRows, setGmailAuditRows] = useState<GmailSyncAuditRow[]>([]);
+  const [showAllGmailDiagnostics, setShowAllGmailDiagnostics] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteInput, setDeleteInput] = useState('');
   const [deleting, setDeleting] = useState(false);
@@ -172,6 +173,8 @@ export function Settings() {
   ) => {
     setLocalPrefs((current) => ({ ...current, [key]: !current[key] }));
   };
+
+  const visibleGmailAuditRows = showAllGmailDiagnostics ? gmailAuditRows : gmailAuditRows.slice(0, 3);
 
   const createNewApiKey = async () => {
     setGeneratingKey(true);
@@ -398,7 +401,7 @@ export function Settings() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
-                    {gmailAuditRows.map((row) => (
+                    {visibleGmailAuditRows.map((row) => (
                       <tr key={row.id}>
                         <td className="max-w-[24rem] px-4 py-3">
                           <div className="font-medium text-slate-900 truncate">
@@ -424,6 +427,20 @@ export function Settings() {
                     ))}
                   </tbody>
                 </table>
+                {gmailAuditRows.length > 3 ? (
+                  <div className="flex flex-col gap-3 border-t border-slate-200 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-xs text-slate-500">
+                      Showing {visibleGmailAuditRows.length} of {gmailAuditRows.length} checked messages.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setShowAllGmailDiagnostics((current) => !current)}
+                      className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-100"
+                    >
+                      {showAllGmailDiagnostics ? 'Show fewer' : 'Show all checked messages'}
+                    </button>
+                  </div>
+                ) : null}
               </div>
             )}
           </motion.div>

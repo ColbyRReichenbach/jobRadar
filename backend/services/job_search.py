@@ -19,6 +19,31 @@ GREENHOUSE_TARGETS = {
 GREENHOUSE_API = "https://boards-api.greenhouse.io/v1/boards"
 
 
+def job_search_provider_status(query: str) -> dict:
+    """Return user-facing search provider availability and scope."""
+    query_lower = query.lower().strip()
+    greenhouse_targets = [
+        company_name
+        for company_name in GREENHOUSE_TARGETS
+        if company_name in query_lower or not query_lower
+    ]
+    degraded_reasons: list[str] = []
+    if not SERPAPI_KEY:
+        degraded_reasons.append("Broad job search is not configured, so external job board results are unavailable.")
+    if query_lower and not greenhouse_targets:
+        degraded_reasons.append(
+            "No configured Greenhouse board matched this company or keyword. Try a broader role search or configure a search provider."
+        )
+
+    return {
+        "serpapi_configured": bool(SERPAPI_KEY),
+        "greenhouse_targets": sorted(GREENHOUSE_TARGETS.keys()),
+        "greenhouse_targets_searched": greenhouse_targets,
+        "degraded": bool(degraded_reasons),
+        "degraded_reasons": degraded_reasons,
+    }
+
+
 async def search_serpapi(query: str, location: str) -> list[dict]:
     """Search jobs via SerpAPI Google Jobs engine."""
     if not SERPAPI_KEY:

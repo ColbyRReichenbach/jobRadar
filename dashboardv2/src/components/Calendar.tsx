@@ -99,6 +99,7 @@ export function Calendar({ focusRequest }: CalendarProps) {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [interviewSuggestions, setInterviewSuggestions] = useState<InterviewSuggestion[]>([]);
   const [busySuggestionEmailId, setBusySuggestionEmailId] = useState<string | null>(null);
+  const [draftSuggestion, setDraftSuggestion] = useState<InterviewSuggestion | null>(null);
 
   useEffect(() => {
     loadInterviews();
@@ -217,6 +218,24 @@ export function Calendar({ focusRequest }: CalendarProps) {
 
   const handleAdd = async (data: Partial<InterviewData>) => {
     try {
+      if (draftSuggestion) {
+        await acceptInterviewSuggestion(draftSuggestion, {
+          application_id: data.application_id ?? draftSuggestion.application_id,
+          interview_type: data.interview_type ?? draftSuggestion.interview_type,
+          scheduled_at: data.scheduled_at,
+          duration_minutes: data.duration_minutes,
+          interviewer_name: data.interviewer_name,
+          interviewer_email: data.interviewer_email,
+          location_or_link: data.location_or_link,
+          notes: data.notes,
+        });
+        setErrorMessage(null);
+        setStatusMessage('Interview added from Gmail.');
+        setDraftSuggestion(null);
+        setShowAddModal(false);
+        await Promise.all([loadInterviews(), loadPastDue(), loadInterviewSuggestions()]);
+        return;
+      }
       const res = await apiFetch('/api/interviews', {
         method: 'POST',
         headers: authHeaders(),
@@ -229,9 +248,10 @@ export function Calendar({ focusRequest }: CalendarProps) {
       setErrorMessage(null);
       setStatusMessage('Interview added.');
       setShowAddModal(false);
+      setDraftSuggestion(null);
       await loadInterviews();
-    } catch {
-      setErrorMessage('Failed to create interview.');
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to create interview.');
     }
   };
 
@@ -249,6 +269,8 @@ export function Calendar({ focusRequest }: CalendarProps) {
       setErrorMessage(null);
       setStatusMessage('Interview updated.');
       setSelectedInterview(null);
+      setShowAddModal(false);
+      setEditingInterview(null);
       loadInterviews();
     } catch {
       setErrorMessage('Failed to update interview.');
@@ -299,6 +321,15 @@ export function Calendar({ focusRequest }: CalendarProps) {
   };
 
   const handleAcceptSuggestion = async (suggestion: InterviewSuggestion) => {
+    if (!suggestion.scheduled_at) {
+      setDraftSuggestion(suggestion);
+      setEditingInterview(null);
+      setShowAddModal(true);
+      setErrorMessage(null);
+      setStatusMessage('Choose a date and time before adding this interview to your calendar.');
+      return;
+    }
+
     setBusySuggestionEmailId(suggestion.email_id);
     setErrorMessage(null);
     setStatusMessage(null);
@@ -521,7 +552,7 @@ export function Calendar({ focusRequest }: CalendarProps) {
                             disabled={isBusy}
                             className="flex-1 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-50"
                           >
-                            {isBusy ? 'Adding...' : 'Add'}
+                            {isBusy ? 'Adding...' : suggestion.scheduled_at ? 'Add' : 'Add details'}
                           </button>
                           <button
                             type="button"
@@ -773,10 +804,22 @@ export function Calendar({ focusRequest }: CalendarProps) {
             onClose={() => {
               setShowAddModal(false);
               setEditingInterview(null);
+              setDraftSuggestion(null);
             }}
             onAdd={handleAdd}
             onUpdate={handleUpdate}
-            initialInterview={editingInterview}
+            initialInterview={editingInterview || (draftSuggestion ? {
+              application_id: draftSuggestion.application_id,
+              interview_type: draftSuggestion.interview_type,
+              scheduled_at: draftSuggestion.scheduled_at,
+              duration_minutes: draftSuggestion.duration_minutes || 60,
+              interviewer_name: draftSuggestion.sender,
+              interviewer_email: draftSuggestion.sender_email,
+              location_or_link: draftSuggestion.location_or_link,
+              notes: draftSuggestion.subject ? `Created from email: ${draftSuggestion.subject}` : null,
+              company_name: draftSuggestion.company_name || undefined,
+              role_title: draftSuggestion.role_title || undefined,
+            } : null)}
           />
         )}
       </AnimatePresence>
@@ -794,10 +837,12 @@ function AddInterviewModal({
   onClose: () => void;
   onAdd: (data: any) => void;
   onUpdate: (id: string, data: any) => void;
-  initialInterview?: InterviewData | null;
+  initialInterview?: Partial<InterviewData> | null;
 }) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const titleId = useId();
+  const dateTimeInputId = useId();
+  const formErrorId = useId();
   const [type, setType] = useState(initialInterview?.interview_type || 'phone');
   const [scheduledAt, setScheduledAt] = useState(
     initialInterview?.scheduled_at ? initialInterview.scheduled_at.slice(0, 16) : '',
@@ -807,10 +852,18 @@ function AddInterviewModal({
   const [email, setEmail] = useState(initialInterview?.interviewer_email || '');
   const [location, setLocation] = useState(initialInterview?.location_or_link || '');
   const [notes, setNotes] = useState(initialInterview?.notes || '');
+  const [formError, setFormError] = useState<string | null>(null);
+  const isEditing = Boolean(initialInterview?.id);
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
+    if (!scheduledAt) {
+      setFormError('Choose a date and time before adding this interview to your calendar.');
+      return;
+    }
+    setFormError(null);
     const payload = {
+      application_id: initialInterview?.application_id || null,
       interview_type: type,
       scheduled_at: scheduledAt || null,
       duration_minutes: duration ? parseInt(duration) : null,
@@ -819,7 +872,7 @@ function AddInterviewModal({
       location_or_link: location || null,
       notes: notes || null,
     };
-    if (initialInterview) {
+    if (isEditing && initialInterview?.id) {
       onUpdate(initialInterview.id, payload);
     } else {
       onAdd(payload);
@@ -837,7 +890,7 @@ function AddInterviewModal({
     >
         <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
           <h2 id={titleId} className="text-xl font-serif font-bold text-slate-900">
-            {initialInterview ? 'Edit Interview' : 'Add Interview'}
+            {isEditing ? 'Edit Interview' : 'Add Interview'}
           </h2>
           <button
             ref={closeButtonRef}
@@ -848,7 +901,12 @@ function AddInterviewModal({
             <X className="w-5 h-5 text-slate-500" />
           </button>
         </div>
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} noValidate className="p-6 space-y-4">
+          {formError ? (
+            <div id={formErrorId} className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              {formError}
+            </div>
+          ) : null}
           <div>
             <label className="text-xs font-medium text-slate-500 mb-1 block">Type</label>
             <select value={type} onChange={e => setType(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm">
@@ -860,8 +918,20 @@ function AddInterviewModal({
             </select>
           </div>
           <div>
-            <label className="text-xs font-medium text-slate-500 mb-1 block">Date & Time</label>
-            <input type="datetime-local" value={scheduledAt} onChange={e => setScheduledAt(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm" />
+            <label htmlFor={dateTimeInputId} className="text-xs font-medium text-slate-500 mb-1 block">Date & Time</label>
+            <input
+              id={dateTimeInputId}
+              type="datetime-local"
+              value={scheduledAt}
+              onChange={e => {
+                setScheduledAt(e.target.value);
+                if (e.target.value) setFormError(null);
+              }}
+              required
+              aria-invalid={Boolean(formError)}
+              aria-describedby={formError ? formErrorId : undefined}
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+            />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -886,7 +956,7 @@ function AddInterviewModal({
             <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm resize-none" />
           </div>
           <button type="submit" className="w-full px-4 py-2.5 text-sm bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-medium shadow-sm">
-            {initialInterview ? 'Save Interview' : 'Add Interview'}
+            {isEditing ? 'Save Interview' : 'Add Interview'}
           </button>
         </form>
     </DialogShell>

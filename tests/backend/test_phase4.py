@@ -98,6 +98,23 @@ async def test_job_search_caching(client):
             assert resp2.status_code == 200
             data2 = resp2.json()
             assert data2["cached"] is True
+            assert data2["provider_status"]["serpapi_configured"] is True
+
+
+@pytest.mark.asyncio
+async def test_job_search_reports_provider_limited_empty_results(client):
+    """Search response explains when providers cannot cover a query."""
+    with patch("backend.services.job_search.SERPAPI_KEY", ""):
+        resp = await client.get(
+            "/api/search?q=bank+of+america&location=Remote",
+            headers=AUTH_HEADER,
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["results"] == []
+    assert data["provider_status"]["degraded"] is True
+    assert any("Broad job search" in reason for reason in data["provider_status"]["degraded_reasons"])
 
 
 @pytest.mark.asyncio

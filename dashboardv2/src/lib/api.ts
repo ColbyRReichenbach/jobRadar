@@ -747,12 +747,30 @@ export async function updateEmail(id: string, payload: {
 
 // --- Search API ---
 
-export async function searchJobs(query: string, location: string = ''): Promise<any[]> {
+export interface JobSearchProviderStatus {
+  serpapi_configured?: boolean;
+  greenhouse_targets?: string[];
+  greenhouse_targets_searched?: string[];
+  degraded?: boolean;
+  degraded_reasons?: string[];
+}
+
+export interface JobSearchResponse {
+  results: any[];
+  cached?: boolean;
+  provider_status?: JobSearchProviderStatus;
+}
+
+export async function searchJobs(query: string, location: string = ''): Promise<JobSearchResponse> {
   const params = new URLSearchParams({ q: query, location });
   const res = await apiFetch(`${API_BASE}/api/search?${params}`, { headers: authHeaders() });
   if (!res.ok) throw new Error(await readErrorDetail(res, `Failed to search: ${res.status}`));
   const data = await res.json();
-  return data.results || [];
+  return {
+    results: data.results || [],
+    cached: data.cached,
+    provider_status: data.provider_status,
+  };
 }
 
 export async function getSearchMatchPreview(jobs: Array<{
@@ -1053,19 +1071,26 @@ export async function fetchInterviewSuggestions(): Promise<InterviewSuggestion[]
   return Array.isArray(data) ? data : [];
 }
 
-export async function acceptInterviewSuggestion(suggestion: InterviewSuggestion): Promise<any> {
+export async function acceptInterviewSuggestion(
+  suggestion: InterviewSuggestion,
+  overrides: Partial<Pick<InterviewSuggestion, 'application_id' | 'interview_type' | 'scheduled_at' | 'duration_minutes' | 'location_or_link'>> & {
+    interviewer_name?: string | null;
+    interviewer_email?: string | null;
+    notes?: string | null;
+  } = {},
+): Promise<any> {
   const res = await apiFetch(`${API_BASE}/api/interview-suggestions/${encodeURIComponent(suggestion.email_id)}/accept`, {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify({
-      application_id: suggestion.application_id || undefined,
-      interview_type: suggestion.interview_type,
-      scheduled_at: suggestion.scheduled_at || undefined,
-      duration_minutes: suggestion.duration_minutes ?? undefined,
-      interviewer_name: suggestion.sender || undefined,
-      interviewer_email: suggestion.sender_email || undefined,
-      location_or_link: suggestion.location_or_link || undefined,
-      notes: suggestion.subject ? `Created from email: ${suggestion.subject}` : undefined,
+      application_id: overrides.application_id ?? suggestion.application_id ?? undefined,
+      interview_type: overrides.interview_type ?? suggestion.interview_type,
+      scheduled_at: overrides.scheduled_at ?? suggestion.scheduled_at ?? undefined,
+      duration_minutes: overrides.duration_minutes ?? suggestion.duration_minutes ?? undefined,
+      interviewer_name: overrides.interviewer_name ?? suggestion.sender ?? undefined,
+      interviewer_email: overrides.interviewer_email ?? suggestion.sender_email ?? undefined,
+      location_or_link: overrides.location_or_link ?? suggestion.location_or_link ?? undefined,
+      notes: overrides.notes ?? (suggestion.subject ? `Created from email: ${suggestion.subject}` : undefined),
     }),
   });
   if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to add interview suggestion'));

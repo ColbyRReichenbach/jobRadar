@@ -48,6 +48,7 @@ import { ResearchReportList } from './ResearchReportList';
 import { ResearchReportDetail as ResearchReportDetailPanel } from './ResearchReportDetail';
 import { ResearchReportDiff as ResearchReportDiffPanel } from './ResearchReportDiff';
 import { ResearchRunTracePanel } from './ResearchRunTracePanel';
+import { useAuth } from '../lib/AuthContext';
 
 type RadarSurface = 'signals' | 'reports';
 
@@ -94,6 +95,7 @@ function hasResearchConsent(consent: ConsentStatus | null): boolean {
 }
 
 export function Radar({ focusRequest }: RadarProps) {
+  const { user } = useAuth();
   const trackerFormRef = useRef<HTMLDetailsElement | null>(null);
   const createDraftNoticeTimeoutRef = useRef<number | null>(null);
   const [profiles, setProfiles] = useState<ResearchProfile[]>([]);
@@ -162,6 +164,7 @@ export function Radar({ focusRequest }: RadarProps) {
   const latestRun = runs[0] || null;
   const latestRunSignalCount = Object.values(latestRun?.signal_counts || {}).reduce((total, count) => total + count, 0);
   const researchConsentEnabled = hasResearchConsent(consent);
+  const showRadarQuality = Boolean(user?.is_admin);
 
   const startCreateTracker = () => {
     setEditingMode('create');
@@ -201,7 +204,7 @@ export function Radar({ focusRequest }: RadarProps) {
     try {
       const [profileRows, feedbackStatsRow, consentRow] = await Promise.all([
         fetchResearchProfiles(),
-        fetchResearchFeedbackStats(),
+        showRadarQuality ? fetchResearchFeedbackStats() : Promise.resolve(null),
         fetchConsent(),
       ]);
 
@@ -469,7 +472,9 @@ export function Radar({ focusRequest }: RadarProps) {
         rating: payload.rating,
         notes: payload.notes,
       });
-      setFeedbackStats(await fetchResearchFeedbackStats());
+      if (showRadarQuality) {
+        setFeedbackStats(await fetchResearchFeedbackStats());
+      }
       setFeedbackMessage('Feedback saved.');
       setErrorMessage(null);
     } catch (error) {
@@ -485,7 +490,9 @@ export function Radar({ focusRequest }: RadarProps) {
     setSavingFeedback(true);
     try {
       await sendResearchReportFeedback(selectedReportId, payload);
-      setFeedbackStats(await fetchResearchFeedbackStats());
+      if (showRadarQuality) {
+        setFeedbackStats(await fetchResearchFeedbackStats());
+      }
       setFeedbackMessage('Feedback saved.');
       setErrorMessage(null);
     } catch (error) {
@@ -827,10 +834,12 @@ export function Radar({ focusRequest }: RadarProps) {
               />
             </div>
 
-            <div className="rounded-2xl border border-slate-200 bg-white p-4">
-              <h2 className="mb-2 font-semibold text-slate-800">Radar quality</h2>
-              <RadarInsightsPanel stats={feedbackStats} />
-            </div>
+            {showRadarQuality ? (
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <h2 className="mb-2 font-semibold text-slate-800">Radar quality</h2>
+                <RadarInsightsPanel stats={feedbackStats} />
+              </div>
+            ) : null}
           </div>
         </div>
     </div>

@@ -71,6 +71,10 @@ type MockState = {
   jobs?: any[];
   emails?: any[];
   researchProfiles?: any[];
+  interviews?: any[];
+  interviewSuggestions?: any[];
+  gmailAuditRows?: any[];
+  searchResponse?: any;
   profile?: MockProfile;
   alerts?: MockAlert[];
   networkContacts?: MockContact[];
@@ -106,6 +110,10 @@ async function mockLoggedInApi(page: Page, initialState: MockState = {}) {
     jobs: [] as any[],
     emails: [] as any[],
     researchProfiles: [] as any[],
+    interviews: [] as any[],
+    interviewSuggestions: [] as any[],
+    gmailAuditRows: [] as any[],
+    searchResponse: null as any,
     profile: null as MockProfile,
     alerts: [] as MockAlert[],
     networkContacts: [] as MockContact[],
@@ -197,6 +205,59 @@ async function mockLoggedInApi(page: Page, initialState: MockState = {}) {
       return;
     }
 
+    if (path === '/api/notifications/preferences' && method === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          sms_enabled: false,
+          sms_phone: null,
+          weekly_digest_enabled: false,
+          radar_updates_enabled: true,
+          inbox_updates_enabled: true,
+          conversations_enabled: true,
+          network_enabled: true,
+          interviews_enabled: true,
+          followups_enabled: true,
+          listings_enabled: true,
+          browser_notifications_enabled: false,
+          quiet_hours_enabled: false,
+          quiet_hours_start: null,
+          quiet_hours_end: null,
+        }),
+      });
+      return;
+    }
+
+    if (path === '/api/notifications/preferences' && method === 'PUT') {
+      const body = await json();
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(body || {}),
+      });
+      return;
+    }
+
+    if (path === '/api/auth/api-key' && method === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ has_api_key: false, last4: null, created_at: null, last_used_at: null }),
+      });
+      return;
+    }
+
+    if (path === '/api/gmail/sync/audit' && method === 'GET') {
+      const limit = Number(url.searchParams.get('limit') || '50');
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(state.gmailAuditRows.slice(0, limit)),
+      });
+      return;
+    }
+
     if (path === '/api/jobs' && method === 'GET') {
       await route.fulfill({
         status: 200,
@@ -211,6 +272,135 @@ async function mockLoggedInApi(page: Page, initialState: MockState = {}) {
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify(state.emails),
+      });
+      return;
+    }
+
+    if (path === '/api/interviews' && method === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(state.interviews),
+      });
+      return;
+    }
+
+    if (path === '/api/interviews' && method === 'POST') {
+      const body = await json();
+      const created = {
+        id: `interview-${state.interviews.length + 1}`,
+        application_id: body?.application_id ?? null,
+        interview_type: body?.interview_type ?? 'phone',
+        scheduled_at: body?.scheduled_at ?? null,
+        duration_minutes: body?.duration_minutes ?? null,
+        interviewer_name: body?.interviewer_name ?? null,
+        interviewer_email: body?.interviewer_email ?? null,
+        location_or_link: body?.location_or_link ?? null,
+        notes: body?.notes ?? null,
+        outcome: 'pending',
+        created_at: '2026-05-03T12:00:00Z',
+      };
+      state.interviews = [...state.interviews, created];
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify(created),
+      });
+      return;
+    }
+
+    if (path === '/api/interviews/past-due' && method === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([]),
+      });
+      return;
+    }
+
+    if (path === '/api/interview-suggestions' && method === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(state.interviewSuggestions),
+      });
+      return;
+    }
+
+    if (path.startsWith('/api/interview-suggestions/') && path.endsWith('/accept') && method === 'POST') {
+      const emailId = path.split('/')[3];
+      const body = await json();
+      if (!body?.scheduled_at) {
+        await route.fulfill({
+          status: 400,
+          contentType: 'application/json',
+          body: JSON.stringify({ detail: 'Choose a date and time before adding this interview to your calendar.' }),
+        });
+        return;
+      }
+      const suggestion = state.interviewSuggestions.find((item) => item.email_id === emailId);
+      const created = {
+        id: `interview-${state.interviews.length + 1}`,
+        application_id: body?.application_id ?? suggestion?.application_id ?? null,
+        interview_type: body?.interview_type ?? suggestion?.interview_type ?? 'phone',
+        scheduled_at: body.scheduled_at,
+        duration_minutes: body?.duration_minutes ?? suggestion?.duration_minutes ?? null,
+        interviewer_name: body?.interviewer_name ?? suggestion?.sender ?? null,
+        interviewer_email: body?.interviewer_email ?? suggestion?.sender_email ?? null,
+        location_or_link: body?.location_or_link ?? suggestion?.location_or_link ?? null,
+        notes: body?.notes ?? null,
+        outcome: 'pending',
+        created_at: '2026-05-03T12:00:00Z',
+      };
+      state.interviews = [...state.interviews, created];
+      state.interviewSuggestions = state.interviewSuggestions.filter((item) => item.email_id !== emailId);
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify(created),
+      });
+      return;
+    }
+
+    if (path.startsWith('/api/interview-suggestions/') && path.endsWith('/dismiss') && method === 'POST') {
+      const emailId = path.split('/')[3];
+      state.interviewSuggestions = state.interviewSuggestions.filter((item) => item.email_id !== emailId);
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'ok' }),
+      });
+      return;
+    }
+
+    if (path === '/api/search' && method === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(state.searchResponse || {
+          results: [],
+          cached: false,
+          provider_status: {
+            serpapi_configured: false,
+            greenhouse_targets: ['captech', 'draftkings', 'twitch'],
+            greenhouse_targets_searched: [],
+            degraded: true,
+            degraded_reasons: ['Broad job search is not configured, so external job board results are unavailable.'],
+          },
+        }),
+      });
+      return;
+    }
+
+    if (path === '/api/search/match-preview' && method === 'POST') {
+      const body = await json();
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          profile_available: false,
+          jobs: (body?.jobs || []).map((job: any) => ({ id: job.id, url: job.url, score: null, fit_label: null, matched_skills: [] })),
+        }),
       });
       return;
     }
@@ -832,6 +1022,91 @@ test.describe('desktop app flows', () => {
     });
   });
 
+  test('settings keeps Gmail sync diagnostics collapsed until expanded', async ({ page }) => {
+    await mockLoggedInApi(page, {
+      gmailAuditRows: Array.from({ length: 5 }, (_, index) => ({
+        id: `audit-${index + 1}`,
+        sync_run_id: 'sync-run-1',
+        email_event_id: null,
+        gmail_message_id: `gmail-${index + 1}`,
+        thread_id: `thread-${index + 1}`,
+        sender: 'Recruiting Team',
+        sender_email: `recruiting-${index + 1}@example.com`,
+        sender_domain: 'example.com',
+        subject: `Checked Gmail message ${index + 1}`,
+        received_at: '2026-05-03T12:00:00Z',
+        decision: index % 2 === 0 ? 'stored' : 'filtered',
+        reason: index % 2 === 0 ? 'job_related' : 'not_job_related',
+        classification: index % 2 === 0 ? 'interview_request' : null,
+        created_at: `2026-05-03T12:0${index}:00Z`,
+      })),
+    });
+
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Settings' }).click();
+
+    await expect(page.getByRole('heading', { name: 'Gmail Sync Diagnostics' })).toBeVisible();
+    await expect(page.getByText('Checked Gmail message 1')).toBeVisible();
+    await expect(page.getByText('Checked Gmail message 3')).toBeVisible();
+    await expect(page.getByText('Checked Gmail message 4')).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Show all checked messages' }).click();
+    await expect(page.getByText('Checked Gmail message 5')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Show fewer' }).click();
+    await expect(page.getByText('Checked Gmail message 4')).toHaveCount(0);
+  });
+
+  test('calendar asks for a time before accepting unscheduled Gmail interview suggestions', async ({ page }) => {
+    await mockLoggedInApi(page, {
+      interviewSuggestions: [
+        {
+          email_id: 'email-interview-unscheduled',
+          subject: 'Select a timeslot for your BankCo interview',
+          sender: 'BankCo Scheduling',
+          sender_email: 'scheduling@bankco.com',
+          company_name: 'BankCo',
+          role_title: 'Data Scientist',
+          application_id: null,
+          interview_type: 'phone',
+          scheduled_at: null,
+          duration_minutes: 30,
+          location_or_link: null,
+          snippet: 'Please select a timeslot for your interview.',
+          received_at: '2026-05-03T12:00:00Z',
+          confidence: 0.9,
+        },
+      ],
+    });
+
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Calendar' }).click();
+
+    await expect(page.getByText('Time not detected')).toBeVisible();
+    await page.getByRole('button', { name: 'Add details' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Add Interview' });
+    await expect(dialog).toBeVisible();
+    await expect(page.getByText('Choose a date and time before adding this interview to your calendar.')).toBeVisible();
+
+    await dialog.getByLabel('Date & Time').fill('2026-05-07T14:30');
+    await dialog.getByRole('button', { name: 'Add Interview', exact: true }).click();
+
+    await expect(page.getByText('Interview added from Gmail.')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'BankCo Scheduling', exact: true })).toBeVisible();
+  });
+
+  test('job search explains provider-limited empty results', async ({ page }) => {
+    await mockLoggedInApi(page);
+
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Job Search' }).click();
+    await page.getByPlaceholder('Search roles, companies, or keywords...').fill('Bank of America');
+    await page.getByRole('button', { name: 'Search', exact: true }).click();
+
+    await expect(page.getByText('No jobs returned')).toBeVisible();
+    await expect(page.getByText(/Broad job search is not configured/)).toBeVisible();
+  });
+
   test('network duplicate review supports keep separate and merge', async ({ page }) => {
     await mockLoggedInApi(page, {
       networkContacts: [
@@ -968,6 +1243,7 @@ test.describe('desktop app flows', () => {
     await expect(page.getByText('Activity + research')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Updates' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Not sure? Ask Scout' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Radar quality' })).toHaveCount(0);
 
     await page.getByRole('button', { name: 'New tracker' }).first().click();
     await expect(page.locator('#radar-tracker-form input').first()).toBeFocused();

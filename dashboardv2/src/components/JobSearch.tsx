@@ -42,6 +42,7 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
@@ -53,10 +54,12 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
     setIsSearching(true);
+    setHasSearched(true);
     setErrorMessage(null);
     setStatusMessage(null);
     try {
-      const results = await searchJobs(searchQuery);
+      const searchResponse = await searchJobs(searchQuery);
+      const results = searchResponse.results;
       const mappedResults: SearchResult[] = results.map((r: any) => ({
         id: r.id || r.url || Math.random().toString(),
         company: r.company || '',
@@ -100,7 +103,12 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
         setSearchResults(mappedResults);
       }
       if (results.length === 0) {
-        setStatusMessage('No matching jobs found for that search.');
+        const providerReasons = searchResponse.provider_status?.degraded_reasons || [];
+        setStatusMessage(
+          providerReasons.length
+            ? `No matching jobs found. ${providerReasons[0]}`
+            : 'No matching jobs found for that search.'
+        );
       }
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'Search failed.');
@@ -235,8 +243,12 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
         {searchResults.length === 0 && !isSearching && (
           <div className="text-center py-16 text-slate-400">
             <Search className="w-12 h-12 mx-auto mb-4 opacity-30" />
-            <p className="text-lg font-serif">Search for jobs to get started</p>
-            <p className="text-sm mt-1">Try &quot;software engineer&quot; or &quot;product designer&quot;</p>
+            <p className="text-lg font-serif">{hasSearched ? 'No jobs returned' : 'Search for jobs to get started'}</p>
+            <p className="text-sm mt-1">
+              {hasSearched
+                ? 'Try a broader role query or check that a search provider is configured.'
+                : 'Try "software engineer" or "product designer"'}
+            </p>
           </div>
         )}
 
