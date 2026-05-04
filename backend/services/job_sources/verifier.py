@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models import CompanyJobSource, SourceVerificationRun
+from backend.metrics import observe_job_source_verified
 from backend.services.job_sources import ashby, greenhouse, icims, lever, smartrecruiters, structured_data, workable, workday
 from backend.services.job_sources.base import SourceConfig, VerificationResult
 
@@ -32,7 +33,14 @@ async def verify_company_job_source(db: AsyncSession, source: CompanyJobSource, 
     else:
         result = await adapter.verify_source(_source_config(source))
     finished_at = datetime.now(timezone.utc)
-    duration_ms = int((time.monotonic() - started_monotonic) * 1000)
+    duration_seconds = time.monotonic() - started_monotonic
+    duration_ms = int(duration_seconds * 1000)
+    observe_job_source_verified(
+        provider_type=source.provider_type,
+        status=result.status,
+        duration_seconds=duration_seconds,
+        error_type=result.error_type if result.status in {"failed", "blocked"} else None,
+    )
     source.verification_status = result.status
     source.terms_risk = result.terms_risk or source.terms_risk
     source.failure_reason = result.error_type

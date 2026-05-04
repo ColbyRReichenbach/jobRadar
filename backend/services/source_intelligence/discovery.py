@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import uuid
 from dataclasses import dataclass
 
@@ -7,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models import DataConsent, SourceDiscoveryEvent
+from backend.metrics import observe_job_source_discovered
 from backend.services.job_sources import ashby, greenhouse, icims, lever, smartrecruiters, structured_data, workable, workday
 from backend.services.job_sources.base import SourceConfig
 from backend.services.job_sources.registry import upsert_company_job_source
@@ -90,6 +92,13 @@ async def process_stored_link_for_source_discovery(
         config=config,
         discovered_from=discovered_from,
     )
+    if created_event:
+        observe_job_source_discovered(
+            provider_type=config.provider_type,
+            discovered_from=discovered_from,
+            status=source.verification_status,
+        )
+        _enqueue_source_verification(source.id)
     return SourceDiscoveryResult(source_id=source.id, event_id=event.id, created_event=created_event)
 
 
@@ -167,3 +176,14 @@ def _clean(value: str | None) -> str | None:
     if value is None:
         return None
     return str(value).replace("\r", " ").replace("\n", " ")[:160]
+
+
+def _enqueue_source_verification(source_id: uuid.UUID) -> None:
+    if os.getenv("TESTING") == "1":
+        return
+    try:
+        from backend.tasks.verify_job_sources import verify_source_by_id
+
+        verify_source_by_id.delay(str(source_id))
+    except Exception:
+        return

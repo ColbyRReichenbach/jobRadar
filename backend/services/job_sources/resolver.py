@@ -10,6 +10,12 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models import CompanyJobSource, JobSearchProviderUsage
+from backend.metrics import (
+    observe_job_search_broad_api_call,
+    observe_job_search_broad_api_call_avoided,
+    observe_job_search_request,
+    observe_job_search_results,
+)
 from backend.services.job_sources import ashby, greenhouse, lever, workable
 from backend.services.job_sources.base import NormalizedJobPosting, SearchQuery, SourceConfig
 from backend.services.job_sources.registry import upsert_job_posting
@@ -97,11 +103,14 @@ async def resolve_job_search(
     result_payloads = [_posting_to_result(match.posting, match.score, match.reasons) for match in ranked if match.score > 0 or not query]
     broad_used = False
     mode = "direct_source" if result_payloads else "provider_limited"
+    if result_payloads:
+        observe_job_search_broad_api_call_avoided(reason="direct_source")
 
     if not result_payloads:
         cap = await broad_provider_capacity(db, user_id=user_id, provider="serpapi", query=query, location=location, request_mode="fallback")
         if cap["allowed"] and os.getenv("JOB_SEARCH_BROAD_PROVIDER_ENABLED", "true").lower() in {"1", "true", "yes", "on"}:
             broad_results = await broad_search(query, location)
+            observe_job_search_broad_api_call(provider="serpapi")
             broad_used = bool(broad_results)
             if broad_results:
                 await record_broad_provider_usage(
@@ -134,6 +143,9 @@ async def resolve_job_search(
         "source_freshness": "verified_today" if direct_source_payloads else "unknown",
         "cost_saved_estimate": {"broad_api_calls_avoided": 1 if direct_source_payloads and not broad_used else 0},
     }
+    observe_job_search_request(mode=mode)
+    for result in result_payloads:
+        observe_job_search_results(source_type=result.get("source"), count=1)
     return SearchResolution(results=result_payloads, provider_status=provider_status, source_summary=summary)
 
 

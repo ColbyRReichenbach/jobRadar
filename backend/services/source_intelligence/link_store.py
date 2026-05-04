@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models import ApplicationSourceLink, UserApplicationLink
+from backend.metrics import observe_private_url_rejected
 from backend.services.source_intelligence.link_crypto import (
     encrypt_source_link,
     hash_source_link,
@@ -49,6 +50,9 @@ async def store_user_application_link(
 ) -> StoredApplicationLink:
     sanitized = sanitize_url(raw_url)
     classification = sanitized.classification
+    if sanitized.sanitization_status != "safe_public":
+        for rule_id in classification.rule_ids or ["private_url"]:
+            observe_private_url_rejected(rule_id=rule_id)
     raw_hash, raw_hash_version = hash_source_link(raw_url)
     encrypted = None
     encryption_version = None

@@ -30,6 +30,7 @@ celery_app = Celery(
         "backend.tasks.run_research_radar",
         "backend.tasks.index_search_documents",
         "backend.tasks.reprocess_source_intelligence",
+        "backend.tasks.verify_job_sources",
     ],
 )
 
@@ -77,6 +78,10 @@ celery_app.conf.update(
         "record-beat-heartbeat": {
             "task": "backend.tasks.health.record_beat_heartbeat",
             "schedule": 60.0,
+        },
+        "verify-pending-job-sources": {
+            "task": "backend.tasks.verify_job_sources.verify_due_sources",
+            "schedule": 900.0,
         },
     },
 )

@@ -53,6 +53,7 @@ from backend.metrics import (
     metrics_headers,
     metrics_payload,
     observe_request,
+    set_source_review_queue_size,
 )
 from backend.models import (
     Alert,
@@ -8272,6 +8273,8 @@ async def admin_job_sources_health(
             select(func.count(UserApplicationLink.id)).where(UserApplicationLink.sanitization_status != "safe_public")
         )
     ).scalar_one()
+    set_source_review_queue_size(reason="pending_review", value=totals["pending_review"])
+    set_source_review_queue_size(reason="failed_stale", value=totals["failed_stale"])
     return {
         "totals": {**totals, "private_links_rejected_from_sharing": private_rejected},
         "by_provider": by_provider,

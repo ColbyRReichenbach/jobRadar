@@ -523,7 +523,7 @@ Goal: safely convert user-owned Gmail/application evidence into private links an
 - [x] Write `user_application_links`.
 - [x] Create `application_source_links` where application context exists.
 - [x] If `source_intelligence=true`, create redacted source discovery event.
-- [ ] If parser finds safe provider metadata, enqueue source verification candidate.
+- [x] If parser finds safe provider metadata, enqueue source verification candidate.
 - [x] Do not block Gmail sync on provider work.
 
 ### Reprocessing
@@ -642,7 +642,7 @@ Goal: make source intelligence operable in beta.
 
 ### Metrics
 
-- [ ] Add Prometheus metrics:
+- [x] Add Prometheus metrics:
   - `apptrail_job_source_discovered_total`
   - `apptrail_job_source_verified_total`
   - `apptrail_job_source_fetch_duration_seconds`
@@ -653,8 +653,8 @@ Goal: make source intelligence operable in beta.
   - `apptrail_job_search_broad_api_calls_avoided_total`
   - `apptrail_private_url_rejected_total`
   - `apptrail_source_review_queue_size`
-- [ ] Add labels carefully to avoid high-cardinality user/query/url values.
-- [ ] Add source verification run records for every provider attempt.
+- [x] Add labels carefully to avoid high-cardinality user/query/url values.
+- [x] Add source verification run records for every provider attempt.
 - [ ] Add audit events for:
   - source approved
   - source blocked
@@ -664,7 +664,7 @@ Goal: make source intelligence operable in beta.
 
 ### Production Config
 
-- [ ] Add production readiness checks for:
+- [x] Add production readiness checks for:
   - source link encryption key
   - source link hash key
   - broad provider caps
@@ -672,30 +672,30 @@ Goal: make source intelligence operable in beta.
   - custom crawl flag
   - source fetch max bytes
   - source fetch timeout
-- [ ] Add feature flags:
+- [x] Add feature flags:
   - `JOB_SEARCH_DIRECT_SOURCES_ENABLED`
   - `JOB_SEARCH_WORKDAY_ENABLED`
   - `JOB_SEARCH_CUSTOM_CRAWL_ENABLED`
   - `JOB_SEARCH_BROAD_PROVIDER_ENABLED`
-- [ ] Add optional Redis lock/rate limit config if used.
-- [ ] Document required env vars.
+- [x] Add optional Redis lock/rate limit config if used.
+- [x] Document required env vars.
 
 ### Live Smoke Tests
 
-- [ ] Add optional live smoke runner gated by `RUN_LIVE_JOB_SOURCE_SMOKE=true`.
-- [ ] Use one known public source per enabled provider.
-- [ ] Assert endpoint responds or clean empty state.
-- [ ] Assert no raw private data in logs.
-- [ ] Do not require live smoke in normal PR CI.
+- [x] Add optional live smoke runner gated by `RUN_LIVE_JOB_SOURCE_SMOKE=true`.
+- [x] Use one known public source per enabled provider.
+- [x] Assert endpoint responds or clean empty state.
+- [x] Assert no raw private data in logs.
+- [x] Do not require live smoke in normal PR CI.
 
 ### Sprint 9 Tests
 
-- [ ] Add metrics tests that avoid high-cardinality labels.
-- [ ] Add production readiness tests for env/config.
-- [ ] Add optional live smoke tests gated by env.
-- [ ] Run full backend targeted source-intelligence test set.
+- [x] Add metrics tests that avoid high-cardinality labels.
+- [x] Add production readiness tests for env/config.
+- [x] Add optional live smoke tests gated by env.
+- [x] Run full backend targeted source-intelligence test set.
 - [ ] Run frontend smoke tests if UI changed.
-- [ ] Fix failures from logs and rerun until green.
+- [x] Fix failures from logs and rerun until green.
 
 ## Final Hardening Pass
 
