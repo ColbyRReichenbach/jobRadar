@@ -103,6 +103,8 @@ from backend.services.notification_preferences import is_alert_enabled, serializ
 from backend.services.feature_flags import radar_enabled, radar_research_enabled
 from backend.services.research_radar.observability import build_trace_payload
 from backend.services.scraper import extract_job, validate_job_parse_url
+from backend.services.source_intelligence.url_classifier import classify_url, extract_urls_from_text
+from backend.services.source_intelligence.url_sanitizer import sanitize_public_job_url
 from backend.routes.admin_ai import router as admin_ai_router
 from backend.routes.copilot import router as copilot_router
 import structlog
@@ -712,59 +714,8 @@ def _sorted_contact_email_pair(email_a: str | None, email_b: str | None) -> tupl
     return tuple(sorted((normalized_a, normalized_b)))
 
 
-_TRACKING_QUERY_PREFIXES = ("utm_",)
-_TRACKING_QUERY_PARAMS = {
-    "gh_src",
-    "gh_jid",
-    "gh_src_id",
-    "li_fat_id",
-    "li_medium",
-    "li_source",
-    "mc_cid",
-    "mc_eid",
-    "ref",
-    "referrer",
-    "source",
-}
-
-
 def _normalize_job_url(url: str | None) -> str | None:
-    if not url:
-        return None
-
-    trimmed = url.strip()
-    if not trimmed:
-        return None
-
-    parsed = urlparse(trimmed)
-    if not parsed.scheme or not parsed.netloc:
-        return trimmed
-
-    scheme = parsed.scheme.lower()
-    netloc = parsed.netloc.lower()
-    if scheme == "https" and netloc.endswith(":443"):
-        netloc = netloc[:-4]
-    if scheme == "http" and netloc.endswith(":80"):
-        netloc = netloc[:-3]
-
-    path = parsed.path or "/"
-    if path != "/":
-        path = path.rstrip("/") or "/"
-
-    filtered_query = [
-        (key, value)
-        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
-        if not key.lower().startswith(_TRACKING_QUERY_PREFIXES) and key.lower() not in _TRACKING_QUERY_PARAMS
-    ]
-
-    return urlunparse((
-        scheme,
-        netloc,
-        path,
-        "",
-        urlencode(filtered_query, doseq=True),
-        "",
-    ))
+    return sanitize_public_job_url(url)
 
 
 async def _find_job_url_duplicate_for_user(db: AsyncSession, user_id: str, job_url: str | None) -> tuple[Application | None, str | None]:
@@ -1176,13 +1127,21 @@ def _extract_role_from_email_event(event: EmailEvent, company: str | None = None
 
 
 def _extract_first_url_from_email_event(event: EmailEvent) -> str | None:
+    candidates: list[str] = []
     if event.action_url:
-        return _limit_text(event.action_url, MAX_URL_LEN)
-    text_value = " ".join(part for part in [event.body, event.snippet, event.summary] if part)
-    match = re.search(r"https?://[^\s)>\"']+", text_value)
-    if not match:
-        return None
-    return _limit_text(match.group(0), MAX_URL_LEN)
+        candidates.append(event.action_url)
+    for text_value in [event.body, event.snippet, event.summary, event.key_sentence]:
+        candidates.extend(extract_urls_from_text(text_value))
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        safe_url = _normalize_job_url(candidate)
+        if safe_url:
+            return _limit_text(safe_url, MAX_URL_LEN)
+    return None
 
 
 def _application_suggestion_key(company: str, role_title: str) -> str:
@@ -1501,6 +1460,9 @@ async def parse_job(request: Request, req: JobParseRequest):
         validated_url = await validate_job_parse_url(req.url)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    classification = classify_url(validated_url)
+    if not classification.safe_to_share or classification.contains_private_token:
+        raise HTTPException(status_code=400, detail="Private or unsafe job URLs cannot be parsed.")
 
     result = await extract_job(validated_url)
     return {"status": "ok", "data": result}

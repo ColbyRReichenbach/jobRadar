@@ -15,20 +15,33 @@ _SENSITIVE_KEYS = {
     "password",
     "secret",
     "token",
+    "auth",
+    "session",
+    "jwt",
+    "candidate",
+    "candidateid",
+    "applicationid",
+    "profileid",
+    "magic",
+    "invite",
+    "interview",
     "access_token",
     "refresh_token",
     "api_key",
     "x-api-key",
+    "x-smarttoken",
 }
 _SENSITIVE_PATTERNS = [
     re.compile(r"Bearer\s+[A-Za-z0-9._\-]+", re.IGNORECASE),
     re.compile(r"(api[_-]?key=)([^&\s]+)", re.IGNORECASE),
     re.compile(r"(token=)([^&\s]+)", re.IGNORECASE),
+    re.compile(r"((?:auth|session|jwt|candidate|candidateId|applicationId|profileId|magic|invite|interview)=)([^&\s]+)", re.IGNORECASE),
+    re.compile(r"(https?://[^\s\"']*(?:calendly|schedule|interview)[^\s\"']*)", re.IGNORECASE),
 ]
 
 
 def _redact_string(value: str) -> str:
-    redacted = value
+    redacted = value.replace("\r", " ").replace("\n", " ")
     for pattern in _SENSITIVE_PATTERNS:
         redacted = pattern.sub(lambda match: match.group(1) + _REDACTED if match.lastindex and match.lastindex > 1 else _REDACTED, redacted)
     return redacted

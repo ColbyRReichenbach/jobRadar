@@ -2,27 +2,21 @@ import asyncio
 import ipaddress
 import json
 import logging
-import random
 import re
 import socket
 from urllib.parse import urlparse
 
-import httpx
 from bs4 import BeautifulSoup
 
 from backend.services.claude_client import extract_job_from_html
+from backend.services.url_safety import fetch_public_https
 from backend.utils.retry import with_retry
 
 logger = logging.getLogger(__name__)
 
-REALISTIC_UA = (
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-)
+REALISTIC_UA = "OpportunityRadar/1.0 (+https://opportunity-radar.app)"
 
 ALLOWED_JOB_HOST_SUFFIXES = (
-    "linkedin.com",
-    "indeed.com",
     "boards.greenhouse.io",
     "greenhouse.io",
     "jobs.lever.co",
@@ -63,6 +57,9 @@ async def validate_job_parse_url(url: str) -> str:
     parsed = urlparse(url)
     if parsed.scheme.lower() != "https":
         raise ValueError("Only HTTPS job URLs are allowed")
+
+    if parsed.username or parsed.password:
+        raise ValueError("URL credentials are not allowed")
 
     if not parsed.hostname:
         raise ValueError("Invalid job URL")
@@ -174,12 +171,13 @@ async def greenhouse_extract(url: str) -> dict:
     token, job_id = match.group(1), match.group(2)
 
     async def _fetch():
-        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
-            resp = await client.get(
-                f"https://boards-api.greenhouse.io/v1/boards/{token}/jobs/{job_id}"
-            )
-            resp.raise_for_status()
-            return resp.json()
+        resp = await fetch_public_https(
+            f"https://boards-api.greenhouse.io/v1/boards/{token}/jobs/{job_id}",
+            timeout=10,
+            headers={"User-Agent": REALISTIC_UA},
+        )
+        resp.raise_for_status()
+        return resp.json()
 
     data = await with_retry(_fetch)
     return {
@@ -199,12 +197,13 @@ async def lever_extract(url: str) -> dict:
     company, posting_uuid = match.group(1), match.group(2)
 
     async def _fetch():
-        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
-            resp = await client.get(
-                f"https://api.lever.co/v0/postings/{company}/{posting_uuid}?mode=json"
-            )
-            resp.raise_for_status()
-            return resp.json()
+        resp = await fetch_public_https(
+            f"https://api.lever.co/v0/postings/{company}/{posting_uuid}?mode=json",
+            timeout=10,
+            headers={"User-Agent": REALISTIC_UA},
+        )
+        resp.raise_for_status()
+        return resp.json()
 
     data = await with_retry(_fetch)
     categories = data.get("categories", {})
@@ -219,59 +218,14 @@ async def lever_extract(url: str) -> dict:
 
 
 async def workday_extract(url: str) -> dict:
-    try:
-        from playwright.async_api import async_playwright
-    except ImportError:
-        logger.warning("Playwright not available, falling back to Claude")
-        return await _claude_fallback(url)
-
-    job_data = {}
-
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page()
-        await page.set_extra_http_headers({"User-Agent": REALISTIC_UA})
-
-        async def handle_response(response):
-            if "jobs" in response.url and response.status == 200:
-                try:
-                    data = await response.json()
-                    if "jobTitle" in str(data):
-                        if isinstance(data, dict):
-                            posting = data.get("jobPostingInfo", data)
-                            job_data["title"] = posting.get("jobTitle") or posting.get("title")
-                            job_data["description"] = strip_html(posting.get("jobDescription", ""))
-                            job_data["location"] = posting.get("primaryLocation", "")
-                            job_data["department"] = posting.get("jobFamilyGroup", "")
-                except Exception as e:
-                    logger.warning(f"Workday XHR parse failed: {e}")
-
-        page.on("response", handle_response)
-        await asyncio.sleep(random.uniform(2, 4))
-        await page.goto(url, wait_until="networkidle", timeout=20000)
-
-        if not job_data.get("title"):
-            try:
-                job_data["title"] = await page.text_content('[data-automation-id="jobPostingTitle"]', timeout=5000)
-                job_data["description"] = strip_html(
-                    await page.inner_html('[data-automation-id="jobPostingDescription"]', timeout=5000)
-                )
-            except Exception:
-                pass
-
-        await browser.close()
-
-    if job_data.get("title"):
-        job_data["source"] = "workday"
-        return job_data
+    logger.info("Workday browser extraction disabled; using safe HTML extraction")
     return await _claude_fallback(url)
 
 
 async def _claude_fallback(url: str) -> dict:
-    async with httpx.AsyncClient(timeout=15, headers={"User-Agent": REALISTIC_UA}, follow_redirects=True) as client:
-        resp = await client.get(url)
-        resp.raise_for_status()
-        html = resp.text
+    resp = await fetch_public_https(url, timeout=15, headers={"User-Agent": REALISTIC_UA})
+    resp.raise_for_status()
+    html = resp.text
     cleaned = strip_html_noise(html)
     result = await extract_job_from_html(cleaned)
     result["source"] = "claude_fallback"
@@ -296,10 +250,9 @@ async def extract_job(url: str) -> dict:
 
     # Tier 2: JSON-LD
     try:
-        async with httpx.AsyncClient(timeout=15, headers={"User-Agent": REALISTIC_UA}, follow_redirects=True) as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-            html = resp.text
+        resp = await fetch_public_https(url, timeout=15, headers={"User-Agent": REALISTIC_UA})
+        resp.raise_for_status()
+        html = resp.text
         json_ld = extract_json_ld(html)
         if json_ld and json_ld.get("title"):
             json_ld["source"] = platform or "json_ld"

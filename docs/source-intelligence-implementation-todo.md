@@ -4,10 +4,10 @@ This checklist implements `docs/source-intelligence-job-search-spec.md` in order
 
 ## Branch and Change Control
 
-- [ ] Start from the intended feature branch after current dirty work is committed or intentionally set aside.
-- [ ] Do not commit `.env`, secrets, screenshots, generated browser artifacts, or private interview-planning docs.
-- [ ] Keep `docs/ai-copilot-search-eval-plan.md` local only unless explicitly approved.
-- [ ] Add `docs/source-intelligence-job-search-spec.md` and this TODO doc only when the implementation branch is ready for documentation changes.
+- [x] Start from the intended feature branch after current dirty work is committed or intentionally set aside.
+- [x] Do not commit `.env`, secrets, screenshots, generated browser artifacts, or private interview-planning docs.
+- [x] Keep `docs/ai-copilot-search-eval-plan.md` local only unless explicitly approved.
+- [x] Add `docs/source-intelligence-job-search-spec.md` and this TODO doc only when the implementation branch is ready for documentation changes.
 - [ ] Use small commits by sprint or logical vertical:
   - `source-intel: add privacy data contracts`
   - `source-intel: harden application urls`
@@ -24,7 +24,7 @@ This checklist implements `docs/source-intelligence-job-search-spec.md` in order
 - [ ] Workday shared source verification defaults disabled.
 - [ ] Custom career-page crawling defaults disabled.
 - [ ] Broad search fallback obeys global and per-user caps.
-- [ ] Email tracking redirects are never network-fetched.
+- [x] Email tracking redirects are never network-fetched.
 
 ## Sprint 0: Privacy Retrofit For Existing URL Paths
 
@@ -32,7 +32,7 @@ Goal: close current privacy gaps before adding shared source intelligence.
 
 ### Backend Discovery
 
-- [ ] Inspect all current places that read, normalize, store, export, index, or display job/application URLs:
+- [x] Inspect all current places that read, normalize, store, export, index, or display job/application URLs:
   - `backend/main.py`
   - `backend/tasks/poll_gmail.py`
   - Gmail body parsing helpers
@@ -43,14 +43,14 @@ Goal: close current privacy gaps before adding shared source intelligence.
   - search indexing tasks
   - export endpoints
   - frontend application forms
-- [ ] Identify every current use of first-URL regex extraction.
-- [ ] Identify every server-side URL fetch path and whether it bypasses `backend/services/url_safety.py`.
-- [ ] Identify current log redaction helpers and AI telemetry redaction paths.
+- [x] Identify every current use of first-URL regex extraction.
+- [x] Identify every server-side URL fetch path and whether it bypasses `backend/services/url_safety.py`.
+- [x] Identify current log redaction helpers and AI telemetry redaction paths.
 
 ### URL Safety Retrofit
 
-- [ ] Extend `backend/services/url_safety.py` with max response byte enforcement.
-- [ ] Ensure safe fetch behavior:
+- [x] Extend `backend/services/url_safety.py` with max response byte enforcement.
+- [x] Ensure safe fetch behavior:
   - HTTPS only.
   - No URL credentials.
   - Reject localhost/private/link-local/reserved/metadata IPs.
@@ -59,34 +59,34 @@ Goal: close current privacy gaps before adding shared source intelligence.
   - Stable Opportunity Radar user agent.
   - Timeout required.
   - Max bytes required.
-- [ ] Retrofit `/api/jobs/parse` to use the safe fetch wrapper.
-- [ ] Remove or disable Playwright/browser automation from shared source verification paths.
-- [ ] Ensure AI fallback cannot fetch or summarize private/tokenized links.
+- [x] Retrofit `/api/jobs/parse` to use the safe fetch wrapper.
+- [x] Remove or disable Playwright/browser automation from shared source verification paths.
+- [x] Ensure AI fallback cannot fetch or summarize private/tokenized links.
 
 ### Existing Application URL Hardening
 
-- [ ] Add preliminary URL classifier/sanitizer call before saving `Application.job_url`.
-- [ ] Ensure private URLs are never saved into `Application.job_url`.
-- [ ] Ensure private URLs are not indexed into `SearchDocument`.
-- [ ] Ensure private URLs are not included in export payloads.
-- [ ] Ensure application suggestions do not choose the first URL blindly.
-- [ ] Ensure application suggestions choose the safest public posting URL or no URL.
-- [ ] Ensure `EmailEvent.action_url` is classified before being exposed or accepted.
+- [x] Add preliminary URL classifier/sanitizer call before saving `Application.job_url`.
+- [x] Ensure private URLs are never saved into `Application.job_url`.
+- [x] Ensure private URLs are not indexed into `SearchDocument`.
+- [x] Ensure private URLs are not included in export payloads.
+- [x] Ensure application suggestions do not choose the first URL blindly.
+- [x] Ensure application suggestions choose the safest public posting URL or no URL.
+- [x] Ensure `EmailEvent.action_url` is classified before being exposed or accepted.
 
 ### Tracking Redirect Rule
 
-- [ ] Implement offline-only redirect parameter extraction for known parameters:
+- [x] Implement offline-only redirect parameter extraction for known parameters:
   - `url`
   - `u`
   - `target`
   - `redirect`
   - `q`
-- [ ] Never issue HEAD/GET/preview requests to email tracking redirect URLs.
-- [ ] If destination cannot be extracted offline and safely classified, mark as private/unresolved.
+- [x] Never issue HEAD/GET/preview requests to email tracking redirect URLs.
+- [x] If destination cannot be extracted offline and safely classified, mark as private/unresolved.
 
 ### Logging Redaction
 
-- [ ] Expand redaction for:
+- [x] Expand redaction for:
   - `token`
   - `auth`
   - `session`
@@ -101,22 +101,22 @@ Goal: close current privacy gaps before adding shared source intelligence.
   - scheduler URL patterns
   - `api_key`
   - `x-smarttoken`
-- [ ] Strip CR/LF from redacted evidence and provider error messages.
-- [ ] Do not log provider request URLs when credentials are query params.
+- [x] Strip CR/LF from redacted evidence and provider error messages.
+- [x] Do not log provider request URLs when credentials are query params.
 
 ### Sprint 0 Tests
 
-- [ ] Add/update unit tests proving private URLs cannot be stored in `Application.job_url`.
-- [ ] Add tests for scheduler, candidate-home, magic-login, token, `candidateId`, and `applicationId` URLs.
-- [ ] Add tests proving email tracking redirects are not network-fetched.
-- [ ] Add tests proving `/api/jobs/parse` rejects private/local/oversized/redirect-to-private URLs.
-- [ ] Add tests proving search indexing and exports contain only safe public URLs.
-- [ ] Run targeted backend tests for URL privacy and job parsing.
-- [ ] Run existing relevant tests:
+- [x] Add/update unit tests proving private URLs cannot be stored in `Application.job_url`.
+- [x] Add tests for scheduler, candidate-home, magic-login, token, `candidateId`, and `applicationId` URLs.
+- [x] Add tests proving email tracking redirects are not network-fetched.
+- [x] Add tests proving `/api/jobs/parse` rejects private/local/oversized/redirect-to-private URLs.
+- [x] Add tests proving search indexing and exports contain only safe public URLs.
+- [x] Run targeted backend tests for URL privacy and job parsing.
+- [x] Run existing relevant tests:
   - `pytest tests/test_public_url_safety.py`
   - `pytest tests/test_search_security.py`
   - any application suggestion tests touched
-- [ ] Fix failures from logs and rerun until green.
+- [x] Fix failures from logs and rerun until green.
 
 ## Sprint 1: Data Contracts, Consent, And Private Link Storage
 
