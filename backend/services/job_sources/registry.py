@@ -4,11 +4,13 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models import ApplicationSourceLink, CompanyJobSource, JobPosting
 from backend.services.job_sources.base import NormalizedJobPosting, SourceConfig
 from backend.services.job_sources.dedupe import dedupe_key_for_posting
+from backend.services.source_intelligence.redaction import redact_source_config
 
 
 async def upsert_company_job_source(
@@ -27,17 +29,7 @@ async def upsert_company_job_source(
         conflicting.failure_reason = "company_identity_conflict"
         conflicting.updated_at = now
         forced_status = "needs_review"
-    existing = (
-        await db.execute(
-            select(CompanyJobSource).where(
-                CompanyJobSource.provider_type == config.provider_type,
-                CompanyJobSource.provider_key == config.provider_key,
-                CompanyJobSource.access_mode == config.access_mode,
-                (CompanyJobSource.company_domain == config.company_domain if config.company_domain else CompanyJobSource.company_domain.is_(None)),
-                (CompanyJobSource.career_url == config.career_url if config.career_url else CompanyJobSource.career_url.is_(None)),
-            )
-        )
-    ).scalar_one_or_none()
+    existing = await _find_existing_source(db, config)
     if existing:
         existing.company_name = config.company_name or existing.company_name
         existing.company_id = company_id or existing.company_id
@@ -67,9 +59,39 @@ async def upsert_company_job_source(
         created_at=now,
         updated_at=now,
     )
-    db.add(source)
-    await db.flush()
-    return source
+    try:
+        async with db.begin_nested():
+            db.add(source)
+            await db.flush()
+        return source
+    except IntegrityError:
+        existing = await _find_existing_source(db, config)
+        if existing:
+            existing.company_name = config.company_name or existing.company_name
+            existing.company_id = company_id or existing.company_id
+            existing.public_jobs_endpoint = config.public_jobs_endpoint or existing.public_jobs_endpoint
+            existing.source_config = _safe_source_config(config.source_config)
+            existing.verification_status = forced_status or existing.verification_status
+            existing.terms_risk = config.terms_risk or existing.terms_risk
+            existing.evidence_count = (existing.evidence_count or 0) + 1
+            existing.last_seen_at = now
+            existing.updated_at = now
+            return existing
+        raise
+
+
+async def _find_existing_source(db: AsyncSession, config: SourceConfig) -> CompanyJobSource | None:
+    return (
+        await db.execute(
+            select(CompanyJobSource).where(
+                CompanyJobSource.provider_type == config.provider_type,
+                CompanyJobSource.provider_key == config.provider_key,
+                CompanyJobSource.access_mode == config.access_mode,
+                (CompanyJobSource.company_domain == config.company_domain if config.company_domain else CompanyJobSource.company_domain.is_(None)),
+                (CompanyJobSource.career_url == config.career_url if config.career_url else CompanyJobSource.career_url.is_(None)),
+            )
+        )
+    ).scalar_one_or_none()
 
 
 async def _find_conflicting_source(db: AsyncSession, config: SourceConfig) -> CompanyJobSource | None:
@@ -130,9 +152,18 @@ async def upsert_job_posting(
         return existing
 
     row = JobPosting(dedupe_key=dedupe_key, first_seen_at=now, created_at=now, **values)
-    db.add(row)
-    await db.flush()
-    return row
+    try:
+        async with db.begin_nested():
+            db.add(row)
+            await db.flush()
+        return row
+    except IntegrityError:
+        existing = (await db.execute(select(JobPosting).where(JobPosting.dedupe_key == dedupe_key))).scalar_one_or_none()
+        if existing:
+            for key, value in values.items():
+                setattr(existing, key, value)
+            return existing
+        raise
 
 
 async def upsert_application_source_link(
@@ -155,6 +186,8 @@ async def upsert_application_source_link(
         stmt = stmt.where(ApplicationSourceLink.job_posting_id == job_posting_id)
     if user_application_link_id:
         stmt = stmt.where(ApplicationSourceLink.user_application_link_id == user_application_link_id)
+    if not job_posting_id and not user_application_link_id and company_job_source_id:
+        stmt = stmt.where(ApplicationSourceLink.company_job_source_id == company_job_source_id)
     existing = (await db.execute(stmt)).scalar_one_or_none()
     if existing:
         existing.confidence = max(existing.confidence or 0, confidence)
@@ -171,14 +204,23 @@ async def upsert_application_source_link(
         confidence=confidence,
         created_from=created_from,
     )
-    db.add(row)
-    await db.flush()
-    return row
+    try:
+        async with db.begin_nested():
+            db.add(row)
+            await db.flush()
+        return row
+    except IntegrityError:
+        existing = (await db.execute(stmt)).scalar_one_or_none()
+        if existing:
+            existing.confidence = max(existing.confidence or 0, confidence)
+            existing.company_job_source_id = company_job_source_id or existing.company_job_source_id
+            existing.updated_at = datetime.now(timezone.utc)
+            return existing
+        raise
 
 
 def _safe_source_config(config: dict | None) -> dict:
-    blocked = {"token", "api_key", "authorization", "cookie", "headers", "query", "raw_url"}
-    return {key: value for key, value in (config or {}).items() if key.lower() not in blocked}
+    return redact_source_config(config)
 
 
 def _normalize_title(title: str | None) -> str | None:

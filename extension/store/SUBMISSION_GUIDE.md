@@ -13,17 +13,25 @@ Make sure you have:
 
 ## Packaging
 
-Build the extension package with:
+Build the full Chrome Web Store submission bundle with:
+
+```bash
+bash scripts/release/package_chrome_webstore.sh
+```
+
+The script runs the extension release checks, builds the runtime extension ZIP, exports PNG store assets, validates the generated package, and writes the submission bundle to `dist/chrome-webstore/`.
+
+For runtime-only packaging, use:
 
 ```bash
 bash scripts/package-extension.sh
 ```
 
-Confirm that the zip contains the runtime files only. The `store/` working assets should not be included.
+Confirm that the runtime ZIP contains extension files only. The `store/` working assets should not be included in the runtime ZIP.
 
 ## Required Store Assets
 
-Convert the SVG store assets in `extension/store/` to PNG before submission.
+The submission package script converts the SVG store assets in `extension/store/` to PNG before submission.
 
 Recommended output set:
 
@@ -44,6 +52,15 @@ Use [listing.md](listing.md) for:
 - category
 - language
 - tags
+
+Use [privacy-fields.md](privacy-fields.md) for:
+
+- single purpose statement
+- data collection disclosures
+- limited-use certification copy
+- remote-code declaration
+- permission justifications
+- test instructions
 
 ## Privacy Form
 
@@ -70,7 +87,7 @@ Needed to display the AppTrail side panel next to the current tab.
 
 ### `storage`
 
-Needed to store the user's API key, local queue data, and lightweight extension state.
+Needed to store the user's API key until they clear it, local queue data, opt-in tracking settings, and lightweight extension state.
 
 ### `scripting`
 
@@ -85,17 +102,20 @@ Needed to read the active tab URL and determine whether the page matches a suppo
 The extension needs:
 
 - the AppTrail backend host for sync
-- localhost hosts for development
-- optional ATS host permissions so it can read supported job pages only when needed
+- development-only localhost hosts in the source manifest; the release packaging script strips them from the Chrome Web Store runtime zip
+- supported ATS and career-page host access so it can read job pages; broad third-party job boards are manual or user-initiated by default
 
 ## Submission Checklist
 
+- run `bash scripts/release/run_beta_readiness_checks.sh`
 - package the release zip
 - export the store images to PNG
 - upload the extension
 - paste the listing copy
 - add the privacy policy URL
 - explain the permissions
+- fill the privacy fields from `privacy-fields.md`
+- confirm the release scope in `beta-scope.md`
 - submit for review
 
 ## After Approval

@@ -40,8 +40,8 @@ The extension handles capture while you browse. It can:
 - detect supported job pages across major ATS platforms
 - open a side panel with extracted job details
 - let you edit and save a role without leaving the tab
-- track repeated career-page visits
-- detect common application submission pages
+- optionally track repeated career-page visits after you enable that setting
+- optionally detect common application submission pages as review signals
 - queue activity locally when the browser is offline and sync later
 
 ### Background Services
@@ -117,7 +117,7 @@ npm run dev
 
 ## Privacy And Control
 
-AppTrail has explicit consent controls for data processing and third-party enrichment. The extension only runs on supported job-related pages, uses a user-scoped API key, and keeps unsent activity on the device until you choose to save or sync it.
+AppTrail has explicit consent controls for data processing and third-party enrichment. The extension only runs on supported job-related pages, uses a user-scoped API key stored locally until you clear it, and syncs only saved jobs or opt-in extension activity.
 
 For policy details, see:
 
@@ -134,5 +134,34 @@ For policy details, see:
 - [docs/privacy-policy.md](docs/privacy-policy.md): product privacy policy
 - [extension/store/listing.md](extension/store/listing.md): Chrome Web Store listing copy
 - [extension/store/SUBMISSION_GUIDE.md](extension/store/SUBMISSION_GUIDE.md): extension submission workflow
+- [extension/store/privacy-fields.md](extension/store/privacy-fields.md): Chrome Web Store privacy and permission form copy
+- [extension/store/beta-scope.md](extension/store/beta-scope.md): controlled extension beta scope
 - [backend/PROMPT_REGISTRY.md](backend/PROMPT_REGISTRY.md): internal prompt registry generated from code
 - [docs/archive/README.md](docs/archive/README.md): historical plans, audits, and retired working docs
+
+## Extension Release Checks
+
+Run the controlled-beta gate locally with:
+
+```bash
+bash scripts/release/run_beta_readiness_checks.sh
+```
+
+Build the Chrome Web Store submission bundle with:
+
+```bash
+bash scripts/release/package_chrome_webstore.sh
+```
+
+The package script writes the runtime ZIP, store copy, and PNG store assets to `dist/chrome-webstore/`.
+
+To include an installed Chrome extension smoke against a target backend, pass secrets through environment variables rather than writing them to disk:
+
+```bash
+APPTRAIL_EXTENSION_API_BASE=https://api.apptrail.com \
+APPTRAIL_EXTENSION_API_KEY=... \
+APPTRAIL_EXTENSION_EXPECTED_EMAIL=you@example.com \
+node scripts/release/smoke_chrome_extension.mjs
+```
+
+The smoke opens Chrome with the unpacked extension, validates the key through the setup page, confirms the key is stored in extension storage, and clears it from the temporary profile by default. Set `APPTRAIL_EXTENSION_CREATE_SMOKE_JOB=1` only when you intentionally want to create a disposable pipeline item in the target account.

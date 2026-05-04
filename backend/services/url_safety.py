@@ -12,6 +12,15 @@ import httpx
 _MAX_REDIRECTS = 5
 _DEFAULT_MAX_BYTES = 1_048_576
 DEFAULT_USER_AGENT = "OpportunityRadar/1.0 (+https://opportunity-radar.app)"
+_DISALLOWED_REQUEST_HEADERS = {
+    "authorization",
+    "cookie",
+    "cookie2",
+    "proxy-authorization",
+    "x-api-key",
+    "x-auth-token",
+    "x-csrf-token",
+}
 
 
 def _is_disallowed_ip(value: str) -> bool:
@@ -82,7 +91,10 @@ async def fetch_public_https(
         byte_limit = int(os.getenv("SOURCE_FETCH_MAX_BYTES", str(_DEFAULT_MAX_BYTES)))
     request_headers = {"User-Agent": DEFAULT_USER_AGENT}
     if headers:
-        request_headers.update(headers)
+        for key, value in headers.items():
+            if key.lower() in _DISALLOWED_REQUEST_HEADERS:
+                continue
+            request_headers[key] = value
     async with httpx.AsyncClient(timeout=timeout, headers=request_headers, follow_redirects=False, cookies={}) as client:
         for _ in range(max_redirects + 1):
             stream_kwargs = {"json": json_body} if json_body is not None else {}

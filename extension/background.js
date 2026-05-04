@@ -1,9 +1,40 @@
-// Service worker: URL detection only. No backend calls.
+// Service worker: URL detection, trusted storage, and sanitized backend sync.
 import { detectPlatform } from "./detector.js";
 import { buildApiUrl, getApiBase, getApiKey } from "./config.js";
 
 const SYNC_QUEUE_KEY = "syncQueue";
+const SETTINGS_KEY = "apptrail_settings";
 const MAX_SYNC_QUEUE_ITEMS = 50;
+const DEFAULT_SETTINGS = {
+  linkedinAutoExtract: false,
+  thirdPartyBoardAutoExtract: false,
+  careerTrackingEnabled: false,
+  submissionDetectionEnabled: false,
+};
+const HIGH_RISK_PLATFORMS = new Set(["linkedin", "indeed", "glassdoor"]);
+const PRIVATE_QUERY_KEYS = [
+  "token",
+  "auth",
+  "authorization",
+  "session",
+  "sessionid",
+  "jwt",
+  "candidate",
+  "candidateid",
+  "application",
+  "applicationid",
+  "profileid",
+  "magic",
+  "invite",
+  "interview",
+  "schedule",
+];
+
+try {
+  chrome.storage.local.setAccessLevel?.({ accessLevel: "TRUSTED_CONTEXTS" })?.catch(() => {});
+} catch {
+  // Older Chrome versions may not support storage access levels.
+}
 
 // On install, open setup page if no API key stored
 chrome.runtime.onInstalled.addListener(async () => {
@@ -27,14 +58,54 @@ function isTrustedExtensionSender(sender) {
   return sender?.id === chrome.runtime.id;
 }
 
+async function getExtensionSettings() {
+  const data = await chrome.storage.local.get(SETTINGS_KEY);
+  return { ...DEFAULT_SETTINGS, ...(data[SETTINGS_KEY] || {}) };
+}
+
+function isHighRiskPlatform(platform) {
+  return HIGH_RISK_PLATFORMS.has(platform);
+}
+
+function sanitizeTelemetryUrl(url) {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:") return null;
+    const queryKeys = Array.from(parsed.searchParams.keys()).map((key) => key.toLowerCase());
+    if (queryKeys.some((key) => PRIVATE_QUERY_KEYS.some((privateKey) => key.includes(privateKey)))) {
+      return null;
+    }
+    parsed.search = "";
+    parsed.hash = "";
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+function sanitizePayloadForPath(path, payload) {
+  const safePayload = { ...(payload || {}) };
+  if ("url" in safePayload) {
+    const safeUrl = sanitizeTelemetryUrl(safePayload.url);
+    if (path === "/api/extraction-reports") {
+      safePayload.url = safeUrl || null;
+    } else {
+      safePayload.url = safeUrl;
+    }
+  }
+  return safePayload;
+}
+
 async function postToBackend(path, payload, apiKey, apiBase) {
+  const safePayload = sanitizePayloadForPath(path, payload);
   const response = await fetch(buildApiUrl(apiBase, path), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
     },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(safePayload),
   });
   return response.ok;
 }
@@ -108,6 +179,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ ok: true });
     return false;
   }
+  if (message.type === "GET_EXTENSION_SETTINGS") {
+    getExtensionSettings().then((settings) => sendResponse({ ok: true, settings }));
+    return true;
+  }
+  if (message.type === "INJECT_ACTIVE_TAB") {
+    injectScripts(message.tabId).then(() => sendResponse({ ok: true }));
+    return true;
+  }
   if (message.type === "REPORT_FALSE_POSITIVE") {
     handleFalsePositiveReport(message).then(() => sendResponse({ ok: true }));
     return true;
@@ -123,15 +202,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-async function handleCareerPageVisit({ domain, url, visitCount }) {
+async function handleCareerPageVisit({ domain, url }) {
+  const settings = await getExtensionSettings();
+  if (!settings.careerTrackingEnabled) return;
+  const safeUrl = sanitizeTelemetryUrl(url);
   // Aggregate visits in storage for nudge logic
   const key = `visits_${domain}`;
   const data = await chrome.storage.local.get(key);
   const existing = data[key] || { domain, visitCount: 0, urls: [], firstVisit: Date.now() };
-  existing.visitCount = visitCount;
+  existing.visitCount += 1;
   existing.lastVisit = Date.now();
-  if (!existing.urls.includes(url)) {
-    existing.urls.push(url);
+  if (safeUrl && !existing.urls.includes(safeUrl)) {
+    existing.urls.push(safeUrl);
   }
   await chrome.storage.local.set({ [key]: existing });
 
@@ -140,7 +222,7 @@ async function handleCareerPageVisit({ domain, url, visitCount }) {
   if (apiKey) {
     try {
       await flushSyncQueue();
-      const payload = { domain, url, visit_count: visitCount };
+      const payload = { domain, url: safeUrl, visit_count: existing.visitCount };
       const ok = await postToBackend(
         "/api/company-visits",
         payload,
@@ -156,19 +238,22 @@ async function handleCareerPageVisit({ domain, url, visitCount }) {
     } catch {
       await enqueueSyncRequest({
         path: "/api/company-visits",
-        payload: { domain, url, visit_count: visitCount },
+        payload: { domain, url: safeUrl, visit_count: existing.visitCount },
       });
     }
   }
 }
 
 async function handleApplicationSubmitted({ platform, url, domain, enrichment }) {
+  const settings = await getExtensionSettings();
+  if (!settings.submissionDetectionEnabled) return;
   const [apiKey, apiBase] = await Promise.all([getApiKey(), getApiBase()]);
   if (!apiKey) return;
+  const safeUrl = sanitizeTelemetryUrl(url);
 
   try {
     await flushSyncQueue();
-    const payload = { platform, url, domain, enrichment };
+    const payload = { platform, url: safeUrl, domain, enrichment };
     const ok = await postToBackend(
       "/api/company-visits/submission",
       payload,
@@ -184,7 +269,7 @@ async function handleApplicationSubmitted({ platform, url, domain, enrichment })
   } catch {
     await enqueueSyncRequest({
       path: "/api/company-visits/submission",
-      payload: { platform, url, domain, enrichment },
+      payload: { platform, url: safeUrl, domain, enrichment },
     });
   }
 }
@@ -195,7 +280,7 @@ async function handleFalsePositiveReport({ url, domain }) {
 
   const payload = {
     report_type: "false_positive",
-    url,
+    url: sanitizeTelemetryUrl(url),
     domain,
     user_agent: "extension-background",
     extension_version: chrome.runtime.getManifest().version,
@@ -256,8 +341,10 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
       },
     });
 
-    // Inject content + toast scripts (guards inside handle duplicates)
-    await injectScripts(tabId);
+    if (!isHighRiskPlatform(detection.platform)) {
+      // Inject content + toast scripts (guards inside handle duplicates)
+      await injectScripts(tabId);
+    }
   } else {
     // Clear badge
     chrome.action.setBadgeText({ text: "", tabId });
@@ -281,9 +368,11 @@ chrome.tabs.onActivated.addListener(async ({ tabId }) => {
           url: tab.url,
         },
       });
-      // Inject — guards inside will prevent duplicate listeners/observers
-      // Banner cooldown will prevent toast spam on tab switching
-      await injectScripts(tabId);
+      if (!isHighRiskPlatform(detection.platform)) {
+        // Inject — guards inside will prevent duplicate listeners/observers
+        // Banner cooldown will prevent toast spam on tab switching
+        await injectScripts(tabId);
+      }
     }
   } catch {
     // Tab may have been closed between activation and get()

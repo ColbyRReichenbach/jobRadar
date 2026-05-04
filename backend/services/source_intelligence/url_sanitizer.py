@@ -121,10 +121,7 @@ def sanitize_url(raw_url: str | ClassifiedUrl) -> SanitizedUrl:
         urlencode(filtered_query, doseq=True),
         "",
     ))
-    try:
-        digest, version = source_link_hash(canonical)
-    except RuntimeError:
-        digest, version = None, None
+    digest, version = source_link_hash(canonical)
     return SanitizedUrl(
         raw_url=classification.raw_url,
         canonical_public_url=canonical,

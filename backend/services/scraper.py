@@ -271,7 +271,7 @@ async def extract_job(url: str) -> dict:
     try:
         return await _claude_fallback(url)
     except Exception as e:
-        logger.error(f"All extraction methods failed for {url}: {e}")
+        logger.error("All extraction methods failed for job URL: %s", e)
         return {
             "title": None,
             "company": None,

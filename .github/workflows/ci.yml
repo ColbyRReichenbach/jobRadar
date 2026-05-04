@@ -54,8 +54,11 @@ jobs:
           --health-retries 5
     env:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/apptrail_ci
+      TEST_POSTGRES_DATABASE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/apptrail_ci
       JWT_SECRET: ci-jwt-secret
       APPTRAIL_GMAIL_TOKEN_ENCRYPTION_KEY: 9gesi-IgHlO6wRffB63j5cbQhIXnGGCKuxr0IFnAcaM=
+      SOURCE_LINK_HASH_KEY: ci-source-link-hash-key
+      SOURCE_LINK_ENCRYPTION_KEY: 9gesi-IgHlO6wRffB63j5cbQhIXnGGCKuxr0IFnAcaM=
       ANTHROPIC_API_KEY: test-key
       OPENAI_API_KEY: test-key
       ENVIRONMENT: test
@@ -74,6 +77,9 @@ jobs:
 
       - name: Validate Alembic has one head
         run: test "$(alembic heads --verbose | grep -c '^Rev:')" -eq 1
+
+      - name: Run source-intelligence Postgres migration assertions
+        run: pytest -q tests/test_source_migration_postgres.py
 
       - name: Run Alembic migrations on Postgres
         run: alembic upgrade head
@@ -117,6 +123,21 @@ jobs:
 
       - name: Run dashboard checks
         run: bash scripts/ci/run_dashboard_checks.sh
+
+  extension-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run extension checks
+        run: bash scripts/ci/run_extension_checks.sh
 
   ai-feature-checks:
     runs-on: ubuntu-latest

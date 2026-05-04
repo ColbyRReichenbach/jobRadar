@@ -7,7 +7,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Literal, Optional
 from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
@@ -58,6 +58,7 @@ from backend.metrics import (
 from backend.models import (
     Alert,
     Application,
+    ApplicationSourceLink,
     ApplicationSuggestionDecision,
     AtsBehavior,
     Company,
@@ -111,6 +112,7 @@ from backend.services.research_radar.observability import build_trace_payload
 from backend.services.scraper import extract_job, validate_job_parse_url
 from backend.services.source_intelligence.discovery import process_stored_links_for_source_discovery
 from backend.services.source_intelligence.link_store import store_many_user_application_links, store_user_application_link
+from backend.services.source_intelligence.redaction import redact_audit_evidence, redact_source_config
 from backend.services.source_intelligence.url_classifier import classify_url, extract_urls_from_gmail_payload, extract_urls_from_text
 from backend.services.source_intelligence.url_sanitizer import sanitize_public_job_url
 from backend.routes.admin_ai import router as admin_ai_router
@@ -724,6 +726,22 @@ def _sorted_contact_email_pair(email_a: str | None, email_b: str | None) -> tupl
 
 def _normalize_job_url(url: str | None) -> str | None:
     return sanitize_public_job_url(url)
+
+
+EXTENSION_REDACTED_URL = "[redacted]"
+
+
+def _sanitize_extension_url_for_storage(url: str | None, *, redacted_placeholder: bool = False) -> str | None:
+    """Return a display-safe extension URL or a redacted placeholder.
+
+    Extension events can originate from arbitrary pages and may include private
+    query strings. Keep only classifier-approved public URLs in user-visible
+    telemetry tables.
+    """
+    canonical_url = sanitize_public_job_url(url)
+    if canonical_url:
+        return canonical_url
+    return EXTENSION_REDACTED_URL if redacted_placeholder else None
 
 
 async def _find_job_url_duplicate_for_user(db: AsyncSession, user_id: str, job_url: str | None) -> tuple[Application | None, str | None]:
@@ -3157,6 +3175,22 @@ async def create_or_rotate_api_key(
         "last4": current_user.api_key_last4,
         "created_at": current_user.api_key_created_at.isoformat() if current_user.api_key_created_at else None,
     }
+
+
+@app.delete("/api/auth/api-key", status_code=204)
+async def revoke_api_key(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Revoke the current user's extension API key."""
+    now = datetime.now(timezone.utc)
+    current_user.api_key_hash = None
+    current_user.api_key_last4 = None
+    current_user.api_key_created_at = None
+    current_user.api_key_last_used_at = None
+    current_user.updated_at = now
+    await db.commit()
+    return Response(status_code=204)
 
 
 @app.post("/api/auth/api-key/validate")
@@ -6029,6 +6063,7 @@ class CompanyVisitPayload(BaseModel):
 async def record_company_visit(payload: CompanyVisitPayload, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
     """Record or update a career page visit from the extension."""
     user_id = _require_any_user_id(auth)
+    safe_url = _sanitize_extension_url_for_storage(payload.url)
     stmt = select(CompanyVisit).where(
         CompanyVisit.domain == payload.domain,
         CompanyVisit.user_id == user_id,
@@ -6040,6 +6075,8 @@ async def record_company_visit(payload: CompanyVisitPayload, db: AsyncSession = 
     if existing:
         existing.visit_count = payload.visit_count
         existing.last_visited_at = now
+        if safe_url:
+            existing.url = safe_url
         await db.commit()
         await db.refresh(existing)
         return {
@@ -6052,7 +6089,7 @@ async def record_company_visit(payload: CompanyVisitPayload, db: AsyncSession = 
     else:
         visit = CompanyVisit(
             domain=payload.domain,
-            url=payload.url,
+            url=safe_url,
             visit_count=payload.visit_count,
             first_visited_at=now,
             last_visited_at=now,
@@ -6105,8 +6142,9 @@ async def list_company_visits(
 
 class SubmissionPayload(BaseModel):
     platform: str = Field(..., max_length=MAX_PLATFORM_LEN)
-    url: str = Field(..., max_length=MAX_URL_LEN)
+    url: Optional[str] = Field(None, max_length=MAX_URL_LEN)
     domain: str = Field(..., max_length=MAX_DOMAIN_LEN)
+    application_id: Optional[UUID] = None
     enrichment: Optional[dict] = None
 
 
@@ -6114,23 +6152,22 @@ class SubmissionPayload(BaseModel):
 async def record_submission_detection(payload: SubmissionPayload, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
     """Handle auto-detected ATS application submission from the extension.
 
-    Finds the most recent application matching the domain and updates its status to 'applied'.
+    Only updates an application when the extension provides a specific
+    application_id. Loose domain-only confirmation detection is treated as a
+    pending signal so a generic confirmation page cannot mutate the wrong
+    pipeline item.
     Also applies any enrichment data (salary, department) extracted from the confirmation page.
     """
-    from sqlalchemy import func
-
     user_id = _require_any_user_id(auth)
 
-    # Find matching application by company domain
-    app_stmt = (
-        select(Application)
-        .join(Company, Application.company_id == Company.id, isouter=True)
-        .where(Company.domain == payload.domain, Application.user_id == user_id)
-        .order_by(Application.applied_at.desc())
-        .limit(1)
-    )
-    result = await db.execute(app_stmt)
-    app = result.scalar_one_or_none()
+    app = None
+    if payload.application_id:
+        app_stmt = select(Application).where(
+            Application.id == payload.application_id,
+            Application.user_id == user_id,
+        )
+        result = await db.execute(app_stmt)
+        app = result.scalar_one_or_none()
 
     updated = False
     if app:
@@ -6154,7 +6191,12 @@ async def record_submission_detection(payload: SubmissionPayload, db: AsyncSessi
         await db.commit()
         updated = True
 
-    return {"matched": app is not None, "updated": updated, "platform": payload.platform}
+    return {
+        "matched": app is not None,
+        "updated": updated,
+        "platform": payload.platform,
+        "requires_confirmation": payload.application_id is None,
+    }
 
 
 # ── Sprint 19: Notification Preferences & Alerts ──────────────────────
@@ -7619,7 +7661,7 @@ async def update_audit_email_review(
 
 class ExtractionReportCreate(BaseModel):
     report_type: str  # missing_data | undetected_site | false_positive | wrong_data
-    url: str
+    url: str | None = None
     domain: str | None = None
     platform_detected: str | None = None
     extraction_method: str | None = None
@@ -7644,11 +7686,12 @@ async def create_extraction_report(
         raise HTTPException(400, f"report_type must be one of {valid_types}")
 
     user_id = _require_any_user_id(auth)
+    safe_url = _sanitize_extension_url_for_storage(body.url, redacted_placeholder=True)
 
     report = ExtractionReport(
         user_id=user_id,
         report_type=body.report_type,
-        url=body.url,
+        url=safe_url or EXTENSION_REDACTED_URL,
         domain=body.domain,
         platform_detected=body.platform_detected,
         extraction_method=body.extraction_method,
@@ -8516,8 +8559,7 @@ def _serialize_source_verification_run(run: SourceVerificationRun) -> dict:
 
 
 def _redact_source_config(config: dict | None) -> dict:
-    blocked = {"token", "api_key", "authorization", "cookie", "headers", "query", "raw_url", "password"}
-    return {key: value for key, value in (config or {}).items() if key.lower() not in blocked}
+    return redact_source_config(config)
 
 
 def _record_source_audit_event(
@@ -8537,18 +8579,7 @@ def _record_source_audit_event(
 
 
 def _redact_audit_evidence(evidence: dict | None) -> dict:
-    blocked = {"token", "api_key", "authorization", "cookie", "headers", "query", "raw_url", "url", "subject", "body"}
-    clean: dict = {}
-    for key, value in (evidence or {}).items():
-        if key.lower() in blocked:
-            continue
-        if isinstance(value, str):
-            clean[key] = value.replace("\r", " ").replace("\n", " ")[:240]
-        elif isinstance(value, (bool, int, float)) or value is None:
-            clean[key] = value
-        else:
-            clean[key] = str(value).replace("\r", " ").replace("\n", " ")[:240]
-    return clean
+    return redact_audit_evidence(evidence)
 
 
 class DeleteAccountBody(BaseModel):
@@ -8608,6 +8639,39 @@ async def export_account_data(
             d[col.key] = val
         return d
 
+    def _private_link_metadata(row: UserApplicationLink) -> dict:
+        return {
+            "id": str(row.id),
+            "application_id": str(row.application_id) if row.application_id else None,
+            "email_event_id": str(row.email_event_id) if row.email_event_id else None,
+            "canonical_public_url": row.canonical_public_url,
+            "link_type": row.link_type,
+            "provider_type": row.provider_type,
+            "provider_key": row.provider_key,
+            "company_domain": row.company_domain,
+            "contains_private_token": row.contains_private_token,
+            "sanitization_status": row.sanitization_status,
+            "rejection_reason": row.rejection_reason,
+            "parser_version": row.parser_version,
+            "encryption_key_version": row.encryption_key_version,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+            "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+        }
+
+    def _source_discovery_event_metadata(row: SourceDiscoveryEvent) -> dict:
+        return {
+            "id": str(row.id),
+            "source_id": str(row.source_id) if row.source_id else None,
+            "email_event_id": str(row.email_event_id) if row.email_event_id else None,
+            "application_id": str(row.application_id) if row.application_id else None,
+            "event_type": row.event_type,
+            "provider_type": row.provider_type,
+            "company_domain": row.company_domain,
+            "confidence_delta": row.confidence_delta,
+            "redacted_evidence": _redact_audit_evidence(row.redacted_evidence),
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+        }
+
     export: dict = {
         "user": {
             "id": str(current_user.id),
@@ -8634,11 +8698,22 @@ async def export_account_data(
         ("recommended_actions", RecommendedAction, RecommendedAction.user_id == uid),
         ("research_feedback", ResearchFeedback, ResearchFeedback.user_id == uid),
         ("consents", DataConsent, DataConsent.user_id == uid),
+        ("application_source_links", ApplicationSourceLink, ApplicationSourceLink.user_id == uid),
     ]
 
     for key, model, condition in tables:
         result = await db.execute(select(model).where(condition))
         export[key] = [_row_dict(r) for r in result.scalars().all()]
+
+    private_links = (
+        await db.execute(select(UserApplicationLink).where(UserApplicationLink.user_id == uid))
+    ).scalars().all()
+    export["user_application_links"] = [_private_link_metadata(row) for row in private_links]
+
+    source_events = (
+        await db.execute(select(SourceDiscoveryEvent).where(SourceDiscoveryEvent.user_id == uid))
+    ).scalars().all()
+    export["source_discovery_events"] = [_source_discovery_event_metadata(row) for row in source_events]
 
     import uuid as _uuid
     content = json.dumps(export, default=str, indent=2)

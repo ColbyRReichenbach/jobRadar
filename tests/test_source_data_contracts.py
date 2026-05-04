@@ -131,3 +131,21 @@ async def test_private_link_endpoint_redacts_raw_values(client, db_session):
     assert data[0]["link_type"] == "interview_scheduler"
     assert "raw_url_encrypted" not in data[0]
     assert "private-hmac" not in str(data[0])
+
+
+def test_source_intelligence_advisory_lock_key_is_stable_signed_bigint():
+    from backend.services.source_intelligence.locks import advisory_lock_key
+
+    first = advisory_lock_key("job-source-verify:source-a")
+    second = advisory_lock_key("job-source-verify:source-a")
+
+    assert first == second
+    assert -(2**63) <= first < 2**63
+
+
+@pytest.mark.asyncio
+async def test_source_intelligence_lock_is_noop_for_sqlite_tests(db_session):
+    from backend.services.source_intelligence.locks import source_intelligence_lock
+
+    async with source_intelligence_lock(db_session, "unit-test-lock") as locked:
+        assert locked is True

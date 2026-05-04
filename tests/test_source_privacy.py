@@ -60,6 +60,14 @@ async def test_private_job_url_is_not_indexed_or_exported(client, db_session):
     assert export_response.status_code == 200
     assert private_url not in export_response.text
 
+    account_export_response = await client.get("/api/account/export", headers=AUTH_HEADER)
+    assert account_export_response.status_code == 200
+    account_export = account_export_response.json()
+    assert private_url not in account_export_response.text
+    assert account_export["user_application_links"][0]["sanitization_status"] == "private_user_only"
+    assert "raw_url_encrypted" not in account_export["user_application_links"][0]
+    assert "raw_url_hash" not in account_export["user_application_links"][0]
+
 
 @pytest.mark.asyncio
 async def test_application_update_clears_private_job_url(client, db_session):
@@ -150,3 +158,38 @@ def test_log_redaction_covers_private_url_indicators():
     assert "candidateId=abc" not in redacted
     assert "token=secret" not in redacted
     assert "api_key=hidden" not in redacted
+
+
+def test_source_config_redaction_is_recursive_and_drops_urls():
+    from backend.services.source_intelligence.redaction import redact_source_config
+
+    config = {
+        "tenant": "acme",
+        "headers": {"Authorization": "Bearer secret"},
+        "nested": {
+            "apiKey": "secret",
+            "site": "careers",
+            "candidateId": "abc",
+        },
+        "cxs_jobs_endpoint": "https://acme.wd5.myworkdayjobs.com/wday/cxs/acme/site/jobs",
+    }
+
+    redacted = redact_source_config(config)
+
+    assert redacted == {"tenant": "acme", "nested": {"site": "careers"}}
+
+
+def test_audit_evidence_redaction_strips_crlf_and_private_values():
+    from backend.services.source_intelligence.redaction import redact_audit_evidence
+
+    evidence = {
+        "rule_id": "private_token_query_param\nnext",
+        "url": "https://example.com/job?token=secret",
+        "nested": {"query": "token=secret", "provider_type": "workday\r"},
+    }
+
+    redacted = redact_audit_evidence(evidence)
+
+    assert redacted["rule_id"] == "private_token_query_param next"
+    assert "url" not in redacted
+    assert redacted["nested"] == {"provider_type": "workday "}

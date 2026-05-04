@@ -62,11 +62,11 @@ function freshnessLabel(value: string): string {
 function sourceStatusText(response: JobSearchResponse): string | null {
   const summary = response.source_summary;
   const mode = response.provider_status?.mode;
-  if (mode === 'provider_limited') return 'Broad search is not configured. Add a company career URL or try a known company.';
-  if (summary?.verified_source_count) return 'Searching verified company career sources.';
   if (summary?.broad_provider_used) return 'No verified company source yet. Using broad web search.';
+  if (summary?.verified_source_count) return 'Searching verified company career sources.';
   if (summary?.stale_source_count) return 'Known source needs refresh. We are checking it now.';
   if (summary?.blocked_source_count) return 'This provider is not available through Opportunity Radar.';
+  if (mode === 'provider_limited') return 'Broad search is not configured. Add a company career URL or try a known company.';
   return null;
 }
 

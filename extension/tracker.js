@@ -12,6 +12,7 @@
     /\/work-with-us/i,
     /\/join-us/i,
   ];
+  const HIGH_RISK_HOST_PARTS = ['linkedin.com', 'indeed.com', 'glassdoor.com'];
 
   // ATS confirmation page patterns (Sprint 17 Task 1)
   const CONFIRMATION_PATTERNS = [
@@ -36,6 +37,27 @@
     } catch {
       return '';
     }
+  }
+
+  function isHighRiskHost(url) {
+    try {
+      const hostname = new URL(url).hostname.toLowerCase();
+      return HIGH_RISK_HOST_PARTS.some((hostPart) => hostname.endsWith(hostPart));
+    } catch {
+      return true;
+    }
+  }
+
+  function getExtensionSettings() {
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage({ type: 'GET_EXTENSION_SETTINGS' }, (response) => {
+        if (chrome.runtime.lastError || !response?.ok) {
+          resolve({});
+          return;
+        }
+        resolve(response.settings || {});
+      });
+    });
   }
 
   function isCareerPage(url) {
@@ -80,31 +102,18 @@
 
   async function trackVisit() {
     const url = window.location.href;
+    if (isHighRiskHost(url)) return;
     const domain = extractDomain(url);
     if (!domain) return;
 
     // Only track career-related pages
     if (!isCareerPage(url)) return;
 
-    // Get existing visits from storage
-    const key = `visits_${domain}`;
-    const data = await chrome.storage.local.get(key);
-    const existing = data[key] || { domain, urls: [], count: 0, firstVisit: Date.now() };
-
-    existing.count += 1;
-    existing.lastVisit = Date.now();
-    if (!existing.urls.includes(url)) {
-      existing.urls.push(url);
-    }
-
-    await chrome.storage.local.set({ [key]: existing });
-
     // Notify background about visit
     chrome.runtime.sendMessage({
       type: 'CAREER_PAGE_VISIT',
       domain,
       url,
-      visitCount: existing.count,
     });
   }
 
@@ -124,9 +133,14 @@
     }
   }
 
-  // Run on page load
-  trackVisit();
+  getExtensionSettings().then((settings) => {
+    if (settings.careerTrackingEnabled) {
+      trackVisit();
+    }
 
-  // Check for confirmation after a delay (ATS pages may load dynamically)
-  setTimeout(checkConfirmation, 2000);
+    if (settings.submissionDetectionEnabled) {
+      // Check for confirmation after a delay (ATS pages may load dynamically)
+      setTimeout(checkConfirmation, 2000);
+    }
+  });
 })();

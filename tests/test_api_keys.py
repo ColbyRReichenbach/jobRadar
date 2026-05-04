@@ -103,3 +103,18 @@ async def test_rotating_api_key_invalidates_previous_key(client):
 
     assert old_validate.status_code == 401
     assert new_validate.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_revoking_api_key_invalidates_current_key(client):
+    create_response = await client.post("/api/auth/api-key", headers=AUTH_HEADER)
+    api_key = create_response.json()["api_key"]
+    api_key_header = {"Authorization": f"Bearer {api_key}"}
+
+    revoke_response = await client.delete("/api/auth/api-key", headers=AUTH_HEADER)
+    validate_response = await client.post("/api/auth/api-key/validate", headers=api_key_header)
+    status_response = await client.get("/api/auth/api-key", headers=AUTH_HEADER)
+
+    assert revoke_response.status_code == 204
+    assert validate_response.status_code == 401
+    assert status_response.json()["has_api_key"] is False

@@ -211,6 +211,25 @@ async def test_broad_results_enqueue_direct_source_candidates(db_session):
 
 
 @pytest.mark.asyncio
+async def test_broad_provider_usage_is_recorded_for_empty_results(db_session):
+    from backend.models import JobSearchProviderUsage
+    from backend.services.job_sources.resolver import resolve_job_search
+
+    async def fake_broad(query, location):
+        return []
+
+    result = await resolve_job_search(db_session, user_id=TEST_USER_ID, query="NoMatchCo", location="", broad_search=fake_broad)
+    await db_session.commit()
+
+    rows = (await db_session.execute(select(JobSearchProviderUsage))).scalars().all()
+
+    assert result.provider_status["mode"] == "broad_only"
+    assert result.source_summary.broad_provider_used is True
+    assert len(rows) == 2
+    assert all(row.result_count == 0 for row in rows)
+
+
+@pytest.mark.asyncio
 async def test_search_api_returns_source_summary_for_direct_source(monkeypatch, client, db_session):
     from backend.models import CompanyJobSource
     from backend.services.job_sources import greenhouse
