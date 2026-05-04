@@ -26,8 +26,8 @@ What the extension does:
 - Detects supported job pages across major applicant tracking systems and career sites
 - Extracts job details such as title, company, location, and salary when available
 - Opens a side panel so you can review and edit the captured information before saving
-- Tracks repeated visits to company career pages so you can spot companies you are spending time on
-- Detects common application submission pages on supported platforms
+- Can track repeated visits to company career pages after you enable that setting
+- Can detect common application submission pages as review signals after you enable that setting
 - Queues activity locally when you are offline and syncs it when the connection returns
 
 The extension is built for focused job-search use. It does not try to monitor general browsing activity. It only runs on supported job and career-related pages that match its detection rules.
@@ -52,7 +52,8 @@ Setup:
 Privacy:
 
 - The extension uses a user-scoped API key
-- Job data stays local until you save or sync it
+- The API key is stored locally until you clear it from the extension or revoke it in dashboard Settings
+- Job data syncs when you save a job; career visit and submission signals sync only when their settings are enabled
 - The extension does not sell personal data
 - The extension is limited to supported job-related pages
 

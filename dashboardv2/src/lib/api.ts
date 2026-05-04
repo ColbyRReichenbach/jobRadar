@@ -441,6 +441,14 @@ export async function generateApiKey(): Promise<ApiKeyCreateResponse> {
   return await res.json();
 }
 
+export async function revokeApiKey(): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/api/auth/api-key`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to revoke API key'));
+}
+
 export function setAuthToken(token: string) {
   _accessToken = token;
   writeSessionHint(true);

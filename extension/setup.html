@@ -119,9 +119,21 @@
       line-height: 1.5;
       display: none;
     }
-    .status.success { display: block; background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
-    .status.error { display: block; background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
-  </style>
+	    .status.success { display: block; background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; }
+	    .status.error { display: block; background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+	    .status.info { display: block; background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; }
+	    .secondary-btn {
+	      background: white;
+	      color: #475569;
+	      border: 1px solid #e2e8f0;
+	      box-shadow: none;
+	      margin-top: 10px;
+	    }
+	    .secondary-btn:hover {
+	      background: #f8fafc;
+	      box-shadow: none;
+	    }
+	  </style>
 </head>
 <body>
   <div class="container">
@@ -137,14 +149,15 @@
       <p class="hint">Default is the production API. Use http://localhost:8000 or http://127.0.0.1:8000 for local development.</p>
     </div>
 
-    <div class="field">
-      <label for="apiKey">API Key</label>
-      <input type="password" id="apiKey" placeholder="aptk_..." autocomplete="off">
-      <p class="hint">Stored in session storage only — clears when the browser closes.</p>
-    </div>
+	    <div class="field">
+	      <label for="apiKey">API Key</label>
+	      <input type="password" id="apiKey" placeholder="aptk_..." autocomplete="off">
+	      <p class="hint">Stored locally in Chrome until you clear it. Revoke the server-side key from dashboard Settings if a device is lost or shared.</p>
+	    </div>
 
-    <button id="saveBtn">Save &amp; Validate</button>
-    <div id="status" class="status"></div>
+	    <button id="saveBtn">Save &amp; Validate</button>
+	    <button id="clearBtn" class="secondary-btn" type="button">Clear Stored Key</button>
+	    <div id="status" class="status"></div>
   </div>
   <script type="module" src="setup.js"></script>
 </body>

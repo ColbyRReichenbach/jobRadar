@@ -84,6 +84,13 @@ export async function setApiKey(value) {
   return apiKey;
 }
 
+export async function clearApiKey() {
+  await Promise.all([
+    chrome.storage.local.remove(API_KEY_STORAGE_KEY),
+    chrome.storage.session.remove(API_KEY_STORAGE_KEY),
+  ]);
+}
+
 export function buildApiUrl(apiBase, path) {
   if (path.startsWith("http://") || path.startsWith("https://")) {
     return path;

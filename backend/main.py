@@ -7,7 +7,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Literal, Optional
 from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
@@ -724,6 +724,22 @@ def _sorted_contact_email_pair(email_a: str | None, email_b: str | None) -> tupl
 
 def _normalize_job_url(url: str | None) -> str | None:
     return sanitize_public_job_url(url)
+
+
+EXTENSION_REDACTED_URL = "[redacted]"
+
+
+def _sanitize_extension_url_for_storage(url: str | None, *, redacted_placeholder: bool = False) -> str | None:
+    """Return a display-safe extension URL or a redacted placeholder.
+
+    Extension events can originate from arbitrary pages and may include private
+    query strings. Keep only classifier-approved public URLs in user-visible
+    telemetry tables.
+    """
+    canonical_url = sanitize_public_job_url(url)
+    if canonical_url:
+        return canonical_url
+    return EXTENSION_REDACTED_URL if redacted_placeholder else None
 
 
 async def _find_job_url_duplicate_for_user(db: AsyncSession, user_id: str, job_url: str | None) -> tuple[Application | None, str | None]:
@@ -3157,6 +3173,22 @@ async def create_or_rotate_api_key(
         "last4": current_user.api_key_last4,
         "created_at": current_user.api_key_created_at.isoformat() if current_user.api_key_created_at else None,
     }
+
+
+@app.delete("/api/auth/api-key", status_code=204)
+async def revoke_api_key(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Revoke the current user's extension API key."""
+    now = datetime.now(timezone.utc)
+    current_user.api_key_hash = None
+    current_user.api_key_last4 = None
+    current_user.api_key_created_at = None
+    current_user.api_key_last_used_at = None
+    current_user.updated_at = now
+    await db.commit()
+    return Response(status_code=204)
 
 
 @app.post("/api/auth/api-key/validate")
@@ -6029,6 +6061,7 @@ class CompanyVisitPayload(BaseModel):
 async def record_company_visit(payload: CompanyVisitPayload, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
     """Record or update a career page visit from the extension."""
     user_id = _require_any_user_id(auth)
+    safe_url = _sanitize_extension_url_for_storage(payload.url)
     stmt = select(CompanyVisit).where(
         CompanyVisit.domain == payload.domain,
         CompanyVisit.user_id == user_id,
@@ -6040,6 +6073,8 @@ async def record_company_visit(payload: CompanyVisitPayload, db: AsyncSession = 
     if existing:
         existing.visit_count = payload.visit_count
         existing.last_visited_at = now
+        if safe_url:
+            existing.url = safe_url
         await db.commit()
         await db.refresh(existing)
         return {
@@ -6052,7 +6087,7 @@ async def record_company_visit(payload: CompanyVisitPayload, db: AsyncSession = 
     else:
         visit = CompanyVisit(
             domain=payload.domain,
-            url=payload.url,
+            url=safe_url,
             visit_count=payload.visit_count,
             first_visited_at=now,
             last_visited_at=now,
@@ -6105,8 +6140,9 @@ async def list_company_visits(
 
 class SubmissionPayload(BaseModel):
     platform: str = Field(..., max_length=MAX_PLATFORM_LEN)
-    url: str = Field(..., max_length=MAX_URL_LEN)
+    url: Optional[str] = Field(None, max_length=MAX_URL_LEN)
     domain: str = Field(..., max_length=MAX_DOMAIN_LEN)
+    application_id: Optional[UUID] = None
     enrichment: Optional[dict] = None
 
 
@@ -6114,23 +6150,22 @@ class SubmissionPayload(BaseModel):
 async def record_submission_detection(payload: SubmissionPayload, db: AsyncSession = Depends(get_db), auth: dict = Depends(verify_api_key)):
     """Handle auto-detected ATS application submission from the extension.
 
-    Finds the most recent application matching the domain and updates its status to 'applied'.
+    Only updates an application when the extension provides a specific
+    application_id. Loose domain-only confirmation detection is treated as a
+    pending signal so a generic confirmation page cannot mutate the wrong
+    pipeline item.
     Also applies any enrichment data (salary, department) extracted from the confirmation page.
     """
-    from sqlalchemy import func
-
     user_id = _require_any_user_id(auth)
 
-    # Find matching application by company domain
-    app_stmt = (
-        select(Application)
-        .join(Company, Application.company_id == Company.id, isouter=True)
-        .where(Company.domain == payload.domain, Application.user_id == user_id)
-        .order_by(Application.applied_at.desc())
-        .limit(1)
-    )
-    result = await db.execute(app_stmt)
-    app = result.scalar_one_or_none()
+    app = None
+    if payload.application_id:
+        app_stmt = select(Application).where(
+            Application.id == payload.application_id,
+            Application.user_id == user_id,
+        )
+        result = await db.execute(app_stmt)
+        app = result.scalar_one_or_none()
 
     updated = False
     if app:
@@ -6154,7 +6189,12 @@ async def record_submission_detection(payload: SubmissionPayload, db: AsyncSessi
         await db.commit()
         updated = True
 
-    return {"matched": app is not None, "updated": updated, "platform": payload.platform}
+    return {
+        "matched": app is not None,
+        "updated": updated,
+        "platform": payload.platform,
+        "requires_confirmation": payload.application_id is None,
+    }
 
 
 # ── Sprint 19: Notification Preferences & Alerts ──────────────────────
@@ -7619,7 +7659,7 @@ async def update_audit_email_review(
 
 class ExtractionReportCreate(BaseModel):
     report_type: str  # missing_data | undetected_site | false_positive | wrong_data
-    url: str
+    url: str | None = None
     domain: str | None = None
     platform_detected: str | None = None
     extraction_method: str | None = None
@@ -7644,11 +7684,12 @@ async def create_extraction_report(
         raise HTTPException(400, f"report_type must be one of {valid_types}")
 
     user_id = _require_any_user_id(auth)
+    safe_url = _sanitize_extension_url_for_storage(body.url, redacted_placeholder=True)
 
     report = ExtractionReport(
         user_id=user_id,
         report_type=body.report_type,
-        url=body.url,
+        url=safe_url or EXTENSION_REDACTED_URL,
         domain=body.domain,
         platform_detected=body.platform_detected,
         extraction_method=body.extraction_method,

@@ -40,8 +40,8 @@ The extension handles capture while you browse. It can:
 - detect supported job pages across major ATS platforms
 - open a side panel with extracted job details
 - let you edit and save a role without leaving the tab
-- track repeated career-page visits
-- detect common application submission pages
+- optionally track repeated career-page visits after you enable that setting
+- optionally detect common application submission pages as review signals
 - queue activity locally when the browser is offline and sync later
 
 ### Background Services
@@ -117,7 +117,7 @@ npm run dev
 
 ## Privacy And Control
 
-AppTrail has explicit consent controls for data processing and third-party enrichment. The extension only runs on supported job-related pages, uses a user-scoped API key, and keeps unsent activity on the device until you choose to save or sync it.
+AppTrail has explicit consent controls for data processing and third-party enrichment. The extension only runs on supported job-related pages, uses a user-scoped API key stored locally until you clear it, and syncs only saved jobs or opt-in extension activity.
 
 For policy details, see:
 

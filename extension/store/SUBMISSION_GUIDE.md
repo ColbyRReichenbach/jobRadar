@@ -70,7 +70,7 @@ Needed to display the AppTrail side panel next to the current tab.
 
 ### `storage`
 
-Needed to store the user's API key, local queue data, and lightweight extension state.
+Needed to store the user's API key until they clear it, local queue data, opt-in tracking settings, and lightweight extension state.
 
 ### `scripting`
 
@@ -86,7 +86,7 @@ The extension needs:
 
 - the AppTrail backend host for sync
 - localhost hosts for development
-- optional ATS host permissions so it can read supported job pages only when needed
+- supported ATS and career-page host access so it can read job pages; broad third-party job boards are manual or user-initiated by default
 
 ## Submission Checklist
 

@@ -27,6 +27,8 @@ rm -f "${OUTPUT_PATH}"
     -x "*.DS_Store" \
     -x "__MACOSX/*" \
     -x "images/icon-source.svg" \
+    -x "package.json" \
+    -x "tests/*" \
     -x "store/*"
 )
 

@@ -28,6 +28,22 @@ async def test_create_extraction_report(client):
 
 
 @pytest.mark.asyncio
+async def test_create_extraction_report_redacts_private_url(client):
+    resp = await client.post(
+        "/api/extraction-reports",
+        json={
+            "report_type": "missing_data",
+            "url": "https://example.com/jobs/123?applicationId=abc&token=secret",
+            "domain": "example.com",
+        },
+        headers=AUTH_HEADER,
+    )
+
+    assert resp.status_code == 201
+    assert resp.json()["url"] == "[redacted]"
+
+
+@pytest.mark.asyncio
 async def test_create_wrong_data_report_with_diff(client):
     """Reports include extracted vs corrected data for diffing."""
     resp = await client.post(

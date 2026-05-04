@@ -14,6 +14,7 @@ import {
   fetchSourcePrivateLinks,
   reprocessSourceIntelligence,
   generateApiKey,
+  revokeApiKey,
   updateConsent,
   updateNotificationPreferences,
   deleteAccount,
@@ -62,6 +63,7 @@ export function Settings() {
   const [newApiKey, setNewApiKey] = useState('');
   const [copySaved, setCopySaved] = useState(false);
   const [generatingKey, setGeneratingKey] = useState(false);
+  const [revokingKey, setRevokingKey] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [consent, setConsent] = useState<ConsentStatus | null>(null);
@@ -233,6 +235,28 @@ export function Settings() {
       setErrorMessage(err instanceof Error ? err.message : 'Failed to generate API key.');
     } finally {
       setGeneratingKey(false);
+    }
+  };
+
+  const revokeCurrentApiKey = async () => {
+    if (!apiKeyStatus?.has_api_key) return;
+    setRevokingKey(true);
+    setErrorMessage(null);
+    setStatusMessage(null);
+    try {
+      await revokeApiKey();
+      setNewApiKey('');
+      setApiKeyStatus({
+        has_api_key: false,
+        last4: null,
+        created_at: null,
+        last_used_at: null,
+      });
+      setStatusMessage('Extension API key revoked. Clear the saved key from the extension setup screen if it is still stored there.');
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to revoke API key.');
+    } finally {
+      setRevokingKey(false);
     }
   };
 
@@ -495,13 +519,13 @@ export function Settings() {
               </div>
               <div>
                 <h2 className="text-base font-semibold text-slate-900">Extension API Key</h2>
-                <p className="text-xs text-slate-500">Generate a personal key for the Chrome extension</p>
+                <p className="text-xs text-slate-500">Generate, rotate, or revoke the Chrome extension connection</p>
               </div>
             </div>
 
             <div className="space-y-4">
               <p className="text-sm text-slate-600">
-                Use this key only in the extension setup screen. It is tied to your account and replaces the old shared environment key flow.
+                Paste this key into the extension setup screen once. The extension keeps it locally until you clear it, so you do not need to reconnect every browser session.
               </p>
 
               {apiKeyStatus?.has_api_key ? (
@@ -544,14 +568,26 @@ export function Settings() {
                 </div>
               )}
 
-              <button
-                onClick={createNewApiKey}
-                disabled={generatingKey}
-                className="inline-flex items-center gap-2 px-4 py-2.5 bg-violet-600 text-white text-sm font-medium rounded-xl hover:bg-violet-700 transition-colors disabled:opacity-50"
-              >
-                {generatingKey ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                {apiKeyStatus?.has_api_key ? 'Rotate API Key' : 'Generate API Key'}
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={createNewApiKey}
+                  disabled={generatingKey || revokingKey}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 bg-violet-600 text-white text-sm font-medium rounded-xl hover:bg-violet-700 transition-colors disabled:opacity-50"
+                >
+                  {generatingKey ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                  {apiKeyStatus?.has_api_key ? 'Rotate API Key' : 'Generate API Key'}
+                </button>
+                {apiKeyStatus?.has_api_key && (
+                  <button
+                    onClick={revokeCurrentApiKey}
+                    disabled={generatingKey || revokingKey}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 border border-red-200 text-red-700 bg-white text-sm font-medium rounded-xl hover:bg-red-50 transition-colors disabled:opacity-50"
+                  >
+                    {revokingKey ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                    Revoke API Key
+                  </button>
+                )}
+              </div>
             </div>
           </motion.div>
 
@@ -574,7 +610,7 @@ export function Settings() {
 
             <div className="space-y-4">
               <p className="text-sm text-slate-600">
-                The AppTrail extension detects job listings on 15+ ATS platforms, tracks your career page visits, and lets you save jobs to your pipeline with one click.
+                The AppTrail extension detects supported ATS and company career pages, lets you save jobs to your pipeline, and can track repeat career-page visits only when you enable that setting in the extension.
               </p>
 
               <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
@@ -589,7 +625,7 @@ export function Settings() {
                   </div>
                   <div className="flex items-start gap-2">
                     <span className="text-emerald-500 mt-0.5">3.</span>
-                    <span>Browse job listings — AppTrail will detect and track them automatically</span>
+                    <span>Browse job listings and use the side panel to review detected details before saving</span>
                   </div>
                 </div>
               </div>

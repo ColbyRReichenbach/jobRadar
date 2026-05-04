@@ -428,6 +428,19 @@
     .toggle input:checked + .toggle-slider::before {
       transform: translateX(16px);
     }
+    .settings-action {
+      width: 100%;
+      margin-top: 12px;
+      padding: 9px 12px;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      background: #fff;
+      color: #475569;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .settings-action:hover { background: #f8fafc; }
 
     /* --- Report issue link --- */
     .report-link {
@@ -565,13 +578,45 @@
     <div class="setting-row">
       <div>
         <div class="setting-label">LinkedIn auto-extract</div>
-        <div class="setting-desc">Read job details from page. Disable for account safety.</div>
+        <div class="setting-desc">Off by default. Enable only if you want AppTrail to read LinkedIn job pages.</div>
       </div>
       <label class="toggle">
-        <input type="checkbox" id="linkedin-extract-toggle" checked>
+        <input type="checkbox" id="linkedin-extract-toggle">
         <span class="toggle-slider"></span>
       </label>
     </div>
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Other job-board auto-extract</div>
+        <div class="setting-desc">Off by default for broad job boards. ATS and company career pages still work normally.</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="third-party-extract-toggle">
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Career visit tracking</div>
+        <div class="setting-desc">When enabled, AppTrail saves sanitized company career-page visits for pipeline nudges.</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="career-tracking-toggle">
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">Application confirmation detection</div>
+        <div class="setting-desc">When enabled, confirmations are sent as review signals. Page text alone will not auto-apply jobs.</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="submission-detection-toggle">
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+    <button id="clear-api-key-btn" class="settings-action" type="button">Clear stored API key from this browser</button>
+    <div id="settings-status" class="hint"></div>
   </div>
 
   <div id="browsing-nudge" class="hidden"></div>
@@ -624,10 +669,10 @@
     <!-- LinkedIn disclaimer -->
     <div id="linkedin-disclaimer" class="linkedin-disclaimer hidden">
       <div id="linkedin-auto-msg" class="hidden">
-        <strong>LinkedIn notice:</strong> Fields are pre-filled from this page. Verify and edit before saving. You can disable auto-extraction in settings for account safety.
+        <strong>Third-party job board notice:</strong> Fields are pre-filled from this page. Verify and edit before saving. You can disable auto-extraction in settings.
       </div>
       <div id="linkedin-manual-msg" class="hidden">
-        <strong>Auto-extract disabled.</strong> LinkedIn limits third-party data access. Enter job details manually below for account safety.
+        <strong>Auto-extract disabled.</strong> This platform limits third-party data access. Enter job details manually below.
       </div>
     </div>
 

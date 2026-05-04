@@ -1,4 +1,4 @@
-import { buildApiUrl, getApiBase, getApiKey } from "./config.js";
+import { buildApiUrl, clearApiKey, getApiBase, getApiKey } from "./config.js";
 import { detectPlatform } from "./detector.js";
 
 let currentJobData = null;
@@ -8,10 +8,31 @@ let currentDetection = null;
 // Settings defaults
 const SETTINGS_KEY = "apptrail_settings";
 const DEFAULT_SETTINGS = {
-  linkedinAutoExtract: true,
+  linkedinAutoExtract: false,
+  thirdPartyBoardAutoExtract: false,
+  careerTrackingEnabled: false,
+  submissionDetectionEnabled: false,
 };
 const DEFAULT_NO_JOB_MESSAGE = "Navigate to a job posting page to get started.";
 const UNAVAILABLE_NO_JOB_MESSAGE = "This job posting is unavailable or has been removed.";
+const HIGH_RISK_PLATFORMS = new Set(["linkedin", "indeed", "glassdoor"]);
+const PRIVATE_QUERY_KEYS = [
+  "token",
+  "auth",
+  "authorization",
+  "session",
+  "sessionid",
+  "jwt",
+  "candidate",
+  "candidateid",
+  "application",
+  "applicationid",
+  "profileid",
+  "magic",
+  "invite",
+  "interview",
+  "schedule",
+];
 
 async function getSettings() {
   const data = await chrome.storage.local.get(SETTINGS_KEY);
@@ -109,6 +130,27 @@ function isSafeExternalUrl(url) {
   } catch {
     return false;
   }
+}
+
+function sanitizeUrlForTelemetry(url) {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:") return null;
+    const queryKeys = Array.from(parsed.searchParams.keys()).map((key) => key.toLowerCase());
+    if (queryKeys.some((key) => PRIVATE_QUERY_KEYS.some((privateKey) => key.includes(privateKey)))) {
+      return null;
+    }
+    parsed.search = "";
+    parsed.hash = "";
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+function isHighRiskPlatform(platform) {
+  return HIGH_RISK_PLATFORMS.has(platform);
 }
 
 function readEditableValue(element) {
@@ -279,16 +321,21 @@ async function init() {
 
   const settings = await getSettings();
   const isLinkedIn = detection.platform === "linkedin";
+  const isHighRisk = isHighRiskPlatform(detection.platform);
+  const highRiskAutoExtractEnabled = isLinkedIn
+    ? settings.linkedinAutoExtract
+    : settings.thirdPartyBoardAutoExtract;
 
-  // LinkedIn with auto-extract disabled → show manual form with disclaimer
-  if (isLinkedIn && !settings.linkedinAutoExtract) {
+  // High-risk third-party job boards default to manual entry.
+  if (isHighRisk && !highRiskAutoExtractEnabled) {
     displayJobData({
       title: null,
       company: null,
       location: null,
       description: null,
       source: "manual",
-      _linkedinManual: true,
+      _thirdPartyManual: true,
+      _manualPlatform: detection.platform,
     });
     return;
   }
@@ -302,6 +349,13 @@ async function init() {
       currentWindow: true,
     });
     if (tab) {
+      if (isHighRisk) {
+        try {
+          await chrome.runtime.sendMessage({ type: "INJECT_ACTIVE_TAB", tabId: tab.id });
+        } catch {
+          // The activeTab grant may be unavailable if the panel was not opened by user action.
+        }
+      }
       try {
         const response = await chrome.tabs.sendMessage(tab.id, {
           type: "EXTRACT_JOB",
@@ -332,6 +386,19 @@ async function init() {
       }
     }
 
+    if (!extracted && isHighRisk) {
+      displayJobData({
+        title: null,
+        company: null,
+        location: null,
+        description: null,
+        source: "manual",
+        _thirdPartyManual: true,
+        _manualPlatform: detection.platform,
+      });
+      return;
+    }
+
     if (!extracted) {
       await fallbackParse(currentUrl);
     }
@@ -347,9 +414,20 @@ async function init() {
 
 async function fallbackParse(url) {
   try {
+    const safeUrl = sanitizeUrlForTelemetry(url);
+    if (!safeUrl) {
+      displayJobData({
+        title: null,
+        company: null,
+        location: null,
+        description: null,
+        source: "manual",
+      });
+      return;
+    }
     const resp = await apiFetch("/api/jobs/parse", {
       method: "POST",
-      body: JSON.stringify({ url }),
+      body: JSON.stringify({ url: safeUrl }),
     });
 
     if (resp.status === 401 || resp.status === 403) {
@@ -440,12 +518,12 @@ function displayJobData(data) {
   autoResizeTextarea(descEl);
   updateDescMeta(descEl, descCount, descExpand);
 
-  // Show LinkedIn disclaimer if applicable
+  // Show third-party board disclaimer if applicable
   const disclaimerEl = document.getElementById("linkedin-disclaimer");
-  if (detection && detection.platform === "linkedin") {
+  if (detection && isHighRiskPlatform(detection.platform)) {
     disclaimerEl.classList.remove("hidden");
     // Show the right variant
-    if (data._linkedinManual) {
+    if (data._thirdPartyManual) {
       document.getElementById("linkedin-manual-msg").classList.remove("hidden");
       document.getElementById("linkedin-auto-msg").classList.add("hidden");
     } else {
@@ -505,7 +583,7 @@ document.getElementById("track-btn").addEventListener("click", async () => {
   const payload = {
     company: companyText,
     role_title: titleText,
-    job_url: currentUrl,
+    job_url: sanitizeUrlForTelemetry(currentUrl),
     source: currentJobData.source || "manual",
     status: selectedStatus,
     department: currentJobData.department || null,
@@ -526,7 +604,7 @@ document.getElementById("track-btn").addEventListener("click", async () => {
       btn.textContent = "Tracked";
 
       // Find contacts
-      const domain = extractDomain(currentUrl);
+      const domain = extractDomain(sanitizeUrlForTelemetry(currentUrl) || currentUrl);
       await findContacts(appData.id, payload.company, domain);
     } else if (resp.status === 409) {
       const detail = (await resp.json()).detail;
@@ -611,6 +689,9 @@ async function findContacts(applicationId, company, domain) {
 // --- Sprint 17: Browsing Nudge ---
 
 async function checkBrowsingNudge() {
+  const settings = await getSettings();
+  if (!settings.careerTrackingEnabled) return;
+
   // Get current tab domain
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab || !tab.url) return;
@@ -645,7 +726,7 @@ async function checkBrowsingNudge() {
         body: JSON.stringify({
           company: domain.split(".")[0].charAt(0).toUpperCase() + domain.split(".")[0].slice(1),
           role_title: "General Interest",
-          job_url: tab.url,
+          job_url: sanitizeUrlForTelemetry(tab.url),
           source: "extension_nudge",
         }),
       });
@@ -714,7 +795,7 @@ document.getElementById("submit-report-btn")?.addEventListener("click", async ()
 
   const payload = {
     report_type: flagged.length > 0 ? "wrong_data" : "missing_data",
-    url: currentUrl || window.location.href,
+    url: sanitizeUrlForTelemetry(currentUrl || window.location.href),
     domain: extractDomain(currentUrl || ""),
     platform_detected: currentDetection?.platform || null,
     extraction_method: currentJobData?._method || null,
@@ -811,11 +892,12 @@ document.getElementById("manual-track-btn")?.addEventListener("click", async () 
 
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   const url = tab?.url || "";
+  const safeUrl = sanitizeUrlForTelemetry(url);
 
   const jobPayload = {
     company: getManualVal("manual-company"),
     role_title: getManualVal("manual-title"),
-    job_url: url,
+    job_url: safeUrl,
     source: "manual",
     status: manualSelectedStatus,
     location: getManualVal("manual-location") || null,
@@ -842,7 +924,7 @@ document.getElementById("manual-track-btn")?.addEventListener("click", async () 
         method: "POST",
         body: JSON.stringify({
           report_type: "undetected_site",
-          url,
+          url: safeUrl,
           domain: extractDomain(url),
           user_agent: navigator.userAgent,
           extension_version: chrome.runtime.getManifest().version,
@@ -872,13 +954,30 @@ document.getElementById("manual-track-btn")?.addEventListener("click", async () 
 
 async function initSettings() {
   const settings = await getSettings();
-  const toggle = document.getElementById("linkedin-extract-toggle");
-  if (toggle) {
-    toggle.checked = settings.linkedinAutoExtract;
+  const toggles = [
+    ["linkedin-extract-toggle", "linkedinAutoExtract"],
+    ["third-party-extract-toggle", "thirdPartyBoardAutoExtract"],
+    ["career-tracking-toggle", "careerTrackingEnabled"],
+    ["submission-detection-toggle", "submissionDetectionEnabled"],
+  ];
+
+  for (const [id, settingKey] of toggles) {
+    const toggle = document.getElementById(id);
+    if (!toggle) continue;
+    toggle.checked = Boolean(settings[settingKey]);
     toggle.addEventListener("change", async (e) => {
-      await saveSetting("linkedinAutoExtract", e.target.checked);
+      await saveSetting(settingKey, e.target.checked);
     });
   }
+
+  document.getElementById("clear-api-key-btn")?.addEventListener("click", async () => {
+    const statusEl = document.getElementById("settings-status");
+    await clearApiKey();
+    if (statusEl) {
+      statusEl.textContent = "Stored key cleared from this browser. Revoke the API key in dashboard Settings to invalidate it everywhere.";
+    }
+    showDefaultNoJobState();
+  });
 }
 
 // Toggle settings panel visibility

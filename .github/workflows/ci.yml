@@ -118,6 +118,21 @@ jobs:
       - name: Run dashboard checks
         run: bash scripts/ci/run_dashboard_checks.sh
 
+  extension-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run extension checks
+        run: bash scripts/ci/run_extension_checks.sh
+
   ai-feature-checks:
     runs-on: ubuntu-latest
     timeout-minutes: 25
