@@ -67,10 +67,15 @@ async def fetch_public_https(
     url: str,
     *,
     timeout: float,
+    method: str = "GET",
     headers: dict[str, str] | None = None,
+    json_body: object | None = None,
     max_redirects: int = _MAX_REDIRECTS,
     max_bytes: int | None = None,
 ) -> httpx.Response:
+    request_method = method.upper()
+    if request_method not in {"GET", "POST"}:
+        raise ValueError("Only GET and POST are allowed for public URL fetches")
     current_url = await validate_public_https_url(url)
     byte_limit = max_bytes
     if byte_limit is None:
@@ -80,7 +85,8 @@ async def fetch_public_https(
         request_headers.update(headers)
     async with httpx.AsyncClient(timeout=timeout, headers=request_headers, follow_redirects=False, cookies={}) as client:
         for _ in range(max_redirects + 1):
-            async with client.stream("GET", current_url) as response:
+            stream_kwargs = {"json": json_body} if json_body is not None else {}
+            async with client.stream(request_method, current_url, **stream_kwargs) as response:
                 if response.is_redirect:
                     location = response.headers.get("location")
                     if not location:

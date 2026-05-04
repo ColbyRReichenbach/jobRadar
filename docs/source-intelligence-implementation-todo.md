@@ -483,35 +483,35 @@ Goal: support Workday carefully without treating observed CXS endpoints as broad
 
 ### Workday Parsing
 
-- [ ] Parse public Workday job URLs:
+- [x] Parse public Workday job URLs:
   - `{tenant}.wd{n}.myworkdayjobs.com/{locale?}/{site}`
   - `{tenant}.wd{n}.myworkdayjobs.com/wday/cxs/{tenant}/{site}/jobs`
   - `jobs.myworkdaysite.com/recruiting/{tenant}/{site}`
-- [ ] Parse tenant, server, locale, site, and external path.
-- [ ] Detect candidate-home/status/private Workday URLs.
-- [ ] Allow user-private safe public posting classification.
-- [ ] Keep shared source records `unknown`/`needs_review` until admin approval.
+- [x] Parse tenant, server, locale, site, and external path.
+- [x] Detect candidate-home/status/private Workday URLs.
+- [x] Allow user-private safe public posting classification.
+- [x] Keep shared source records `unknown`/`needs_review` until admin approval.
 
 ### Workday Verification
 
-- [ ] Add `JOB_SEARCH_WORKDAY_ENABLED=false` default.
-- [ ] Add technical verification using small CXS POST only when enabled.
-- [ ] Use conservative tenant-level rate limits.
-- [ ] Do not use Playwright/browser automation/AI fallback for shared Workday verification.
-- [ ] Record `terms_risk=medium`.
-- [ ] Require admin approval for shared reuse.
-- [ ] Allow Workday to be disabled without breaking search.
+- [x] Add `JOB_SEARCH_WORKDAY_ENABLED=false` default.
+- [x] Add technical verification using small CXS POST only when enabled.
+- [x] Use conservative tenant-level rate limits.
+- [x] Do not use Playwright/browser automation/AI fallback for shared Workday verification.
+- [x] Record `terms_risk=medium`.
+- [x] Require admin approval for shared reuse.
+- [x] Allow Workday to be disabled without breaking search.
 
 ### Sprint 6 Tests
 
-- [ ] Test Workday public URL parsing.
-- [ ] Test Workday candidate-home/status private classification.
-- [ ] Test Workday shared source remains needs-review before approval.
-- [ ] Test disabled Workday path degrades cleanly.
-- [ ] Test enabled technical verification with mocked CXS response.
-- [ ] Test 429/timeout/backoff behavior.
-- [ ] Run Workday tests and resolver tests.
-- [ ] Fix failures from logs and rerun until green.
+- [x] Test Workday public URL parsing.
+- [x] Test Workday candidate-home/status private classification.
+- [x] Test Workday shared source remains needs-review before approval.
+- [x] Test disabled Workday path degrades cleanly.
+- [x] Test enabled technical verification with mocked CXS response.
+- [x] Test 429/timeout/backoff behavior.
+- [x] Run Workday tests and resolver tests.
+- [x] Fix failures from logs and rerun until green.
 
 ## Sprint 7: Gmail Learning Loop And Reprocessing
 
