@@ -305,71 +305,71 @@ Goal: implement direct-source search for low-risk public providers before Workda
 
 ### Base Package
 
-- [ ] Add `backend/services/job_sources/`.
-- [ ] Add `base.py` with:
+- [x] Add `backend/services/job_sources/`.
+- [x] Add `base.py` with:
   - `SourceConfig`
   - `SearchQuery`
   - `VerificationResult`
   - `NormalizedJobPosting`
   - adapter interface
-- [ ] Add provider-safe HTTP client wrapper using `url_safety`.
-- [ ] Add provider response normalization helpers.
-- [ ] Add provider-specific redaction helpers.
+- [x] Add provider-safe HTTP client wrapper using `url_safety`.
+- [x] Add provider response normalization helpers.
+- [x] Add provider-specific redaction helpers.
 
 ### Greenhouse Adapter
 
-- [ ] Parse `boards.greenhouse.io/{board}` and `job-boards.greenhouse.io/{board}`.
-- [ ] Verify public board through official job board API.
-- [ ] Fetch jobs.
-- [ ] Normalize title, company, location, URL, updated date, department if present.
-- [ ] Use `access_mode=public`.
+- [x] Parse `boards.greenhouse.io/{board}` and `job-boards.greenhouse.io/{board}`.
+- [x] Verify public board through official job board API.
+- [x] Fetch jobs.
+- [x] Normalize title, company, location, URL, updated date, department if present.
+- [x] Use `access_mode=public`.
 
 ### Lever Adapter
 
-- [ ] Parse `jobs.lever.co/{site}`.
-- [ ] Verify postings endpoint.
-- [ ] Fetch postings with JSON mode.
-- [ ] Normalize categories, location, commitment, team, hosted URL.
-- [ ] Use `access_mode=public`.
+- [x] Parse `jobs.lever.co/{site}`.
+- [x] Verify postings endpoint.
+- [x] Fetch postings with JSON mode.
+- [x] Normalize categories, location, commitment, team, hosted URL.
+- [x] Use `access_mode=public`.
 
 ### Ashby Adapter
 
-- [ ] Parse `jobs.ashbyhq.com/{board}`.
-- [ ] Verify public posting API.
-- [ ] Fetch jobs.
-- [ ] Normalize compensation where present.
-- [ ] Use `access_mode=public`.
+- [x] Parse `jobs.ashbyhq.com/{board}`.
+- [x] Verify public posting API.
+- [x] Fetch jobs.
+- [x] Normalize compensation where present.
+- [x] Use `access_mode=public`.
 
 ### Workable Adapter
 
-- [ ] Parse account from `apply.workable.com/{account}` and `{account}.workable.com`.
-- [ ] Verify `www.workable.com/api/accounts/{account}?details=true`.
-- [ ] Fetch public published jobs only.
-- [ ] Normalize URL, application URL, department, location, workplace type, salary, shortcode.
-- [ ] Do not use `/spi/v3/jobs` without approved API key.
-- [ ] Use `access_mode=public` for verified published-job endpoint.
+- [x] Parse account from `apply.workable.com/{account}` and `{account}.workable.com`.
+- [x] Verify `www.workable.com/api/accounts/{account}?details=true`.
+- [x] Fetch public published jobs only.
+- [x] Normalize URL, application URL, department, location, workplace type, salary, shortcode.
+- [x] Do not use `/spi/v3/jobs` without approved API key.
+- [x] Use `access_mode=public` for verified published-job endpoint.
 
 ### Registry Writes
 
-- [ ] Add source registry upsert helper.
-- [ ] Add job posting upsert helper.
-- [ ] Add dedupe key generation.
-- [ ] Add `application_source_links` upsert helper.
-- [ ] Make all upserts idempotent.
+- [x] Add source registry upsert helper.
+- [x] Add job posting upsert helper.
+- [x] Add dedupe key generation.
+- [x] Add `application_source_links` upsert helper.
+- [x] Make all upserts idempotent.
 
 ### Sprint 3 Tests
 
-- [ ] Add mocked integration tests with `respx` or existing repo equivalent.
-- [ ] Test each adapter parse/verify/fetch/normalize flow.
-- [ ] Test provider timeout and 429 behavior.
-- [ ] Test redirect to private IP rejection.
-- [ ] Test oversized response rejection.
-- [ ] Test redacted metadata contains no tokens/raw private URLs.
-- [ ] Run:
+- [x] Add mocked integration tests with `respx` or existing repo equivalent.
+- [x] Test each adapter parse/verify/fetch/normalize flow.
+- [x] Test provider timeout and 429 behavior.
+- [x] Test redirect to private IP rejection.
+- [x] Test oversized response rejection.
+- [x] Test redacted metadata contains no tokens/raw private URLs.
+- [x] Run:
   - provider adapter tests
   - `pytest tests/test_public_url_safety.py`
   - affected job search tests
-- [ ] Fix failures from logs and rerun until green.
+- [x] Fix failures from logs and rerun until green.
 
 ## Sprint 4: Source Resolver, Search API, And Cost Caps
 
