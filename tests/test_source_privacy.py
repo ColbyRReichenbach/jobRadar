@@ -6,19 +6,32 @@ from tests.conftest import AUTH_HEADER
 
 
 @pytest.mark.asyncio
-async def test_private_job_url_is_not_stored_on_application(client):
+async def test_private_job_url_is_not_stored_on_application(client, db_session):
+    from sqlalchemy import select
+
+    from backend.models import ApplicationSourceLink, UserApplicationLink
+    from backend.services.source_intelligence.link_crypto import decrypt_source_link
+
+    private_url = "https://jobs.example.com/candidate-home?candidateId=abc&token=secret"
     response = await client.post(
         "/api/jobs",
         json={
             "company": "PrivateCo",
             "role_title": "Engineer",
-            "job_url": "https://jobs.example.com/candidate-home?candidateId=abc&token=secret",
+            "job_url": private_url,
         },
         headers=AUTH_HEADER,
     )
 
     assert response.status_code == 201
     assert response.json()["job_url"] is None
+    private_link = (await db_session.execute(select(UserApplicationLink))).scalar_one()
+    assert private_link.raw_url_encrypted
+    assert decrypt_source_link(private_link.raw_url_encrypted) == private_url
+    assert private_link.contains_private_token is True
+    assert private_link.sanitization_status == "private_user_only"
+    app_link = (await db_session.execute(select(ApplicationSourceLink))).scalar_one()
+    assert app_link.relationship_type == "private_status_link"
 
 
 @pytest.mark.asyncio
@@ -49,7 +62,11 @@ async def test_private_job_url_is_not_indexed_or_exported(client, db_session):
 
 
 @pytest.mark.asyncio
-async def test_application_update_clears_private_job_url(client):
+async def test_application_update_clears_private_job_url(client, db_session):
+    from sqlalchemy import select
+
+    from backend.models import ApplicationSourceLink, UserApplicationLink
+
     created = await client.post(
         "/api/jobs",
         json={
@@ -69,6 +86,18 @@ async def test_application_update_clears_private_job_url(client):
 
     assert response.status_code == 200
     assert response.json()["job_url"] is None
+    private_link = (
+        await db_session.execute(
+            select(UserApplicationLink).where(UserApplicationLink.sanitization_status == "private_user_only")
+        )
+    ).scalar_one()
+    assert private_link.link_type == "unknown"
+    app_link = (
+        await db_session.execute(
+            select(ApplicationSourceLink).where(ApplicationSourceLink.user_application_link_id == private_link.id)
+        )
+    ).scalar_one()
+    assert app_link.relationship_type == "private_status_link"
 
 
 @pytest.mark.asyncio

@@ -202,9 +202,9 @@ Goal: create deterministic URL handling that all later source intelligence uses.
 
 ### Classifier Module
 
-- [ ] Add `backend/services/source_intelligence/url_classifier.py`.
-- [ ] Implement `ClassifiedUrl` dataclass.
-- [ ] Extract URLs from:
+- [x] Add `backend/services/source_intelligence/url_classifier.py`.
+- [x] Implement `ClassifiedUrl` dataclass.
+- [x] Extract URLs from:
   - raw Gmail MIME HTML hrefs
   - raw Gmail plaintext bodies
   - `EmailEvent.action_url`
@@ -214,8 +214,8 @@ Goal: create deterministic URL handling that all later source intelligence uses.
   - `EmailEvent.key_sentence`
   - `Application.job_url`
   - manual job URL fields
-- [ ] Normalize HTML entities and punctuation wrappers.
-- [ ] Classify link types:
+- [x] Normalize HTML entities and punctuation wrappers.
+- [x] Classify link types:
   - public job posting
   - company career page
   - ATS job board
@@ -226,13 +226,13 @@ Goal: create deterministic URL handling that all later source intelligence uses.
   - magic login
   - candidate home
   - unknown
-- [ ] Detect private indicators in path/query/fragment.
-- [ ] Detect provider type and provider key when possible.
+- [x] Detect private indicators in path/query/fragment.
+- [x] Detect provider type and provider key when possible.
 
 ### Sanitizer Module
 
-- [ ] Add `backend/services/source_intelligence/url_sanitizer.py`.
-- [ ] Remove tracking params:
+- [x] Add `backend/services/source_intelligence/url_sanitizer.py`.
+- [x] Remove tracking params:
   - `utm_*`
   - `gh_src`
   - `source`
@@ -242,7 +242,7 @@ Goal: create deterministic URL handling that all later source intelligence uses.
   - `email`
   - `mc_cid`
   - `mc_eid`
-- [ ] Reject or privatize token params:
+- [x] Reject or privatize token params:
   - `token`
   - `auth`
   - `jwt`
@@ -252,34 +252,34 @@ Goal: create deterministic URL handling that all later source intelligence uses.
   - `applicationId`
   - `magic`
   - `invite`
-- [ ] Normalize host and path.
-- [ ] Drop fragments unless explicitly allowlisted.
-- [ ] Preserve provider path information needed for public detail fetches.
-- [ ] Generate canonical public URL and keyed HMACs.
-- [ ] Fail closed to `private_user_only`, `rejected`, or `needs_review`.
+- [x] Normalize host and path.
+- [x] Drop fragments unless explicitly allowlisted.
+- [x] Preserve provider path information needed for public detail fetches.
+- [x] Generate canonical public URL and keyed HMACs.
+- [x] Fail closed to `private_user_only`, `rejected`, or `needs_review`.
 
 ### Gmail Integration
 
-- [ ] Modify Gmail sync to extract raw MIME hrefs before HTML stripping.
-- [ ] Preserve extracted candidate links as classified private records, not as raw email body text.
-- [ ] Keep existing display-safe email body behavior.
-- [ ] Write `user_application_links` records for classified links when allowed.
-- [ ] Do not block Gmail sync on source verification.
+- [x] Modify Gmail sync to extract raw MIME hrefs before HTML stripping.
+- [x] Preserve extracted candidate links as classified private records, not as raw email body text.
+- [x] Keep existing display-safe email body behavior.
+- [x] Write `user_application_links` records for classified links when allowed.
+- [x] Do not block Gmail sync on source verification.
 
 ### Application Integration
 
-- [ ] Use classifier/sanitizer in application create/update.
-- [ ] Create `application_source_links` for private and public supporting records.
-- [ ] Set `Application.job_url` only when a safe public canonical URL exists.
-- [ ] Update application suggestions to pick safest public posting URL.
-- [ ] Ensure duplicate application logic still works when private URLs are excluded from `Application.job_url`.
+- [x] Use classifier/sanitizer in application create/update.
+- [x] Create `application_source_links` for private and public supporting records.
+- [x] Set `Application.job_url` only when a safe public canonical URL exists.
+- [x] Update application suggestions to pick safest public posting URL.
+- [x] Ensure duplicate application logic still works when private URLs are excluded from `Application.job_url`.
 
 ### Sprint 2 Tests
 
-- [ ] Add `tests/test_source_url_classifier.py`.
-- [ ] Add `tests/test_source_url_sanitizer.py`.
-- [ ] Add `tests/test_source_email_url_extraction.py`.
-- [ ] Add fixtures for:
+- [x] Add `tests/test_source_url_classifier.py`.
+- [x] Add `tests/test_source_url_sanitizer.py`.
+- [x] Add `tests/test_source_email_url_extraction.py`.
+- [x] Add fixtures for:
   - Greenhouse
   - Lever
   - Ashby
@@ -293,11 +293,11 @@ Goal: create deterministic URL handling that all later source intelligence uses.
   - magic login
   - tracking redirect
   - tokenized query params
-- [ ] Add tests proving Gmail hrefs are extracted before HTML stripping.
-- [ ] Add tests proving no tracking redirect network request is made.
-- [ ] Add application create/update API tests for private URL rejection.
-- [ ] Run all new classifier/sanitizer tests and affected email/application tests.
-- [ ] Fix failures from logs and rerun until green.
+- [x] Add tests proving Gmail hrefs are extracted before HTML stripping.
+- [x] Add tests proving no tracking redirect network request is made.
+- [x] Add application create/update API tests for private URL rejection.
+- [x] Run all new classifier/sanitizer tests and affected email/application tests.
+- [x] Fix failures from logs and rerun until green.
 
 ## Sprint 3: Provider Base Contracts And Public Adapters
 

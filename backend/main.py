@@ -104,7 +104,8 @@ from backend.services.notification_preferences import is_alert_enabled, serializ
 from backend.services.feature_flags import radar_enabled, radar_research_enabled
 from backend.services.research_radar.observability import build_trace_payload
 from backend.services.scraper import extract_job, validate_job_parse_url
-from backend.services.source_intelligence.url_classifier import classify_url, extract_urls_from_text
+from backend.services.source_intelligence.link_store import store_many_user_application_links, store_user_application_link
+from backend.services.source_intelligence.url_classifier import classify_url, extract_urls_from_gmail_payload, extract_urls_from_text
 from backend.services.source_intelligence.url_sanitizer import sanitize_public_job_url
 from backend.routes.admin_ai import router as admin_ai_router
 from backend.routes.copilot import router as copilot_router
@@ -1518,6 +1519,17 @@ async def create_application(payload: ApplicationCreate, auth: dict = Depends(ve
 
     db.add(new_app)
     try:
+        await db.flush()
+        if payload.job_url and classify_url(payload.job_url).normalized_url:
+            stored_link = await store_user_application_link(
+                db,
+                user_id=user_id,
+                raw_url=payload.job_url,
+                application_id=new_app.id,
+                created_from="application_create",
+            )
+            if stored_link.sanitized.canonical_public_url and not new_app.job_url:
+                new_app.job_url = stored_link.sanitized.canonical_public_url
         await db.commit()
         await db.refresh(new_app)
     except IntegrityError:
@@ -1678,6 +1690,16 @@ async def update_application(
         app_row.source = payload.source
     if payload.job_url is not None:
         app_row.job_url = _normalize_job_url(payload.job_url)
+        if payload.job_url and classify_url(payload.job_url).normalized_url:
+            stored_link = await store_user_application_link(
+                db,
+                user_id=user_id,
+                raw_url=payload.job_url,
+                application_id=app_row.id,
+                created_from="application_update",
+            )
+            if stored_link.sanitized.canonical_public_url:
+                app_row.job_url = stored_link.sanitized.canonical_public_url
 
     await db.flush()
     from backend.services.search.indexer import index_record
@@ -2577,12 +2599,33 @@ async def accept_application_suggestion(
         )
         db.add(app_row)
         await db.flush()
+        if payload.job_url and classify_url(payload.job_url).normalized_url:
+            stored_link = await store_user_application_link(
+                db,
+                user_id=user_id,
+                raw_url=payload.job_url,
+                application_id=app_row.id,
+                created_from="application_suggestion_accept",
+            )
+            if stored_link.sanitized.canonical_public_url and not app_row.job_url:
+                app_row.job_url = stored_link.sanitized.canonical_public_url
 
         from backend.services.role_classifier import classify_role
 
         role_result = await classify_role(db, app_row.role_title, app_row.description_text or "")
         if role_result["umbrella_id"]:
             app_row.umbrella_id = role_result["umbrella_id"]
+
+    if payload.job_url and classify_url(payload.job_url).normalized_url:
+        stored_link = await store_user_application_link(
+            db,
+            user_id=user_id,
+            raw_url=payload.job_url,
+            application_id=app_row.id,
+            created_from="application_suggestion_accept",
+        )
+        if stored_link.sanitized.canonical_public_url and not app_row.job_url:
+            app_row.job_url = stored_link.sanitized.canonical_public_url
 
     latest_email_at = None
     for event in events:
@@ -3326,8 +3369,10 @@ async def sync_gmail(
             except Exception:
                 pass
 
-        # Parse body with improved MIME parser
-        body_text = parse_email_body(msg.get("payload", {}))
+        # Parse raw links before HTML stripping so href-only job links are preserved.
+        gmail_payload = msg.get("payload", {})
+        raw_candidate_urls = extract_urls_from_gmail_payload(gmail_payload)
+        body_text = parse_email_body(gmail_payload)
         snippet = msg.get("snippet", "")
 
         is_from_user = sender_email_addr.lower() == user_email.lower() if user_email else False
@@ -3459,6 +3504,15 @@ async def sync_gmail(
         )
         db.add(email_event)
         await db.flush()
+        if raw_candidate_urls:
+            await store_many_user_application_links(
+                db,
+                user_id=user_id,
+                raw_urls=raw_candidate_urls,
+                application_id=app_id,
+                email_event_id=email_event.id,
+                created_from="gmail_sync",
+            )
         await index_record(db, email_event)
         sync_stats["stored"] += 1
         record_sync_audit(

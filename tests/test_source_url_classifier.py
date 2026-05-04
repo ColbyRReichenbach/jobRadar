@@ -18,6 +18,8 @@ def test_classifier_identifies_public_provider_urls():
             "company",
         ),
         ("https://apply.workable.com/acme/j/ABC123", "public_job_posting", "workable", "acme"),
+        ("https://careers.smartrecruiters.com/acme", "ats_job_board", "smartrecruiters", "acme"),
+        ("https://jobs.icims.com/jobs/123/engineer", "public_job_posting", "icims", "jobs"),
     ]
 
     for url, link_type, provider_type, provider_key in fixtures:
@@ -39,6 +41,7 @@ def test_classifier_rejects_private_and_scheduler_urls():
         ("https://example.com?candidateId=abc", "unknown"),
         ("https://example.com?auth=abc&session=xyz", "unknown"),
         ("https://jobs.example.com/acme/backend#candidateId=abc", "unknown"),
+        ("https://jobs.example.com/magic-login?magic=abc", "magic_login"),
     ]
 
     for url, link_type in fixtures:

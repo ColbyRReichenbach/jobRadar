@@ -76,6 +76,8 @@ async def _poll_gmail_async():
         classify_email,
     )
     from backend.services.email_parser import extract_sender_parts, parse_email_body
+    from backend.services.source_intelligence.link_store import store_many_user_application_links
+    from backend.services.source_intelligence.url_classifier import extract_urls_from_gmail_payload
     from backend.services.email_matcher import (
         STATUS_UPDATES,
         email_already_processed,
@@ -160,7 +162,9 @@ async def _poll_gmail_async():
                     except Exception:
                         pass
 
-                body = parse_email_body(full_msg.get("payload", {}))
+                gmail_payload = full_msg.get("payload", {})
+                raw_candidate_urls = extract_urls_from_gmail_payload(gmail_payload)
+                body = parse_email_body(gmail_payload)
 
                 await _track_contact_response(db, sender_email, user.id)
 
@@ -223,6 +227,15 @@ async def _poll_gmail_async():
                 )
                 db.add(event)
                 await db.flush()
+                if raw_candidate_urls:
+                    await store_many_user_application_links(
+                        db,
+                        user_id=user.id,
+                        raw_urls=raw_candidate_urls,
+                        application_id=application_id,
+                        email_event_id=event.id,
+                        created_from="gmail_poll",
+                    )
                 await index_record(db, event)
 
                 if cls in STATUS_UPDATES and application_id:
