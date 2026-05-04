@@ -44,4 +44,3 @@ def test_role_matcher_ranks_family_and_location():
     assert matches[0].posting.title == "Product Analyst"
     assert "role_family_match" in matches[0].reasons or "title_similarity" in matches[0].reasons
     assert "location_match" in matches[0].reasons
-

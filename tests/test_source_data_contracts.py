@@ -131,4 +131,3 @@ async def test_private_link_endpoint_redacts_raw_values(client, db_session):
     assert data[0]["link_type"] == "interview_scheduler"
     assert "raw_url_encrypted" not in data[0]
     assert "private-hmac" not in str(data[0])
-

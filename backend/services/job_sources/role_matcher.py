@@ -83,4 +83,3 @@ def score_posting(posting: NormalizedJobPosting, query: str, *, location: str = 
 def rank_postings(postings: list[NormalizedJobPosting], query: str, *, location: str = "", domain: str | None = None) -> list[RoleMatch]:
     matches = [score_posting(posting, query, location=location, domain=domain) for posting in postings]
     return sorted(matches, key=lambda item: item.score, reverse=True)
-

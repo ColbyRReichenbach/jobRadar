@@ -44,4 +44,3 @@ def test_source_link_hash_uses_keyed_hmac():
     assert version_a == "v9"
     assert digest_a != digest_b
     assert digest_a != __import__("hashlib").sha256(value.encode("utf-8")).hexdigest()
-

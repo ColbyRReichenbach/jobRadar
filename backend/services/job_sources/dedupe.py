@@ -33,4 +33,3 @@ def _description_prefix(value: str | None) -> str:
     if not value:
         return ""
     return hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
-

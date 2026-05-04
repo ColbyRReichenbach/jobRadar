@@ -91,4 +91,3 @@ def parse_datetime(value) -> datetime | None:
         return datetime.fromisoformat(text.replace("Z", "+00:00"))
     except ValueError:
         return None
-

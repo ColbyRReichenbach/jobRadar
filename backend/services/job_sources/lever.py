@@ -77,4 +77,3 @@ def _normalize_job(item: dict, config: SourceConfig) -> NormalizedJobPosting:
         source_confidence=0.95,
         redacted_metadata={"provider_key": config.provider_key},
     )
-

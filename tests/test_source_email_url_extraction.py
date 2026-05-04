@@ -41,4 +41,3 @@ async def test_gmail_href_extraction_stores_classified_links(db_session):
     assert links[0].raw_url_encrypted is None
     assert links[1].link_type == "interview_scheduler"
     assert links[1].raw_url_encrypted is not None
-

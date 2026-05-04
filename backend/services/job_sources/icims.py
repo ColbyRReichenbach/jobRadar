@@ -34,4 +34,3 @@ async def fetch_jobs(config: SourceConfig, query: SearchQuery) -> list[Normalize
 
 async def fetch_job_detail(config: SourceConfig, external_id_or_path: str) -> NormalizedJobPosting | None:
     return None
-

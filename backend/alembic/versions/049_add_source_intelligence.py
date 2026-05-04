@@ -251,4 +251,3 @@ def downgrade() -> None:
     op.drop_index("ix_company_job_sources_domain_provider_active", table_name="company_job_sources")
     op.drop_index("uq_company_job_sources_identity", table_name="company_job_sources")
     op.drop_table("company_job_sources")
-
