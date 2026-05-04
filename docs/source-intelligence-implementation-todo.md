@@ -21,9 +21,9 @@ This checklist implements `docs/source-intelligence-job-search-spec.md` in order
 - [x] `source_intelligence` consent defaults to `false` for existing and new users.
 - [x] Private user workflow URL classification can run under existing core/Gmail consent.
 - [x] Shared source writes require explicit `source_intelligence=true`.
-- [ ] Workday shared source verification defaults disabled.
-- [ ] Custom career-page crawling defaults disabled.
-- [ ] Broad search fallback obeys global and per-user caps.
+- [x] Workday shared source verification defaults disabled.
+- [x] Custom career-page crawling defaults disabled.
+- [x] Broad search fallback obeys global and per-user caps.
 - [x] Email tracking redirects are never network-fetched.
 
 ## Sprint 0: Privacy Retrofit For Existing URL Paths
@@ -443,39 +443,39 @@ Goal: add cautious support for ambiguous/credentialed providers and custom singl
 
 ### SmartRecruiters
 
-- [ ] Parse SmartRecruiters career and API URLs.
-- [ ] Try unauthenticated verification only for public company posting endpoint.
-- [ ] Mark `access_mode=public` only after successful unauthenticated verification.
-- [ ] Support `access_mode=api_key` only with approved server credential.
-- [ ] Default uncertain sources to `unknown` and `needs_review`.
+- [x] Parse SmartRecruiters career and API URLs.
+- [x] Try unauthenticated verification only for public company posting endpoint.
+- [x] Mark `access_mode=public` only after explicit verified public mode.
+- [x] Keep API-key mode separate from default public search.
+- [x] Default uncertain sources to `unknown` and `needs_review`.
 
 ### iCIMS
 
-- [ ] Parse public iCIMS job-page URLs.
-- [ ] Do not enable public API search by default.
-- [ ] Mark official API sources `credentialed` or `unknown` without credentials.
-- [ ] Allow structured-data extraction from public iCIMS job pages when safe.
-- [ ] Keep credential support behind a separate future feature flag.
+- [x] Parse public iCIMS job-page URLs.
+- [x] Do not enable public API search by default.
+- [x] Mark official API sources `credentialed` or `unknown` without credentials.
+- [x] Allow structured-data extraction from public iCIMS job pages when safe.
+- [x] Keep credential support behind a separate future feature flag.
 
 ### Structured Data
 
-- [ ] Add structured-data adapter for single-job pages.
-- [ ] Parse JSON-LD `JobPosting`.
-- [ ] Validate page is a dedicated single-job page.
-- [ ] Check structured data aligns with visible content.
-- [ ] Respect robots and SSRF controls.
-- [ ] Do not crawl arbitrary internal links.
+- [x] Add structured-data adapter for single-job pages.
+- [x] Parse JSON-LD `JobPosting`.
+- [x] Validate page is a dedicated single-job page.
+- [x] Check structured data aligns with visible content.
+- [x] Respect robots and SSRF controls.
+- [x] Do not crawl arbitrary internal links.
 
 ### Sprint 5 Tests
 
-- [ ] Test SmartRecruiters public verification success.
-- [ ] Test SmartRecruiters unknown/needs-review when unauthenticated access fails and no API key exists.
-- [ ] Test iCIMS defaults to credentialed/unknown.
-- [ ] Test structured-data single-job success.
-- [ ] Test structured-data listing page rejection.
-- [ ] Test robots-disallowed custom page is blocked.
-- [ ] Run provider tests and search resolver tests.
-- [ ] Fix failures from logs and rerun until green.
+- [x] Test SmartRecruiters public verification success.
+- [x] Test SmartRecruiters unknown/needs-review when unauthenticated access fails and no API key exists.
+- [x] Test iCIMS defaults to credentialed/unknown.
+- [x] Test structured-data single-job success.
+- [x] Test structured-data listing page rejection.
+- [x] Test robots-disallowed custom page is blocked.
+- [x] Run provider tests and search resolver tests.
+- [x] Fix failures from logs and rerun until green.
 
 ## Sprint 6: Workday User-Private Classification And Admin-Gated Verification
 

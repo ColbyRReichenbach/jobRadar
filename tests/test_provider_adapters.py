@@ -147,6 +147,18 @@ def test_access_mode_provider_parsers_are_conservative():
 
 
 @pytest.mark.asyncio
+async def test_workday_verification_is_disabled_by_default(monkeypatch):
+    from backend.services.job_sources import workday
+
+    monkeypatch.delenv("JOB_SEARCH_WORKDAY_ENABLED", raising=False)
+    config = workday.parse_source_from_url("https://company.wd5.myworkdayjobs.com/en-US/site/job/location/title_JR123")
+    result = await workday.verify_source(config)
+
+    assert result.status == "blocked"
+    assert result.error_type == "workday_disabled"
+
+
+@pytest.mark.asyncio
 async def test_smartrecruiters_unknown_access_is_not_fetched(monkeypatch):
     from backend.services.job_sources import smartrecruiters
 
@@ -161,6 +173,25 @@ async def test_smartrecruiters_unknown_access_is_not_fetched(monkeypatch):
 
     assert result.status == "needs_review"
     assert jobs == []
+
+
+@pytest.mark.asyncio
+async def test_smartrecruiters_public_access_verifies_after_explicit_mode(monkeypatch):
+    from dataclasses import replace
+    from backend.services.job_sources import smartrecruiters
+
+    async def fake_fetch(url, **kwargs):
+        return FakeResponse({"content": [{"id": "abc", "name": "Engineer", "ref": "https://jobs.smartrecruiters.com/acme/abc"}]})
+
+    monkeypatch.setattr(smartrecruiters, "fetch_public_https", fake_fetch)
+    parsed = smartrecruiters.parse_source_from_url("https://careers.smartrecruiters.com/acme")
+    config = replace(parsed, access_mode="public")
+
+    result = await smartrecruiters.verify_source(config)
+    jobs = await smartrecruiters.fetch_jobs(config, SearchQuery())
+
+    assert result.status == "verified"
+    assert jobs[0].source_type == "smartrecruiters"
 
 
 @pytest.mark.asyncio
