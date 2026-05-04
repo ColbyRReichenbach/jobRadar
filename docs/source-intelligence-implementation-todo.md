@@ -18,9 +18,9 @@ This checklist implements `docs/source-intelligence-job-search-spec.md` in order
 
 ## Required Defaults
 
-- [ ] `source_intelligence` consent defaults to `false` for existing and new users.
-- [ ] Private user workflow URL classification can run under existing core/Gmail consent.
-- [ ] Shared source writes require explicit `source_intelligence=true`.
+- [x] `source_intelligence` consent defaults to `false` for existing and new users.
+- [x] Private user workflow URL classification can run under existing core/Gmail consent.
+- [x] Shared source writes require explicit `source_intelligence=true`.
 - [ ] Workday shared source verification defaults disabled.
 - [ ] Custom career-page crawling defaults disabled.
 - [ ] Broad search fallback obeys global and per-user caps.
@@ -124,77 +124,77 @@ Goal: create durable, secure data contracts without enabling shared source write
 
 ### Migration
 
-- [ ] Add Alembic revision `049_add_source_intelligence.py`.
-- [ ] Add `company_job_sources`.
-- [ ] Add `user_application_links`.
-- [ ] Add `source_discovery_events`.
-- [ ] Add `job_postings`.
-- [ ] Add `application_source_links`.
-- [ ] Add `source_verification_runs`.
-- [ ] Add `job_search_provider_usage`.
-- [ ] Add `source_intelligence` consent flag to the existing consent model.
-- [ ] Implement Postgres expression unique index or generated normalized key columns for `company_job_sources`.
-- [ ] Avoid relying only on SQLite behavior for migration correctness.
+- [x] Add Alembic revision `049_add_source_intelligence.py`.
+- [x] Add `company_job_sources`.
+- [x] Add `user_application_links`.
+- [x] Add `source_discovery_events`.
+- [x] Add `job_postings`.
+- [x] Add `application_source_links`.
+- [x] Add `source_verification_runs`.
+- [x] Add `job_search_provider_usage`.
+- [x] Add `source_intelligence` consent flag to the existing consent model.
+- [x] Implement Postgres expression unique index or generated normalized key columns for `company_job_sources`.
+- [x] Avoid relying only on SQLite behavior for migration correctness.
 
 ### Models
 
-- [ ] Add SQLAlchemy models for all new tables.
-- [ ] Add relationships where useful:
+- [x] Add SQLAlchemy models for all new tables.
+- [x] Add relationships where useful:
   - application to application source links
   - application source link to user application link
   - application source link to job posting
   - company job source to source verification runs
-- [ ] Ensure cascade/delete behavior matches the spec.
-- [ ] Add created/updated timestamp defaults using existing repo conventions.
+- [x] Ensure cascade/delete behavior matches the spec.
+- [x] Add created/updated timestamp defaults using existing repo conventions.
 
 ### Crypto
 
-- [ ] Add source-link encryption helper with key-purpose separation from Gmail tokens.
-- [ ] Add keyed HMAC-SHA256 helper for URL hashes.
-- [ ] Add key version fields and helpers.
-- [ ] Add env var validation for:
+- [x] Add source-link encryption helper with key-purpose separation from Gmail tokens.
+- [x] Add keyed HMAC-SHA256 helper for URL hashes.
+- [x] Add key version fields and helpers.
+- [x] Add env var validation for:
   - `SOURCE_LINK_ENCRYPTION_KEY`
   - `SOURCE_LINK_ENCRYPTION_KEY_VERSION`
   - `SOURCE_LINK_HASH_KEY`
   - `SOURCE_LINK_HASH_KEY_VERSION`
-- [ ] In tests, provide deterministic test keys without using `.env`.
-- [ ] Never log plaintext raw URLs, encrypted values, or HMAC keys.
+- [x] In tests, provide deterministic test keys without using `.env`.
+- [x] Never log plaintext raw URLs, encrypted values, or HMAC keys.
 
 ### Consent API And UI
 
-- [ ] Update `/api/consent` to include `source_intelligence`.
-- [ ] Default `source_intelligence=false`.
-- [ ] Update Settings UI with a Source Intelligence consent section.
-- [ ] Explain private vs shared data in user-facing language.
-- [ ] Add private-link management placeholder or basic list endpoint depending on implementation scope.
+- [x] Update `/api/consent` to include `source_intelligence`.
+- [x] Default `source_intelligence=false`.
+- [x] Update Settings UI with a Source Intelligence consent section.
+- [x] Explain private vs shared data in user-facing language.
+- [x] Add private-link management placeholder or basic list endpoint depending on implementation scope.
 - [ ] Update privacy policy copy if the repo maintains user-facing policy docs.
 
 ### Gmail Limited-Use Compliance
 
-- [ ] Add a visible UI disclosure for Gmail-derived source intelligence.
-- [ ] Ensure shared source writes require explicit consent.
+- [x] Add a visible UI disclosure for Gmail-derived source intelligence.
+- [x] Ensure shared source writes require explicit consent.
 - [ ] Ensure admin views show only redacted/aggregate Gmail-derived metadata by default.
 - [ ] Add support/security/legal exception language or audit reason field before any user-specific admin access.
 
 ### Sprint 1 Tests
 
 - [ ] Add migration tests for Postgres or a CI migration job.
-- [ ] Add SQLite-safe model metadata tests only as supplementary coverage.
-- [ ] Add crypto tests:
+- [x] Add SQLite-safe model metadata tests only as supplementary coverage.
+- [x] Add crypto tests:
   - encryption round trip
   - HMAC deterministic with same key
   - HMAC changes with key version/key
   - no plain SHA-256 behavior
-- [ ] Add consent tests:
+- [x] Add consent tests:
   - default false
   - update true/false
   - shared source write blocked when false
 - [ ] Add API tests for admin redaction behavior.
-- [ ] Run:
+- [x] Run:
   - `pytest tests/test_consent.py`
   - new source crypto/privacy tests
   - migration test job if available
-- [ ] Fix failures from logs and rerun until green.
+- [x] Fix failures from logs and rerun until green.
 
 ## Sprint 2: URL Classifier, Sanitizer, And Email Href Extraction
 

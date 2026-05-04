@@ -113,6 +113,9 @@ def _contains_private_query(parsed) -> tuple[bool, list[str]]:
             rule_ids.append(f"token_like_query_value:{key_l}")
         elif any(indicator in value_l for indicator in ("jwt", "magic-login", "candidateid", "applicationid")):
             rule_ids.append(f"private_query_value:{key_l}")
+    fragment_l = (parsed.fragment or "").lower()
+    if fragment_l and any(indicator in fragment_l for indicator in PRIVATE_QUERY_KEYS):
+        rule_ids.append("private_fragment")
     return bool(rule_ids), rule_ids
 
 
@@ -214,6 +217,10 @@ def classify_url(raw_url: str) -> ClassifiedUrl:
         link_type = "tracking_redirect"
         rejection_reason = "tracking_redirect_needs_offline_unwrap"
         rule_ids.append("tracking_redirect")
+    elif any(vendor in hostname for vendor in ("hackerrank", "codility", "codesignal")) or re.search(r"/(?:assessment|assessments|test|challenge)(?:/|$)", path_l):
+        link_type = "assessment"
+        rejection_reason = "assessment_link"
+        rule_ids.append("private_assessment_path")
     elif "calendly.com" in hostname or re.search(r"/(?:schedule|scheduling|interview|calendar|book)(?:/|$)", path_l):
         link_type = "interview_scheduler"
         rejection_reason = "scheduler_link"

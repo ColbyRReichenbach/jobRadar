@@ -397,3 +397,16 @@ async def check_web_research_consent(user_id: uuid.UUID, db: AsyncSession) -> bo
         )
     )
     return result.scalar_one_or_none() is not None
+
+
+async def check_source_intelligence_consent(user_id: uuid.UUID, db: AsyncSession) -> bool:
+    """Return True if the user has granted source_intelligence consent."""
+    from backend.models import DataConsent
+    result = await db.execute(
+        select(DataConsent).where(
+            DataConsent.user_id == user_id,
+            DataConsent.consent_type == "source_intelligence",
+            DataConsent.granted == True,
+        )
+    )
+    return result.scalar_one_or_none() is not None

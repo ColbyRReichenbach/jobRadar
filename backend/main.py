@@ -91,6 +91,7 @@ from backend.models import (
     ResumeDraft,
     RoleUmbrella,
     User,
+    UserApplicationLink,
     UserProfile,
     UserRoleInterest,
     WarmConnection,
@@ -7882,12 +7883,13 @@ async def extraction_version_stats(
 # Data Consent & Account Management
 # ---------------------------------------------------------------------------
 
-CONSENT_TYPES = ("core", "ai_processing", "third_party_enrichment", "web_research")
+CONSENT_TYPES = ("core", "ai_processing", "third_party_enrichment", "web_research", "source_intelligence")
 CONSENT_DISCLOSURES = {
     "core": "Stores saved jobs, pipeline state, contacts, inbox classifications, calendar items, and account settings so the app can function.",
     "ai_processing": "Sends selected career data, email text, resume text, and retrieved AppTrail context to OpenAI for classification, Copilot answers, drafts, resume parsing, and Radar summaries. Safety filters redact secrets before provider calls where possible.",
     "third_party_enrichment": "Sends company domains to enrichment providers for contact discovery and company identity data. Personal Gmail content is not sent for enrichment.",
     "web_research": "Lets Radar query public sources and save dated reports with citations, deltas, and follow-up actions tied to your profile.",
+    "source_intelligence": "Uses sanitized job-source metadata from your applications to improve company job search. Private application links, scheduling links, and email contents are not shared.",
     "retention": "AI trace payloads are retained for a limited audit window, then redacted while ledger rows and aggregate metrics are kept for governance.",
 }
 
@@ -7897,6 +7899,11 @@ class ConsentBody(BaseModel):
     ai_processing: bool
     third_party_enrichment: bool
     web_research: bool | None = None
+    source_intelligence: bool | None = None
+
+
+class SourceIntelligenceSettingsBody(BaseModel):
+    source_intelligence: bool
 
 
 @app.get("/api/consent")
@@ -7932,6 +7939,7 @@ async def update_consent(
         "ai_processing": body.ai_processing,
         "third_party_enrichment": body.third_party_enrichment,
         "web_research": body.web_research,
+        "source_intelligence": body.source_intelligence,
     }
     mapping: dict[str, bool] = {}
 
@@ -7975,6 +7983,118 @@ async def update_consent(
         "accepted_at": now.isoformat(),
         "disclosures": CONSENT_DISCLOSURES,
     }
+
+
+@app.get("/api/settings/source-intelligence")
+async def get_source_intelligence_settings(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    consent_result = await db.execute(
+        select(DataConsent).where(
+            DataConsent.user_id == current_user.id,
+            DataConsent.consent_type == "source_intelligence",
+        )
+    )
+    consent = consent_result.scalar_one_or_none()
+    links_result = await db.execute(
+        select(UserApplicationLink.id).where(UserApplicationLink.user_id == current_user.id)
+    )
+    return {
+        "source_intelligence": bool(consent and consent.granted),
+        "private_link_count": len(links_result.scalars().all()),
+        "disclosure": CONSENT_DISCLOSURES["source_intelligence"],
+    }
+
+
+@app.put("/api/settings/source-intelligence")
+async def update_source_intelligence_settings(
+    body: SourceIntelligenceSettingsBody,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    now = datetime.now(timezone.utc)
+    ip = request.client.host if request.client else None
+    result = await db.execute(
+        select(DataConsent).where(
+            DataConsent.user_id == current_user.id,
+            DataConsent.consent_type == "source_intelligence",
+        )
+    )
+    consent = result.scalar_one_or_none()
+    if consent:
+        was_granted = consent.granted
+        consent.granted = body.source_intelligence
+        consent.updated_at = now
+        consent.ip_address = ip
+        if body.source_intelligence and not was_granted:
+            consent.granted_at = now
+            consent.revoked_at = None
+        elif not body.source_intelligence and was_granted:
+            consent.revoked_at = now
+    else:
+        db.add(DataConsent(
+            user_id=current_user.id,
+            consent_type="source_intelligence",
+            granted=body.source_intelligence,
+            granted_at=now if body.source_intelligence else None,
+            ip_address=ip,
+            updated_at=now,
+        ))
+    await db.commit()
+    return {
+        "source_intelligence": body.source_intelligence,
+        "disclosure": CONSENT_DISCLOSURES["source_intelligence"],
+    }
+
+
+@app.get("/api/settings/source-intelligence/private-links")
+async def list_source_intelligence_private_links(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(UserApplicationLink)
+        .where(UserApplicationLink.user_id == current_user.id)
+        .order_by(UserApplicationLink.created_at.desc())
+        .limit(100)
+    )
+    return [
+        {
+            "id": str(row.id),
+            "provider": row.provider_type,
+            "link_type": row.link_type,
+            "company_domain": row.company_domain,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+            "sanitization_status": row.sanitization_status,
+        }
+        for row in result.scalars().all()
+    ]
+
+
+@app.delete("/api/settings/source-intelligence/private-links/{link_id}", status_code=204)
+async def delete_source_intelligence_private_link(
+    link_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        link_uuid = _uuid.UUID(link_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid private link id.") from exc
+    result = await db.execute(
+        select(UserApplicationLink).where(
+            UserApplicationLink.id == link_uuid,
+            UserApplicationLink.user_id == current_user.id,
+        )
+    )
+    link = result.scalar_one_or_none()
+    if not link:
+        raise HTTPException(status_code=404, detail="Private link not found.")
+    await db.delete(link)
+    await db.commit()
+    return Response(status_code=204)
 
 
 class DeleteAccountBody(BaseModel):

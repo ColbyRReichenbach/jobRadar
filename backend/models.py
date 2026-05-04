@@ -1,7 +1,7 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint, text
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -35,6 +35,7 @@ class Company(Base):
     applications: Mapped[list["Application"]] = relationship("Application", back_populates="company_ref")
     contacts: Mapped[list["Contact"]] = relationship("Contact", back_populates="company_ref")
     email_events: Mapped[list["EmailEvent"]] = relationship("EmailEvent", back_populates="company_ref")
+    job_sources: Mapped[list["CompanyJobSource"]] = relationship("CompanyJobSource", back_populates="company_ref")
 
 
 # --- Sprint 3: Role Taxonomy ---
@@ -101,6 +102,8 @@ class Application(Base):
     company_ref: Mapped["Company | None"] = relationship("Company", back_populates="applications")
     umbrella: Mapped["RoleUmbrella | None"] = relationship("RoleUmbrella", back_populates="applications")
     interviews: Mapped[list["Interview"]] = relationship("Interview", back_populates="application", cascade="all, delete-orphan")
+    source_links: Mapped[list["ApplicationSourceLink"]] = relationship("ApplicationSourceLink", back_populates="application", cascade="all, delete-orphan")
+    private_links: Mapped[list["UserApplicationLink"]] = relationship("UserApplicationLink", back_populates="application", cascade="all, delete-orphan")
 
 
 class Contact(Base):
@@ -196,6 +199,7 @@ class EmailEvent(Base):
 
     application: Mapped["Application | None"] = relationship("Application", back_populates="email_events")
     company_ref: Mapped["Company | None"] = relationship("Company", back_populates="email_events")
+    private_links: Mapped[list["UserApplicationLink"]] = relationship("UserApplicationLink", back_populates="email_event")
 
 
 class EmailFeedback(Base):
@@ -281,6 +285,215 @@ class JobListing(Base):
     description_snippet: Mapped[str | None] = mapped_column(Text, nullable=True)
     saved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     applied: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class CompanyJobSource(Base):
+    __tablename__ = "company_job_sources"
+    __table_args__ = (
+        Index("ix_company_job_sources_domain_provider_active", "company_domain", "provider_type", "active"),
+        Index("ix_company_job_sources_status_active_mode_verified", "verification_status", "active", "access_mode", "last_verified_at"),
+        Index("ix_company_job_sources_company_active", "company_id", "active"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    company_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("companies.id", ondelete="SET NULL"), nullable=True)
+    company_name: Mapped[str] = mapped_column(Text, nullable=False)
+    company_domain: Mapped[str | None] = mapped_column(Text, nullable=True)
+    provider_type: Mapped[str] = mapped_column(Text, nullable=False)
+    provider_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    access_mode: Mapped[str] = mapped_column(Text, nullable=False, default="unknown")
+    career_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    public_jobs_endpoint: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_config: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    source_confidence: Mapped[float] = mapped_column(Float, default=0)
+    verification_status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    robots_allowed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    terms_risk: Mapped[str] = mapped_column(Text, nullable=False, default="unknown")
+    discovered_from: Mapped[str] = mapped_column(Text, nullable=False)
+    verified_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evidence_count: Mapped[int] = mapped_column(Integer, default=1)
+    failure_count: Mapped[int] = mapped_column(Integer, default=0)
+    failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    last_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    stale_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    company_ref: Mapped["Company | None"] = relationship("Company", back_populates="job_sources")
+    job_postings: Mapped[list["JobPosting"]] = relationship("JobPosting", back_populates="source")
+    verification_runs: Mapped[list["SourceVerificationRun"]] = relationship("SourceVerificationRun", back_populates="source", cascade="all, delete-orphan")
+    discovery_events: Mapped[list["SourceDiscoveryEvent"]] = relationship("SourceDiscoveryEvent", back_populates="source")
+    application_links: Mapped[list["ApplicationSourceLink"]] = relationship("ApplicationSourceLink", back_populates="company_job_source")
+
+
+class UserApplicationLink(Base):
+    __tablename__ = "user_application_links"
+    __table_args__ = (
+        UniqueConstraint("user_id", "raw_url_hash", name="uq_user_application_links_user_raw_hash"),
+        Index("ix_user_application_links_user_application", "user_id", "application_id"),
+        Index("ix_user_application_links_user_type_created", "user_id", "link_type", "created_at"),
+        Index("ix_user_application_links_provider_key", "provider_type", "provider_key"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    application_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("applications.id", ondelete="CASCADE"), nullable=True)
+    email_event_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("email_events.id", ondelete="SET NULL"), nullable=True)
+    raw_url_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    raw_url_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    raw_url_hash_version: Mapped[str] = mapped_column(Text, nullable=False, default="v1")
+    canonical_public_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    canonical_public_url_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
+    canonical_public_url_hash_version: Mapped[str | None] = mapped_column(Text, nullable=True)
+    link_type: Mapped[str] = mapped_column(Text, nullable=False)
+    provider_type: Mapped[str | None] = mapped_column(Text, nullable=True)
+    provider_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    company_domain: Mapped[str | None] = mapped_column(Text, nullable=True)
+    contains_private_token: Mapped[bool] = mapped_column(Boolean, default=False)
+    sanitization_status: Mapped[str] = mapped_column(Text, nullable=False)
+    rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    parser_version: Mapped[str | None] = mapped_column(Text, nullable=True)
+    encryption_key_version: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    application: Mapped["Application | None"] = relationship("Application", back_populates="private_links")
+    email_event: Mapped["EmailEvent | None"] = relationship("EmailEvent", back_populates="private_links")
+    application_links: Mapped[list["ApplicationSourceLink"]] = relationship("ApplicationSourceLink", back_populates="user_application_link")
+
+
+class SourceDiscoveryEvent(Base):
+    __tablename__ = "source_discovery_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    source_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("company_job_sources.id", ondelete="SET NULL"), nullable=True)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    email_event_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("email_events.id", ondelete="SET NULL"), nullable=True)
+    application_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("applications.id", ondelete="SET NULL"), nullable=True)
+    event_type: Mapped[str] = mapped_column(Text, nullable=False)
+    provider_type: Mapped[str | None] = mapped_column(Text, nullable=True)
+    company_domain: Mapped[str | None] = mapped_column(Text, nullable=True)
+    confidence_delta: Mapped[float] = mapped_column(Float, default=0)
+    redacted_evidence: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    source: Mapped["CompanyJobSource | None"] = relationship("CompanyJobSource", back_populates="discovery_events")
+
+
+class JobPosting(Base):
+    __tablename__ = "job_postings"
+    __table_args__ = (
+        UniqueConstraint("dedupe_key", name="uq_job_postings_dedupe_key"),
+        Index("ix_job_postings_company_active_seen", "company_domain", "active", "last_seen_at"),
+        Index("ix_job_postings_source_active_seen", "source_type", "active", "last_seen_at"),
+        Index("ix_job_postings_title_active", "normalized_title", "active"),
+        Index("ix_job_postings_verified_active", "last_verified_at", "active"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    source_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("company_job_sources.id", ondelete="SET NULL"), nullable=True)
+    external_job_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    dedupe_key: Mapped[str] = mapped_column(Text, nullable=False)
+    company_name: Mapped[str] = mapped_column(Text, nullable=False)
+    company_domain: Mapped[str | None] = mapped_column(Text, nullable=True)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    normalized_title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    description_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    description_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
+    location_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    remote_status: Mapped[str | None] = mapped_column(Text, nullable=True)
+    employment_type: Mapped[str | None] = mapped_column(Text, nullable=True)
+    department: Mapped[str | None] = mapped_column(Text, nullable=True)
+    salary_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    salary_max: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    salary_currency: Mapped[str | None] = mapped_column(Text, nullable=True)
+    salary_period: Mapped[str | None] = mapped_column(Text, nullable=True)
+    date_posted: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    valid_through: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    canonical_url: Mapped[str] = mapped_column(Text, nullable=False)
+    source_type: Mapped[str] = mapped_column(Text, nullable=False)
+    source_confidence: Mapped[float] = mapped_column(Float, default=0)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    inactive_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    last_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    source: Mapped["CompanyJobSource | None"] = relationship("CompanyJobSource", back_populates="job_postings")
+    application_links: Mapped[list["ApplicationSourceLink"]] = relationship("ApplicationSourceLink", back_populates="job_posting")
+
+
+class ApplicationSourceLink(Base):
+    __tablename__ = "application_source_links"
+    __table_args__ = (
+        UniqueConstraint("application_id", "job_posting_id", "relationship_type", name="uq_application_source_links_posting"),
+        UniqueConstraint("application_id", "user_application_link_id", "relationship_type", name="uq_application_source_links_private_link"),
+        Index("ix_application_source_links_user_application", "user_id", "application_id"),
+        Index("ix_application_source_links_source_relationship", "company_job_source_id", "relationship_type"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    application_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("applications.id", ondelete="CASCADE"), nullable=False)
+    job_posting_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("job_postings.id", ondelete="SET NULL"), nullable=True)
+    company_job_source_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("company_job_sources.id", ondelete="SET NULL"), nullable=True)
+    user_application_link_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("user_application_links.id", ondelete="SET NULL"), nullable=True)
+    relationship_type: Mapped[str] = mapped_column(Text, nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, default=0)
+    created_from: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    application: Mapped["Application"] = relationship("Application", back_populates="source_links")
+    job_posting: Mapped["JobPosting | None"] = relationship("JobPosting", back_populates="application_links")
+    company_job_source: Mapped["CompanyJobSource | None"] = relationship("CompanyJobSource", back_populates="application_links")
+    user_application_link: Mapped["UserApplicationLink | None"] = relationship("UserApplicationLink", back_populates="application_links")
+
+
+class SourceVerificationRun(Base):
+    __tablename__ = "source_verification_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    source_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("company_job_sources.id", ondelete="CASCADE"), nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    http_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    job_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    new_job_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    inactive_job_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error_type: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_message_redacted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    robots_allowed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    source: Mapped["CompanyJobSource"] = relationship("CompanyJobSource", back_populates="verification_runs")
+
+
+class JobSearchProviderUsage(Base):
+    __tablename__ = "job_search_provider_usage"
+    __table_args__ = (
+        UniqueConstraint("user_key", "provider", "request_mode", "query_hash", "month_bucket", name="uq_job_search_provider_usage_bucket"),
+        Index("ix_job_search_provider_usage_provider_month", "provider", "month_bucket"),
+        Index("ix_job_search_provider_usage_user_provider_month", "user_id", "provider", "month_bucket"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    user_key: Mapped[str] = mapped_column(Text, nullable=False)
+    provider: Mapped[str] = mapped_column(Text, nullable=False)
+    request_mode: Mapped[str] = mapped_column(Text, nullable=False)
+    query_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    month_bucket: Mapped[date] = mapped_column(Date, nullable=False)
+    request_count: Mapped[int] = mapped_column(Integer, default=1)
+    result_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
 class ScraperError(Base):

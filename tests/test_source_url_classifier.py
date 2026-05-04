@@ -33,10 +33,12 @@ def test_classifier_rejects_private_and_scheduler_urls():
     fixtures = [
         ("https://company.wd5.myworkdayjobs.com/site/candidate-home", "candidate_home"),
         ("https://calendly.com/recruiter/screen", "interview_scheduler"),
+        ("https://app.codesignal.com/assessment/abc", "assessment"),
         ("https://example.com?token=abc", "unknown"),
         ("https://example.com?applicationId=abc", "unknown"),
         ("https://example.com?candidateId=abc", "unknown"),
         ("https://example.com?auth=abc&session=xyz", "unknown"),
+        ("https://jobs.example.com/acme/backend#candidateId=abc", "unknown"),
     ]
 
     for url, link_type in fixtures:
@@ -65,4 +67,3 @@ def test_extract_urls_from_gmail_payload_preserves_html_hrefs():
     assert extract_urls_from_gmail_payload(payload) == [
         "https://boards.greenhouse.io/acme/jobs/123?utm_source=email"
     ]
-

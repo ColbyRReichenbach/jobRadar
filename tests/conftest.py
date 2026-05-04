@@ -73,6 +73,10 @@ _USER_SCOPED_MODELS = {
     "EmailSyncAudit",
     "ApplicationSuggestionDecision",
     "InterviewSuggestionDecision",
+    "UserApplicationLink",
+    "SourceDiscoveryEvent",
+    "ApplicationSourceLink",
+    "JobSearchProviderUsage",
 }
 
 

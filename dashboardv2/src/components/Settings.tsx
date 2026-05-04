@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Bell, Mail, Save, Loader2, KeyRound, Copy, RefreshCw, Chrome, ExternalLink, Shield, Download, Trash2, Brain, Users, Globe } from 'lucide-react';
+import { Bell, Mail, Save, Loader2, KeyRound, Copy, RefreshCw, Chrome, ExternalLink, Shield, Download, Trash2, Brain, Users, Globe, Link2 } from 'lucide-react';
 import {
   ApiKeyStatus,
   ConsentStatus,
@@ -648,6 +648,24 @@ export function Settings() {
                   </span>
                 </label>
 
+                <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={consent.consents.source_intelligence}
+                    onChange={(e) => setConsent({
+                      ...consent,
+                      consents: { ...consent.consents, source_intelligence: e.target.checked },
+                    })}
+                    className="mt-0.5 w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <span className="text-sm text-slate-700">
+                    <span className="flex items-center gap-1.5 font-medium text-slate-900">
+                      <Link2 className="w-3.5 h-3.5 text-emerald-500" /> Source Intelligence
+                    </span>
+                    Use sanitized job-source metadata from my applications to improve company job search. Private application links, scheduling links, and email contents are not shared.
+                  </span>
+                </label>
+
                 <button
                   onClick={async () => {
                     setSavingConsent(true);
@@ -658,6 +676,7 @@ export function Settings() {
                         ai_processing: consent.consents.ai_processing,
                         third_party_enrichment: consent.consents.third_party_enrichment,
                         web_research: consent.consents.web_research,
+                        source_intelligence: consent.consents.source_intelligence,
                       });
                       setConsent(updated);
                       setStatusMessage('Privacy preferences updated.');

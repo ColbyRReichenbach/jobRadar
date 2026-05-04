@@ -183,6 +183,7 @@ export interface ConsentStatus {
     ai_processing: boolean;
     third_party_enrichment: boolean;
     web_research: boolean;
+    source_intelligence: boolean;
   };
   accepted_at: string | null;
   disclosures?: Record<string, string>;
@@ -193,6 +194,7 @@ export interface ConsentUpdate {
   ai_processing: boolean;
   third_party_enrichment: boolean;
   web_research?: boolean;
+  source_intelligence?: boolean;
 }
 
 export interface NotificationPrefs {
