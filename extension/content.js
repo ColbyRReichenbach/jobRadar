@@ -9,7 +9,7 @@
 // ── Extractor version ──────────────────────────────────────────────
 // Bump this on EVERY extraction logic change so reports are tagged.
 // Format: ext-YYYY.MM.DD[a-z] (letter suffix for multiple changes per day)
-const EXTRACTOR_VERSION = "ext-2026.03.18a";
+const EXTRACTOR_VERSION = "ext-2026.05.04a";
 
 // Guard against duplicate injection (background.js may re-inject on SPA navigation).
 // On re-injection, trigger a fresh extract and store to session, then bail out.

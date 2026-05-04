@@ -4,6 +4,7 @@ import uuid
 from dataclasses import dataclass
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models import ApplicationSourceLink, UserApplicationLink
@@ -96,8 +97,19 @@ async def store_user_application_link(
             parser_version=parser_version,
             encryption_key_version=encryption_version,
         )
-        db.add(link)
-        await db.flush()
+        try:
+            async with db.begin_nested():
+                db.add(link)
+                await db.flush()
+        except IntegrityError:
+            link = (
+                await db.execute(
+                    select(UserApplicationLink).where(
+                        UserApplicationLink.user_id == user_id,
+                        UserApplicationLink.raw_url_hash == raw_hash,
+                    )
+                )
+            ).scalar_one()
 
     app_link = None
     if application_id:
@@ -123,8 +135,20 @@ async def store_user_application_link(
                 confidence=1.0 if sanitized.sanitization_status == "safe_public" else 0.8,
                 created_from=created_from,
             )
-            db.add(app_link)
-            await db.flush()
+            try:
+                async with db.begin_nested():
+                    db.add(app_link)
+                    await db.flush()
+            except IntegrityError:
+                app_link = (
+                    await db.execute(
+                        select(ApplicationSourceLink).where(
+                            ApplicationSourceLink.application_id == application_id,
+                            ApplicationSourceLink.user_application_link_id == link.id,
+                            ApplicationSourceLink.relationship_type == relationship_type,
+                        )
+                    )
+                ).scalar_one()
 
     return StoredApplicationLink(user_link=link, application_source_link=app_link, sanitized=sanitized)
 

@@ -21,26 +21,31 @@ async def verify_source_by_id_async(source_id: uuid.UUID) -> dict:
     from backend.database import async_session_factory
     from backend.models import CompanyJobSource
     from backend.services.job_sources.verifier import verify_company_job_source
+    from backend.services.source_intelligence.locks import source_intelligence_lock
 
     async with async_session_factory() as db:
         source = (await db.execute(select(CompanyJobSource).where(CompanyJobSource.id == source_id))).scalar_one_or_none()
         if not source:
             return {"source_id": str(source_id), "status": "missing"}
-        result = await verify_company_job_source(db, source)
-        await db.commit()
-        return {
-            "source_id": str(source_id),
-            "provider_type": source.provider_type,
-            "status": result.status,
-            "job_count": result.job_count,
-            "error_type": result.error_type,
-        }
+        async with source_intelligence_lock(db, f"job-source-verify:{source_id}") as locked:
+            if not locked:
+                return {"source_id": str(source_id), "status": "skipped_locked"}
+            result = await verify_company_job_source(db, source)
+            await db.commit()
+            return {
+                "source_id": str(source_id),
+                "provider_type": source.provider_type,
+                "status": result.status,
+                "job_count": result.job_count,
+                "error_type": result.error_type,
+            }
 
 
 async def verify_due_sources_async(limit: int | None = None) -> dict:
     from backend.database import async_session_factory
     from backend.models import CompanyJobSource
     from backend.services.job_sources.verifier import verify_company_job_source
+    from backend.services.source_intelligence.locks import source_intelligence_lock
 
     max_sources = limit or int(os.getenv("SOURCE_VERIFICATION_MAX_SOURCES_PER_RUN", "100"))
     async with async_session_factory() as db:
@@ -57,8 +62,12 @@ async def verify_due_sources_async(limit: int | None = None) -> dict:
         ).scalars().all()
         results = []
         for source in sources:
-            result = await verify_company_job_source(db, source)
-            results.append({"source_id": str(source.id), "provider_type": source.provider_type, "status": result.status})
+            async with source_intelligence_lock(db, f"job-source-verify:{source.id}") as locked:
+                if not locked:
+                    results.append({"source_id": str(source.id), "provider_type": source.provider_type, "status": "skipped_locked"})
+                    continue
+                result = await verify_company_job_source(db, source)
+                results.append({"source_id": str(source.id), "provider_type": source.provider_type, "status": result.status})
         await db.commit()
         return {"checked": len(results), "results": results}
 

@@ -134,5 +134,34 @@ For policy details, see:
 - [docs/privacy-policy.md](docs/privacy-policy.md): product privacy policy
 - [extension/store/listing.md](extension/store/listing.md): Chrome Web Store listing copy
 - [extension/store/SUBMISSION_GUIDE.md](extension/store/SUBMISSION_GUIDE.md): extension submission workflow
+- [extension/store/privacy-fields.md](extension/store/privacy-fields.md): Chrome Web Store privacy and permission form copy
+- [extension/store/beta-scope.md](extension/store/beta-scope.md): controlled extension beta scope
 - [backend/PROMPT_REGISTRY.md](backend/PROMPT_REGISTRY.md): internal prompt registry generated from code
 - [docs/archive/README.md](docs/archive/README.md): historical plans, audits, and retired working docs
+
+## Extension Release Checks
+
+Run the controlled-beta gate locally with:
+
+```bash
+bash scripts/release/run_beta_readiness_checks.sh
+```
+
+Build the Chrome Web Store submission bundle with:
+
+```bash
+bash scripts/release/package_chrome_webstore.sh
+```
+
+The package script writes the runtime ZIP, store copy, and PNG store assets to `dist/chrome-webstore/`.
+
+To include an installed Chrome extension smoke against a target backend, pass secrets through environment variables rather than writing them to disk:
+
+```bash
+APPTRAIL_EXTENSION_API_BASE=https://api.apptrail.com \
+APPTRAIL_EXTENSION_API_KEY=... \
+APPTRAIL_EXTENSION_EXPECTED_EMAIL=you@example.com \
+node scripts/release/smoke_chrome_extension.mjs
+```
+
+The smoke opens Chrome with the unpacked extension, validates the key through the setup page, confirms the key is stored in extension storage, and clears it from the temporary profile by default. Set `APPTRAIL_EXTENSION_CREATE_SMOKE_JOB=1` only when you intentionally want to create a disposable pipeline item in the target account.

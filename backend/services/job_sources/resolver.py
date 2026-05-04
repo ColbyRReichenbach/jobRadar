@@ -7,6 +7,7 @@ from datetime import date, datetime, timezone
 from typing import Awaitable, Callable
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models import CompanyJobSource, JobSearchProviderUsage
@@ -16,7 +17,7 @@ from backend.metrics import (
     observe_job_search_request,
     observe_job_search_results,
 )
-from backend.services.job_sources import ashby, greenhouse, lever, workable
+from backend.services.job_sources import ashby, greenhouse, lever, smartrecruiters, structured_data, workable, workday
 from backend.services.job_sources.base import NormalizedJobPosting, SearchQuery, SourceConfig
 from backend.services.job_sources.registry import upsert_company_job_source, upsert_job_posting
 from backend.services.job_sources.role_matcher import rank_postings
@@ -32,6 +33,10 @@ ADAPTERS = {
     "lever": lever,
     "ashby": ashby,
     "workable": workable,
+    "smartrecruiters": smartrecruiters,
+    "structured_data": structured_data,
+    "custom_career_page": structured_data,
+    "workday": workday,
 }
 
 ALLOWED_ACCESS_MODES = {"public"}
@@ -112,20 +117,20 @@ async def resolve_job_search(
         if cap["allowed"] and os.getenv("JOB_SEARCH_BROAD_PROVIDER_ENABLED", "true").lower() in {"1", "true", "yes", "on"}:
             broad_results = await broad_search(query, location)
             observe_job_search_broad_api_call(provider="serpapi")
-            broad_used = bool(broad_results)
+            broad_used = True
+            mode = "direct_plus_broad" if direct_source_payloads else "broad_only"
+            await record_broad_provider_usage(
+                db,
+                user_id=user_id,
+                provider="serpapi",
+                query=query,
+                location=location,
+                request_mode="fallback",
+                result_count=len(broad_results),
+            )
             if broad_results:
                 await _upsert_broad_source_candidates(db, broad_results)
-                await record_broad_provider_usage(
-                    db,
-                    user_id=user_id,
-                    provider="serpapi",
-                    query=query,
-                    location=location,
-                    request_mode="fallback",
-                    result_count=len(broad_results),
-                )
                 result_payloads = broad_results
-                mode = "broad_only"
         else:
             degraded_reasons.append(cap["reason"] or "Broad search is not configured.")
 
@@ -214,7 +219,7 @@ async def record_broad_provider_usage(
             existing.result_count += result_count
             existing.updated_at = datetime.now(timezone.utc)
         else:
-            db.add(JobSearchProviderUsage(
+            usage = JobSearchProviderUsage(
                 user_id=row_user_id,
                 user_key=key,
                 provider=provider,
@@ -223,7 +228,26 @@ async def record_broad_provider_usage(
                 month_bucket=month,
                 request_count=1,
                 result_count=result_count,
-            ))
+            )
+            try:
+                async with db.begin_nested():
+                    db.add(usage)
+                    await db.flush()
+            except IntegrityError:
+                existing = (
+                    await db.execute(
+                        select(JobSearchProviderUsage).where(
+                            JobSearchProviderUsage.user_key == key,
+                            JobSearchProviderUsage.provider == provider,
+                            JobSearchProviderUsage.request_mode == request_mode,
+                            JobSearchProviderUsage.query_hash == query_hash,
+                            JobSearchProviderUsage.month_bucket == month,
+                        )
+                    )
+                ).scalar_one()
+                existing.request_count += 1
+                existing.result_count += result_count
+                existing.updated_at = datetime.now(timezone.utc)
 
 
 async def _usage_count(db: AsyncSession, *, provider: str, month_bucket: date, user_id: uuid.UUID | None) -> int:

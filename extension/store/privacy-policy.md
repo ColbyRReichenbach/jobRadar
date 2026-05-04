@@ -39,6 +39,10 @@ The extension uses stored and captured data to:
 
 The extension sends data only to the AppTrail backend configured by the user. It does not sell data or send browsing information to ad networks.
 
+## Limited Use
+
+The extension uses user data only to provide or improve visible AppTrail features: capturing supported job listings, saving reviewed roles to the user's pipeline, syncing user-approved job-search activity, and supporting opt-in career-page visit or submission-confirmation signals. AppTrail's use of extension data complies with the Chrome Web Store User Data Policy, including the Limited Use requirements.
+
 ## Local Storage
 
 Extension data is stored in Chrome extension storage on the user's device. That includes configuration, local queue state, and temporary activity records.

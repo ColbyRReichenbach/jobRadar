@@ -33,70 +33,82 @@ async def reprocess_source_intelligence_in_session(db, user_id: uuid.UUID, *, li
     from backend.models import Application, EmailEvent
     from backend.services.source_intelligence.discovery import process_stored_links_for_source_discovery
     from backend.services.source_intelligence.link_store import store_many_user_application_links, store_user_application_link
+    from backend.services.source_intelligence.locks import source_intelligence_lock
 
     application_count = 0
     email_count = 0
     stored_link_count = 0
     discovery_count = 0
 
-    applications = (
-        await db.execute(
-            select(Application)
-            .where(Application.user_id == user_id, Application.job_url.isnot(None))
-            .limit(limit)
-        )
-    ).scalars().all()
-    for application in applications:
-        if not application.job_url:
-            continue
-        stored = await store_user_application_link(
-            db,
-            user_id=user_id,
-            raw_url=application.job_url,
-            application_id=application.id,
-            created_from="historical_application_reprocess",
-            parser_version=PARSER_VERSION,
-        )
-        stored_link_count += 1
-        discovery = await process_stored_links_for_source_discovery(
-            db,
-            user_id=user_id,
-            stored_links=[stored],
-            discovered_from="historical_application_reprocess",
-        )
-        discovery_count += len(discovery)
-        application_count += 1
+    async with source_intelligence_lock(db, f"source-reprocess:{user_id}:{PARSER_VERSION}") as locked:
+        if not locked:
+            return {
+                "user_id": str(user_id),
+                "status": "skipped_locked",
+                "applications_processed": 0,
+                "emails_processed": 0,
+                "links_stored": 0,
+                "discovery_events": 0,
+            }
 
-    remaining = max(limit - application_count, 0)
-    if remaining:
-        email_events = (
+        applications = (
             await db.execute(
-                select(EmailEvent)
-                .where(EmailEvent.user_id == user_id)
-                .limit(remaining)
+                select(Application)
+                .where(Application.user_id == user_id, Application.job_url.isnot(None))
+                .limit(limit)
             )
         ).scalars().all()
-        for event in email_events:
-            candidate_urls = _historical_email_urls(event)
-            if not candidate_urls:
+        for application in applications:
+            if not application.job_url:
                 continue
-            stored_links = await store_many_user_application_links(
+            stored = await store_user_application_link(
                 db,
                 user_id=user_id,
-                raw_urls=candidate_urls,
-                application_id=event.application_id,
-                email_event_id=event.id,
-                created_from="historical_email_reprocess",
+                raw_url=application.job_url,
+                application_id=application.id,
+                created_from="historical_application_reprocess",
+                parser_version=PARSER_VERSION,
             )
-            stored_link_count += len(stored_links)
+            stored_link_count += 1
             discovery = await process_stored_links_for_source_discovery(
                 db,
                 user_id=user_id,
-                stored_links=stored_links,
-                discovered_from="historical_email_reprocess",
+                stored_links=[stored],
+                discovered_from="historical_application_reprocess",
             )
             discovery_count += len(discovery)
-            email_count += 1
+            application_count += 1
+
+        remaining = max(limit - application_count, 0)
+        if remaining:
+            email_events = (
+                await db.execute(
+                    select(EmailEvent)
+                    .where(EmailEvent.user_id == user_id)
+                    .limit(remaining)
+                )
+            ).scalars().all()
+            for event in email_events:
+                candidate_urls = _historical_email_urls(event)
+                if not candidate_urls:
+                    continue
+                stored_links = await store_many_user_application_links(
+                    db,
+                    user_id=user_id,
+                    raw_urls=candidate_urls,
+                    application_id=event.application_id,
+                    email_event_id=event.id,
+                    created_from="historical_email_reprocess",
+                )
+                stored_link_count += len(stored_links)
+                discovery = await process_stored_links_for_source_discovery(
+                    db,
+                    user_id=user_id,
+                    stored_links=stored_links,
+                    discovered_from="historical_email_reprocess",
+                )
+                discovery_count += len(discovery)
+                email_count += 1
 
     return {
         "user_id": str(user_id),

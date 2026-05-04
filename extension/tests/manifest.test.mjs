@@ -38,3 +38,14 @@ test("manifest keeps extension scripts under local CSP", () => {
     "script-src 'self'; object-src 'self'"
   );
 });
+
+test("local development hosts are not content script targets", () => {
+  const contentMatches = manifest.content_scripts.flatMap((entry) => entry.matches || []);
+  for (const match of contentMatches) {
+    assert.equal(
+      match.startsWith("http://localhost") || match.startsWith("http://127.0.0.1"),
+      false,
+      `${match} should not auto-inject on local development hosts`
+    );
+  }
+});
