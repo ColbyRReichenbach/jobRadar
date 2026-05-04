@@ -29,6 +29,7 @@ const Settings = lazy(() => import('./components/Settings').then(m => ({ default
 const ClassifierAudit = lazy(() => import('./components/ClassifierAudit').then(m => ({ default: m.ClassifierAudit })));
 const ExtractionReports = lazy(() => import('./components/ExtractionReports').then(m => ({ default: m.ExtractionReports })));
 const AiOps = lazy(() => import('./components/admin/AiOps').then(m => ({ default: m.AiOps })));
+const SourceIntelligenceAdmin = lazy(() => import('./components/admin/SourceIntelligence').then(m => ({ default: m.SourceIntelligenceAdmin })));
 const ProfilePage = lazy(() => import('./components/ProfilePage').then(m => ({ default: m.ProfilePage })));
 
 const AI_OPS_ENABLED = import.meta.env.VITE_ADMIN_AI_OPS_ENABLED === 'true'
@@ -46,10 +47,11 @@ const TAB_TITLES: Record<string, string> = {
   settings: 'Settings',
   audit: 'Classifier Audit',
   'extraction-reports': 'Extraction Reports',
+  'source-intelligence': 'Source Intelligence',
   ...(AI_OPS_ENABLED ? { 'ai-ops': 'AI Ops' } : {}),
   emails: 'Inbox',
 };
-const ADMIN_TABS = new Set(['audit', 'extraction-reports', ...(AI_OPS_ENABLED ? ['ai-ops'] : [])]);
+const ADMIN_TABS = new Set(['audit', 'extraction-reports', 'source-intelligence', ...(AI_OPS_ENABLED ? ['ai-ops'] : [])]);
 
 function LazyFallback() {
   return (
@@ -399,6 +401,7 @@ function AppContent() {
               {activeTab === 'settings' && <Settings />}
               {activeTab === 'audit' && user?.is_admin && <ClassifierAudit />}
               {activeTab === 'extraction-reports' && user?.is_admin && <ExtractionReports />}
+              {activeTab === 'source-intelligence' && user?.is_admin && <SourceIntelligenceAdmin />}
               {AI_OPS_ENABLED && activeTab === 'ai-ops' && user?.is_admin && <AiOps />}
               {activeTab === 'emails' && (
                 <div className="flex-1 flex overflow-hidden">

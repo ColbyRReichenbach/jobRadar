@@ -6,10 +6,12 @@ import {
   ConsentStatus,
   GmailSyncAuditRow,
   NotificationPrefs,
+  deleteSourcePrivateLink,
   fetchApiKeyStatus,
   fetchConsent,
   fetchGmailSyncAudit,
   fetchNotificationPreferences,
+  fetchSourcePrivateLinks,
   generateApiKey,
   updateConsent,
   updateNotificationPreferences,
@@ -17,6 +19,7 @@ import {
   exportCsv,
   exportAccountData,
 } from '../lib/api';
+import type { SourcePrivateLink } from '../lib/api';
 import { useAuth } from '../lib/AuthContext';
 import { DEFAULT_LOCAL_NOTIFICATION_PREFS, LocalNotificationPrefs, loadLocalNotificationPrefs, saveLocalNotificationPrefs } from '../lib/localNotificationPrefs';
 
@@ -65,6 +68,8 @@ export function Settings() {
   const [exportingAccount, setExportingAccount] = useState(false);
   const [exportingCsv, setExportingCsv] = useState(false);
   const [gmailAuditRows, setGmailAuditRows] = useState<GmailSyncAuditRow[]>([]);
+  const [sourcePrivateLinks, setSourcePrivateLinks] = useState<SourcePrivateLink[]>([]);
+  const [deletingPrivateLinkId, setDeletingPrivateLinkId] = useState<string | null>(null);
   const [showAllGmailDiagnostics, setShowAllGmailDiagnostics] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteInput, setDeleteInput] = useState('');
@@ -83,10 +88,11 @@ export function Settings() {
   const loadPrefs = async () => {
     setErrorMessage(null);
     try {
-      const [prefsData, keyStatus, consentData] = await Promise.all([
+      const [prefsData, keyStatus, consentData, privateLinks] = await Promise.all([
         fetchNotificationPreferences(),
         fetchApiKeyStatus(),
         fetchConsent(),
+        fetchSourcePrivateLinks().catch(() => []),
       ]);
       const auditRows = await fetchGmailSyncAudit(25).catch(() => []);
       setPrefs(prefsData);
@@ -94,6 +100,7 @@ export function Settings() {
       setPhone(prefsData.sms_phone || '');
       setApiKeyStatus(keyStatus);
       setConsent(consentData);
+      setSourcePrivateLinks(privateLinks);
       setGmailAuditRows(auditRows);
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'Failed to load settings.');
@@ -152,6 +159,20 @@ export function Settings() {
       setErrorMessage(err instanceof Error ? err.message : 'Failed to save preferences.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDeletePrivateLink = async (id: string) => {
+    setDeletingPrivateLinkId(id);
+    setErrorMessage(null);
+    try {
+      await deleteSourcePrivateLink(id);
+      setSourcePrivateLinks((current) => current.filter((link) => link.id !== id));
+      setStatusMessage('Private link deleted.');
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to delete private link.');
+    } finally {
+      setDeletingPrivateLinkId(null);
     }
   };
 
@@ -693,6 +714,48 @@ export function Settings() {
                   {savingConsent ? <Loader2 className="w-4 h-4 animate-spin" /> : <Shield className="w-4 h-4" />}
                   Update Privacy Preferences
                 </button>
+
+                <div className="rounded-xl border border-slate-200 bg-white">
+                  <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                    <div>
+                      <h3 className="text-sm font-semibold text-slate-900">Private Application Links</h3>
+                      <p className="text-xs text-slate-500">Raw tokenized URLs stay encrypted and user-scoped.</p>
+                    </div>
+                    <button
+                      onClick={loadPrefs}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      Refresh
+                    </button>
+                  </div>
+                  {sourcePrivateLinks.length > 0 ? (
+                    <div className="divide-y divide-slate-100">
+                      {sourcePrivateLinks.slice(0, 8).map((link) => (
+                        <div key={link.id} className="grid gap-3 px-4 py-3 text-xs text-slate-600 sm:grid-cols-[1fr_auto] sm:items-center">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-semibold text-slate-900">{link.provider || 'unknown'}</span>
+                              <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium">{link.link_type.replace(/_/g, ' ')}</span>
+                              <span className="rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-700">{link.sanitization_status.replace(/_/g, ' ')}</span>
+                            </div>
+                            <p className="mt-1 truncate text-slate-500">{link.company_domain || 'No company domain'} - {link.created_at ? new Date(link.created_at).toLocaleDateString() : 'Unknown date'}</p>
+                          </div>
+                          <button
+                            onClick={() => handleDeletePrivateLink(link.id)}
+                            disabled={deletingPrivateLinkId === link.id}
+                            className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-red-100 px-3 py-2 font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+                          >
+                            {deletingPrivateLinkId === link.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                            Delete
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="px-4 py-5 text-sm text-slate-500">No private application links stored.</div>
+                  )}
+                </div>
               </div>
             )}
 

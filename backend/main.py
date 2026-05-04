@@ -17,7 +17,7 @@ from pydantic import BaseModel, EmailStr, Field
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
-from sqlalchemy import inspect as sa_inspect, select, text, update
+from sqlalchemy import func, inspect as sa_inspect, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -60,6 +60,7 @@ from backend.models import (
     ApplicationSuggestionDecision,
     AtsBehavior,
     Company,
+    CompanyJobSource,
     CompanyTechProfile,
     CompanyVisit,
     Contact,
@@ -75,6 +76,7 @@ from backend.models import (
     Interview,
     InterviewNote,
     InterviewSuggestionDecision,
+    JobSearchProviderUsage,
     NotificationPreference,
     OpportunityBrief,
     OpportunityScore,
@@ -90,6 +92,8 @@ from backend.models import (
     ResearchSourceItem,
     ResumeDraft,
     RoleUmbrella,
+    SourceDiscoveryEvent,
+    SourceVerificationRun,
     User,
     UserApplicationLink,
     UserProfile,
@@ -8024,6 +8028,11 @@ class SourceIntelligenceSettingsBody(BaseModel):
     source_intelligence: bool
 
 
+class AdminSourceActionBody(BaseModel):
+    reason: str | None = None
+    access_mode: str | None = None
+
+
 @app.get("/api/consent")
 async def get_consent(
     current_user: User = Depends(get_current_user),
@@ -8213,6 +8222,229 @@ async def delete_source_intelligence_private_link(
     await db.delete(link)
     await db.commit()
     return Response(status_code=204)
+
+
+@app.get("/api/admin/job-sources")
+async def admin_list_job_sources(
+    provider_type: str | None = Query(None),
+    status: str | None = Query(None),
+    limit: int = Query(100, ge=1, le=500),
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin_user),
+):
+    stmt = select(CompanyJobSource).order_by(CompanyJobSource.updated_at.desc()).limit(limit)
+    if provider_type:
+        stmt = stmt.where(CompanyJobSource.provider_type == provider_type)
+    if status:
+        stmt = stmt.where(CompanyJobSource.verification_status == status)
+    result = await db.execute(stmt)
+    return {"sources": [_serialize_admin_job_source(row) for row in result.scalars().all()]}
+
+
+@app.get("/api/admin/job-sources/health")
+async def admin_job_sources_health(
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin_user),
+):
+    rows = (
+        await db.execute(
+            select(
+                CompanyJobSource.provider_type,
+                CompanyJobSource.verification_status,
+                func.count(CompanyJobSource.id),
+            ).group_by(CompanyJobSource.provider_type, CompanyJobSource.verification_status)
+        )
+    ).all()
+    by_provider: dict[str, dict[str, int]] = {}
+    totals = {"verified": 0, "pending_review": 0, "failed_stale": 0, "blocked": 0}
+    for provider, status, count in rows:
+        by_provider.setdefault(provider or "unknown", {})[status or "unknown"] = count
+        if status == "verified":
+            totals["verified"] += count
+        elif status in {"pending", "needs_review"}:
+            totals["pending_review"] += count
+        elif status in {"failed", "stale"}:
+            totals["failed_stale"] += count
+        elif status == "blocked":
+            totals["blocked"] += count
+    private_rejected = (
+        await db.execute(
+            select(func.count(UserApplicationLink.id)).where(UserApplicationLink.sanitization_status != "safe_public")
+        )
+    ).scalar_one()
+    return {
+        "totals": {**totals, "private_links_rejected_from_sharing": private_rejected},
+        "by_provider": by_provider,
+    }
+
+
+@app.get("/api/admin/job-sources/usage")
+async def admin_job_sources_usage(
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin_user),
+):
+    rows = (
+        await db.execute(
+            select(
+                JobSearchProviderUsage.provider,
+                JobSearchProviderUsage.month_bucket,
+                func.sum(JobSearchProviderUsage.request_count),
+                func.sum(JobSearchProviderUsage.result_count),
+            ).group_by(JobSearchProviderUsage.provider, JobSearchProviderUsage.month_bucket)
+        )
+    ).all()
+    return {
+        "usage": [
+            {
+                "provider": provider,
+                "month_bucket": month_bucket.isoformat() if month_bucket else None,
+                "request_count": int(request_count or 0),
+                "result_count": int(result_count or 0),
+            }
+            for provider, month_bucket, request_count, result_count in rows
+        ]
+    }
+
+
+@app.get("/api/admin/job-sources/{source_id}")
+async def admin_get_job_source(
+    source_id: str,
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin_user),
+):
+    source = await _get_admin_job_source(db, source_id)
+    runs = (
+        await db.execute(
+            select(SourceVerificationRun)
+            .where(SourceVerificationRun.source_id == source.id)
+            .order_by(SourceVerificationRun.started_at.desc())
+            .limit(25)
+        )
+    ).scalars().all()
+    discovery_count = (
+        await db.execute(
+            select(func.count(SourceDiscoveryEvent.id)).where(SourceDiscoveryEvent.source_id == source.id)
+        )
+    ).scalar_one()
+    payload = _serialize_admin_job_source(source)
+    payload["verification_runs"] = [_serialize_source_verification_run(run) for run in runs]
+    payload["discovery_event_count"] = discovery_count
+    return payload
+
+
+@app.post("/api/admin/job-sources/{source_id}/verify")
+async def admin_verify_job_source(
+    source_id: str,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_admin_user),
+):
+    from backend.services.job_sources.verifier import verify_company_job_source
+
+    source = await _get_admin_job_source(db, source_id)
+    result = await verify_company_job_source(db, source, verified_by=str(admin.id))
+    await db.commit()
+    await db.refresh(source)
+    return {"source": _serialize_admin_job_source(source), "verification_result": result.__dict__}
+
+
+@app.post("/api/admin/job-sources/{source_id}/approve")
+async def admin_approve_job_source(
+    source_id: str,
+    body: AdminSourceActionBody | None = None,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_admin_user),
+):
+    source = await _get_admin_job_source(db, source_id)
+    source.verification_status = "verified"
+    source.active = True
+    source.access_mode = (body.access_mode if body and body.access_mode else source.access_mode if source.access_mode != "unknown" else "public")
+    source.verified_by = str(admin.id)
+    source.failure_reason = None
+    source.last_verified_at = datetime.now(timezone.utc)
+    source.updated_at = source.last_verified_at
+    await db.commit()
+    await db.refresh(source)
+    return {"source": _serialize_admin_job_source(source)}
+
+
+@app.post("/api/admin/job-sources/{source_id}/block")
+async def admin_block_job_source(
+    source_id: str,
+    body: AdminSourceActionBody | None = None,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_admin_user),
+):
+    source = await _get_admin_job_source(db, source_id)
+    source.verification_status = "blocked"
+    source.access_mode = "blocked"
+    source.active = False
+    source.verified_by = str(admin.id)
+    source.failure_reason = (body.reason if body and body.reason else "admin_blocked")[:240]
+    source.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(source)
+    return {"source": _serialize_admin_job_source(source)}
+
+
+async def _get_admin_job_source(db: AsyncSession, source_id: str) -> CompanyJobSource:
+    try:
+        source_uuid = _uuid.UUID(source_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid source id.") from exc
+    source = (await db.execute(select(CompanyJobSource).where(CompanyJobSource.id == source_uuid))).scalar_one_or_none()
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found.")
+    return source
+
+
+def _serialize_admin_job_source(source: CompanyJobSource) -> dict:
+    return {
+        "id": str(source.id),
+        "company_id": str(source.company_id) if source.company_id else None,
+        "company_name": source.company_name,
+        "company_domain": source.company_domain,
+        "provider_type": source.provider_type,
+        "provider_key": source.provider_key,
+        "access_mode": source.access_mode,
+        "career_url": source.career_url,
+        "public_jobs_endpoint": source.public_jobs_endpoint,
+        "source_config": _redact_source_config(source.source_config),
+        "source_confidence": source.source_confidence,
+        "verification_status": source.verification_status,
+        "active": source.active,
+        "robots_allowed": source.robots_allowed,
+        "terms_risk": source.terms_risk,
+        "discovered_from": source.discovered_from,
+        "verified_by": source.verified_by,
+        "evidence_count": source.evidence_count,
+        "failure_count": source.failure_count,
+        "failure_reason": source.failure_reason,
+        "first_seen_at": source.first_seen_at.isoformat() if source.first_seen_at else None,
+        "last_seen_at": source.last_seen_at.isoformat() if source.last_seen_at else None,
+        "last_verified_at": source.last_verified_at.isoformat() if source.last_verified_at else None,
+        "stale_at": source.stale_at.isoformat() if source.stale_at else None,
+        "updated_at": source.updated_at.isoformat() if source.updated_at else None,
+    }
+
+
+def _serialize_source_verification_run(run: SourceVerificationRun) -> dict:
+    return {
+        "id": str(run.id),
+        "status": run.status,
+        "http_status": run.http_status,
+        "job_count": run.job_count,
+        "duration_ms": run.duration_ms,
+        "error_type": run.error_type,
+        "error_message_redacted": run.error_message_redacted,
+        "robots_allowed": run.robots_allowed,
+        "started_at": run.started_at.isoformat() if run.started_at else None,
+        "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+    }
+
+
+def _redact_source_config(config: dict | None) -> dict:
+    blocked = {"token", "api_key", "authorization", "cookie", "headers", "query", "raw_url", "password"}
+    return {key: value for key, value in (config or {}).items() if key.lower() not in blocked}
 
 
 class DeleteAccountBody(BaseModel):

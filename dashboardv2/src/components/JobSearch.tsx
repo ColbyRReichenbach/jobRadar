@@ -4,6 +4,7 @@ import type { Dispatch, MouseEvent, SetStateAction } from 'react';
 import { useId, useRef, useState } from 'react';
 import { Job } from '../types';
 import { searchJobs, createJob, checkJobDuplicates, getSearchMatchPreview } from '../lib/api';
+import type { JobSearchResponse } from '../lib/api';
 import { DialogShell } from './DialogShell';
 
 interface JobSearchProps {
@@ -25,6 +26,9 @@ interface SearchResult {
   matchScore?: number | null;
   fitLabel?: 'best_fit' | 'good_fit' | 'stretch' | null;
   matchedSkills?: string[];
+  source?: string;
+  sourceLabel?: string;
+  freshness?: string;
 }
 
 function displayRole(result: SearchResult): string {
@@ -33,6 +37,37 @@ function displayRole(result: SearchResult): string {
 
 function displayCompany(result: SearchResult): string {
   return result.company || 'Company unavailable';
+}
+
+function providerLabel(source: string): string {
+  const labels: Record<string, string> = {
+    greenhouse: 'Greenhouse',
+    lever: 'Lever',
+    ashby: 'Ashby',
+    workable: 'Workable',
+    workday: 'Workday',
+    smartrecruiters: 'SmartRecruiters',
+    structured_data: 'Company source',
+    broad_search: 'Broad web',
+  };
+  return labels[source] || source.replace(/_/g, ' ');
+}
+
+function freshnessLabel(value: string): string {
+  if (value === 'seen_today') return 'Fresh today';
+  if (value === 'stale') return 'Stale';
+  return value.replace(/_/g, ' ');
+}
+
+function sourceStatusText(response: JobSearchResponse): string | null {
+  const summary = response.source_summary;
+  const mode = response.provider_status?.mode;
+  if (mode === 'provider_limited') return 'Broad search is not configured. Add a company career URL or try a known company.';
+  if (summary?.verified_source_count) return 'Searching verified company career sources.';
+  if (summary?.broad_provider_used) return 'No verified company source yet. Using broad web search.';
+  if (summary?.stale_source_count) return 'Known source needs refresh. We are checking it now.';
+  if (summary?.blocked_source_count) return 'This provider is not available through Opportunity Radar.';
+  return null;
 }
 
 export function JobSearch({ jobs, setJobs }: JobSearchProps) {
@@ -45,6 +80,7 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
   const [hasSearched, setHasSearched] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [sourceSummary, setSourceSummary] = useState<JobSearchResponse['source_summary'] | null>(null);
 
   const openExternal = (url?: string) => {
     if (!url) return;
@@ -57,8 +93,10 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
     setHasSearched(true);
     setErrorMessage(null);
     setStatusMessage(null);
+    setSourceSummary(null);
     try {
       const searchResponse = await searchJobs(searchQuery);
+      setSourceSummary(searchResponse.source_summary || null);
       const results = searchResponse.results;
       const mappedResults: SearchResult[] = results.map((r: any) => ({
         id: r.id || r.url || Math.random().toString(),
@@ -71,6 +109,9 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
         description: r.description || '',
         logoUrl: r.logo_url || undefined,
         url: r.url,
+        source: r.source,
+        sourceLabel: r.source_label,
+        freshness: r.freshness,
       })).filter((result) => result.company || result.role || result.url);
       try {
         const preview = await getSearchMatchPreview(
@@ -109,6 +150,8 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
             ? `No matching jobs found. ${providerReasons[0]}`
             : 'No matching jobs found for that search.'
         );
+      } else {
+        setStatusMessage(sourceStatusText(searchResponse));
       }
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'Search failed.');
@@ -197,6 +240,23 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
       </span>
     );
   };
+
+  const sourceBadges = (result: SearchResult) => {
+    const labels = [
+      result.sourceLabel || (result.source ? providerLabel(result.source) : null),
+      result.freshness ? freshnessLabel(result.freshness) : null,
+    ].filter(Boolean);
+    if (!labels.length) return null;
+    return (
+      <div className="mt-2 flex flex-wrap gap-2">
+        {labels.map((label) => (
+          <span key={`${result.id}-${label}`} className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+            {label}
+          </span>
+        ))}
+      </div>
+    );
+  };
   return (
     <div className="flex-1 h-full overflow-y-auto p-4 md:p-8 bg-[#F5F5F0]">
       <div className="w-full">
@@ -237,6 +297,17 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
             errorMessage ? 'border-red-200 bg-red-50 text-red-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'
           }`}>
             {errorMessage || statusMessage}
+          </div>
+        )}
+
+        {sourceSummary && (
+          <div className="mb-6 flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600">
+            <span className="font-semibold text-slate-900">
+              {sourceSummary.broad_provider_used ? 'Broad fallback' : sourceSummary.verified_source_count > 0 ? 'Company sources' : 'Source status'}
+            </span>
+            <span>{sourceSummary.verified_source_count} verified</span>
+            <span>{sourceSummary.stale_source_count} stale</span>
+            <span>{sourceSummary.blocked_source_count} blocked</span>
           </div>
         )}
 
@@ -291,6 +362,7 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
                         {fitBadge(result)}
                       </div>
                     )}
+                    {sourceBadges(result)}
                   </div>
                 </div>
                 <button 
@@ -362,6 +434,7 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
                   <div className="min-w-0 flex-1">
                     <h2 id={selectedJobTitleId} className="text-2xl tracking-tight font-serif font-bold text-slate-900 break-words">{displayRole(selectedJob)}</h2>
                     <p className="text-lg text-slate-500 font-sans truncate">{displayCompany(selectedJob)}</p>
+                    {sourceBadges(selectedJob)}
                   </div>
                 </div>
                 <button 

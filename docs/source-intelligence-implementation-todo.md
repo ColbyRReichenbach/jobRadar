@@ -562,67 +562,67 @@ Goal: make governance visible and useful without exposing private user data.
 
 ### User Settings
 
-- [ ] Add Source Intelligence section to Settings.
-- [ ] Add consent toggle default off.
-- [ ] Add plain-language explanation:
+- [x] Add Source Intelligence section to Settings.
+- [x] Add consent toggle default off.
+- [x] Add plain-language explanation:
   - private links stay private
   - sanitized metadata can improve job-source detection if opted in
   - user can turn it off
-- [ ] Add private link list:
+- [x] Add private link list:
   - provider
   - link type
   - company domain
   - created at
   - sanitization status
-- [ ] Do not show raw tokenized URLs by default.
-- [ ] Add delete private link action.
+- [x] Do not show raw tokenized URLs by default.
+- [x] Add delete private link action.
 - [ ] Add reprocess links action if backend endpoint exists.
 
 ### Admin Dashboard
 
-- [ ] Add Source Intelligence tab under AI Ops or a new admin route.
-- [ ] Add summary cards:
+- [x] Add Source Intelligence tab under AI Ops or a new admin route.
+- [x] Add summary cards:
   - verified sources
   - pending review
   - failed/stale sources
   - broad API calls avoided
   - broad API monthly usage
   - private links rejected from sharing
-- [ ] Add tables:
+- [x] Add tables:
   - source registry
   - verification runs
   - provider health
   - admin review queue
-- [ ] Add admin actions:
+- [x] Add admin actions:
   - verify
   - approve
   - block
-- [ ] Require `is_admin` on all admin endpoints.
-- [ ] Redact all private/Gmail-derived evidence.
+- [x] Require `is_admin` on all admin endpoints.
+- [x] Redact all private/Gmail-derived evidence.
 - [ ] Add audit events for admin actions.
 
 ### Frontend Job Search Updates
 
-- [ ] Show source-aware states:
+- [x] Show source-aware states:
   - direct source found
   - broad fallback
   - provider limited
   - stale source
   - blocked source
-- [ ] Show badges:
+- [x] Show badges:
   - Company source
   - provider name
   - Fresh today
   - Broad web
   - Stale
-- [ ] Add Save to Pipeline.
+- [x] Add Save to Pipeline.
 - [ ] Add Track this source if appropriate.
 - [ ] Verify layout across desktop/tablet/mobile and collapsed sidebars.
 
 ### Sprint 8 Tests
 
-- [ ] Add API tests for admin-only source endpoints.
-- [ ] Add API tests for user private-link endpoints.
+- [x] Add API tests for admin-only source endpoints.
+- [x] Add API tests for user private-link endpoints.
 - [ ] Add Playwright tests:
   - Settings source section renders and toggles.
   - Private links list does not show raw URL.
@@ -630,10 +630,11 @@ Goal: make governance visible and useful without exposing private user data.
   - Job Search shows provider-limited state.
   - Job Search shows direct-source badge.
   - Responsive desktop/tablet/mobile layouts do not overflow.
-- [ ] Run frontend lint and smoke tests:
+- [x] Run frontend lint:
   - `npm run lint` in `dashboardv2`
+- [ ] Run frontend smoke tests:
   - `npm run test:smoke` in `dashboardv2`
-- [ ] Fix failures from logs and rerun until green.
+- [x] Fix failures from logs and rerun until green.
 
 ## Sprint 9: Observability, Metrics, And Production Controls
 

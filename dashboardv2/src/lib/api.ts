@@ -750,11 +750,13 @@ export async function updateEmail(id: string, payload: {
 // --- Search API ---
 
 export interface JobSearchProviderStatus {
+  mode?: string;
   serpapi_configured?: boolean;
   greenhouse_targets?: string[];
   greenhouse_targets_searched?: string[];
   degraded?: boolean;
   degraded_reasons?: string[];
+  broad_search_used?: boolean;
 }
 
 export interface JobSearchResponse {
@@ -779,6 +781,7 @@ export async function searchJobs(query: string, location: string = ''): Promise<
     results: data.results || [],
     cached: data.cached,
     provider_status: data.provider_status,
+    source_summary: data.source_summary,
   };
 }
 
@@ -1669,6 +1672,97 @@ export async function updateConsent(body: ConsentUpdate): Promise<ConsentStatus>
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to update consent'));
+  return res.json();
+}
+
+export interface SourcePrivateLink {
+  id: string;
+  provider: string | null;
+  link_type: string;
+  company_domain: string | null;
+  created_at: string | null;
+  sanitization_status: string;
+}
+
+export async function fetchSourcePrivateLinks(): Promise<SourcePrivateLink[]> {
+  const res = await apiFetch(`${API_BASE}/api/settings/source-intelligence/private-links`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to load private links'));
+  return res.json();
+}
+
+export async function deleteSourcePrivateLink(id: string): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/api/settings/source-intelligence/private-links/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to delete private link'));
+}
+
+export interface AdminJobSource {
+  id: string;
+  company_name: string;
+  company_domain: string | null;
+  provider_type: string;
+  provider_key: string | null;
+  access_mode: string;
+  career_url: string | null;
+  public_jobs_endpoint: string | null;
+  source_config?: Record<string, unknown>;
+  verification_status: string;
+  active: boolean;
+  terms_risk: string;
+  discovered_from: string;
+  evidence_count: number;
+  failure_count: number;
+  failure_reason: string | null;
+  last_verified_at: string | null;
+  updated_at: string | null;
+}
+
+export interface AdminSourceHealth {
+  totals: {
+    verified: number;
+    pending_review: number;
+    failed_stale: number;
+    blocked: number;
+    private_links_rejected_from_sharing: number;
+  };
+  by_provider: Record<string, Record<string, number>>;
+}
+
+export async function fetchAdminJobSources(): Promise<{ sources: AdminJobSource[] }> {
+  const res = await apiFetch(`${API_BASE}/api/admin/job-sources`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to load job sources'));
+  return res.json();
+}
+
+export async function fetchAdminJobSourceHealth(): Promise<AdminSourceHealth> {
+  const res = await apiFetch(`${API_BASE}/api/admin/job-sources/health`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to load source health'));
+  return res.json();
+}
+
+export async function fetchAdminJobSourceUsage(): Promise<{ usage: Array<{ provider: string; month_bucket: string | null; request_count: number; result_count: number }> }> {
+  const res = await apiFetch(`${API_BASE}/api/admin/job-sources/usage`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to load source usage'));
+  return res.json();
+}
+
+export async function verifyAdminJobSource(id: string): Promise<{ source: AdminJobSource }> {
+  const res = await apiFetch(`${API_BASE}/api/admin/job-sources/${id}/verify`, { method: 'POST', headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to verify source'));
+  return res.json();
+}
+
+export async function approveAdminJobSource(id: string): Promise<{ source: AdminJobSource }> {
+  const res = await apiFetch(`${API_BASE}/api/admin/job-sources/${id}/approve`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ access_mode: 'public' }) });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to approve source'));
+  return res.json();
+}
+
+export async function blockAdminJobSource(id: string, reason = 'admin_blocked'): Promise<{ source: AdminJobSource }> {
+  const res = await apiFetch(`${API_BASE}/api/admin/job-sources/${id}/block`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ reason }) });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to block source'));
   return res.json();
 }
 
