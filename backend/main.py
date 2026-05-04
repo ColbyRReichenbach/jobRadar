@@ -3738,11 +3738,19 @@ async def search_jobs_endpoint(
 
     from backend.models import JobListing
     from backend.dependencies import check_enrichment_consent
-    from backend.services.job_search import job_search_provider_status, search_jobs
+    from backend.services.job_search import job_search_provider_status, search_jobs, search_serpapi
+    from backend.services.job_sources.resolver import direct_sources_enabled, resolve_job_search
 
     user_id = _require_user_id(auth)
     include_logo = await check_enrichment_consent(user_id, db)
     provider_status = job_search_provider_status(q)
+    default_source_summary = {
+        "direct_sources": [],
+        "broad_provider_used": False,
+        "verified_source_count": 0,
+        "stale_source_count": 0,
+        "blocked_source_count": 0,
+    }
 
     # Check cache: listings saved within 24h matching this query
     cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
@@ -3771,6 +3779,31 @@ async def search_jobs_endpoint(
             "results": serialized_cached,
             "cached": True,
             "provider_status": provider_status,
+            "source_summary": default_source_summary,
+        }
+
+    if direct_sources_enabled():
+        resolution = await resolve_job_search(
+            db,
+            user_id=user_id,
+            query=q,
+            location=location,
+            broad_search=search_serpapi,
+        )
+        if resolution.results:
+            await db.commit()
+        serialized_results = []
+        for r in resolution.results:
+            serialized_results.append({
+                **r,
+                "description": r.get("description"),
+                "logo_url": await _resolve_search_logo_url(db, r.get("company"), r.get("url"), include_logo),
+            })
+        return {
+            "results": serialized_results,
+            "cached": False,
+            "provider_status": {**provider_status, **resolution.provider_status},
+            "source_summary": resolution.source_summary.to_dict(),
         }
 
     # Fresh search
@@ -3798,7 +3831,7 @@ async def search_jobs_endpoint(
             "logo_url": await _resolve_search_logo_url(db, r.get("company"), r.get("url"), include_logo),
         })
 
-    return {"results": serialized_results, "cached": False, "provider_status": provider_status}
+    return {"results": serialized_results, "cached": False, "provider_status": provider_status, "source_summary": default_source_summary}
 
 
 @app.get("/api/search/global")

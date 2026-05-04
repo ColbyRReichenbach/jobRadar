@@ -80,7 +80,6 @@ _USER_SCOPED_MODELS = {
     "UserApplicationLink",
     "SourceDiscoveryEvent",
     "ApplicationSourceLink",
-    "JobSearchProviderUsage",
 }
 
 

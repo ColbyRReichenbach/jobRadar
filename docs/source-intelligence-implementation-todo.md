@@ -377,65 +377,65 @@ Goal: replace hardcoded search behavior with direct-first resolver behind a feat
 
 ### Resolver
 
-- [ ] Add `backend/services/job_sources/resolver.py`.
-- [ ] Resolve query into company/role/location terms.
-- [ ] Find verified active sources for company/domain.
-- [ ] Query adapters only for allowed access modes:
+- [x] Add `backend/services/job_sources/resolver.py`.
+- [x] Resolve query into company/role/location terms.
+- [x] Find verified active sources for company/domain.
+- [x] Query adapters only for allowed access modes:
   - `public`
   - `api_key` only when approved server credentials exist
-- [ ] Skip:
+- [x] Skip:
   - `unknown`
   - `blocked`
   - unapproved `credentialed`
   - unapproved `partner`
-- [ ] Fall back to broad provider only when direct sources are missing/stale/failed/blocked.
+- [x] Fall back to broad provider only when direct sources are missing/stale/failed/blocked.
 - [ ] If broad provider returns ATS/company URLs, classify and enqueue verification candidates.
-- [ ] Return provider status and source summary.
+- [x] Return provider status and source summary.
 
 ### Broad Provider Usage
 
-- [ ] Add persistent usage enforcement using `job_search_provider_usage`.
-- [ ] Add keyed HMAC query hashes.
-- [ ] Enforce global monthly cap.
-- [ ] Enforce per-user monthly cap.
-- [ ] Track request mode and result count.
-- [ ] Show clear provider-limited response when capped or disabled.
+- [x] Add persistent usage enforcement using `job_search_provider_usage`.
+- [x] Add keyed HMAC query hashes.
+- [x] Enforce global monthly cap.
+- [x] Enforce per-user monthly cap.
+- [x] Track request mode and result count.
+- [x] Show clear provider-limited response when capped or disabled.
 
 ### Search API
 
-- [ ] Preserve existing `/api/search` response fields:
+- [x] Preserve existing `/api/search` response fields:
   - `results`
   - `cached`
   - `provider_status`
-- [ ] Add `source_summary`.
-- [ ] Add richer result fields behind `JOB_SEARCH_DIRECT_SOURCES_ENABLED`.
-- [ ] Keep frontend compatibility while adding new fields.
-- [ ] Do not mix global `job_postings` with old `JobListing` cache long term.
+- [x] Add `source_summary`.
+- [x] Add richer result fields behind `JOB_SEARCH_DIRECT_SOURCES_ENABLED`.
+- [x] Keep frontend compatibility while adding new fields.
+- [x] Do not mix global `job_postings` with old `JobListing` cache long term.
 
 ### Role Matching
 
-- [ ] Add deterministic role matcher module.
-- [ ] Normalize titles.
-- [ ] Add role-family expansion for analyst/data/AI/ML/engineering roles.
-- [ ] Rank by title similarity, role family, skill/domain/location/freshness/source confidence.
-- [ ] Avoid over-expansion into unrelated analyst roles unless domain matches.
+- [x] Add deterministic role matcher module.
+- [x] Normalize titles.
+- [x] Add role-family expansion for analyst/data/AI/ML/engineering roles.
+- [x] Rank by title similarity, role family, skill/domain/location/freshness/source confidence.
+- [x] Avoid over-expansion into unrelated analyst roles unless domain matches.
 
 ### Sprint 4 Tests
 
-- [ ] Add resolver tests:
+- [x] Add resolver tests:
   - direct source before SerpAPI
   - stale direct source falls back
   - blocked/unknown source skipped
   - unapproved credentialed source skipped
   - broad cap reached returns provider-limited state
-- [ ] Add usage cap tests:
+- [x] Add usage cap tests:
   - per-user cap
   - global cap
   - query hash does not store raw query
-- [ ] Add role matcher tests for analyst expansion and over-expansion prevention.
-- [ ] Add API tests for `/api/search` response compatibility.
-- [ ] Run affected backend tests and frontend type checks if API types change.
-- [ ] Fix failures from logs and rerun until green.
+- [x] Add role matcher tests for analyst expansion and over-expansion prevention.
+- [x] Add API tests for `/api/search` response compatibility.
+- [x] Run affected backend tests and frontend type checks if API types change.
+- [x] Fix failures from logs and rerun until green.
 
 ## Sprint 5: Access-Mode Providers And Structured Data
 

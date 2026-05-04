@@ -761,6 +761,13 @@ export interface JobSearchResponse {
   results: any[];
   cached?: boolean;
   provider_status?: JobSearchProviderStatus;
+  source_summary?: {
+    direct_sources: any[];
+    broad_provider_used: boolean;
+    verified_source_count: number;
+    stale_source_count: number;
+    blocked_source_count: number;
+  };
 }
 
 export async function searchJobs(query: string, location: string = ''): Promise<JobSearchResponse> {
