@@ -16,9 +16,15 @@ interface CopilotPanelProps {
   isOpen: boolean;
   onClose: () => void;
   onNavigate?: (actionUrl: string) => void;
+  seedPrompt?: {
+    id: number;
+    prompt: string;
+    autoSubmit?: boolean;
+  } | null;
 }
 
 const STARTER_PROMPTS = [
+  'Help me set up a Radar tracker.',
   'Which applications need follow-up?',
   'Summarize my latest recruiter conversations.',
   'What opportunity signals should I act on first?',
@@ -51,11 +57,12 @@ function errorMessage(error: unknown): string {
   return 'Copilot request failed.';
 }
 
-export function CopilotPanel({ isOpen, onClose, onNavigate }: CopilotPanelProps) {
+export function CopilotPanel({ isOpen, onClose, onNavigate, seedPrompt }: CopilotPanelProps) {
   const titleId = useId();
   const descriptionId = useId();
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const handledSeedPromptId = useRef<number | null>(null);
   const [conversation, setConversation] = useState<CopilotConversation | null>(null);
   const [messages, setMessages] = useState<CopilotMessageType[]>([]);
   const [input, setInput] = useState('');
@@ -123,6 +130,17 @@ export function CopilotPanel({ isOpen, onClose, onNavigate }: CopilotPanelProps)
       setStatus('idle');
     }
   };
+
+  useEffect(() => {
+    if (!isOpen || !seedPrompt?.prompt || handledSeedPromptId.current === seedPrompt.id) return;
+    handledSeedPromptId.current = seedPrompt.id;
+    if (seedPrompt.autoSubmit) {
+      void submitMessage(seedPrompt.prompt);
+      return;
+    }
+    setInput(seedPrompt.prompt);
+    window.requestAnimationFrame(() => inputRef.current?.focus());
+  }, [isOpen, seedPrompt?.id]);
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

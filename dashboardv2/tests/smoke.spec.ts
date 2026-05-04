@@ -111,6 +111,14 @@ async function mockLoggedInApi(page: Page, initialState: MockState = {}) {
     contactDistinctPairs: [] as string[][],
     ...initialState,
   };
+  const copilotConversation = {
+    id: 'radar-setup-conversation',
+    title: 'Help me set up a Radar tracker.',
+    status: 'active',
+    created_at: '2026-05-02T14:30:00Z',
+    updated_at: '2026-05-02T14:30:00Z',
+    last_message_at: '2026-05-02T14:30:00Z',
+  };
 
   await page.route('http://localhost:8000/api/**', async (route) => {
     const url = new URL(route.request().url());
@@ -317,6 +325,61 @@ async function mockLoggedInApi(page: Page, initialState: MockState = {}) {
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify([]),
+      });
+      return;
+    }
+
+    if (path === '/api/copilot/conversations' && method === 'POST') {
+      const body = await json();
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          conversation: {
+            ...copilotConversation,
+            title: String(body?.title || copilotConversation.title),
+          },
+        }),
+      });
+      return;
+    }
+
+    if (path === '/api/copilot/conversations/radar-setup-conversation/messages' && method === 'POST') {
+      const body = await json();
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          conversation: copilotConversation,
+          user_message: {
+            id: 'radar-setup-user-message',
+            conversation_id: copilotConversation.id,
+            role: 'user',
+            content: body?.content || '',
+            citations: [],
+            suggested_actions: [],
+            metadata: {},
+            model_call_id: null,
+            created_at: '2026-05-02T14:30:00Z',
+          },
+          assistant_message: {
+            id: 'radar-setup-assistant-message',
+            conversation_id: copilotConversation.id,
+            role: 'assistant',
+            content: [
+              'Tracker name: AI/ML Data Science Radar',
+              'What Radar should watch: AI and ML data science roles across banks, fintech, search, and virtual assistant teams.',
+              'Watch sources: Activity + research',
+              'Cadence: Weekly',
+              'Avoid: Internships and unpaid roles',
+            ].join('\n'),
+            citations: [],
+            suggested_actions: [],
+            metadata: { mode: 'model', model: 'test-model', prompt_version: 'test-v1' },
+            model_call_id: 'radar-setup-model-call',
+            created_at: '2026-05-02T14:30:00Z',
+          },
+        }),
       });
       return;
     }
@@ -866,9 +929,10 @@ test.describe('desktop app flows', () => {
     await page.getByRole('button', { name: 'Radar' }).click();
 
     await expect(page.getByRole('heading', { name: 'Opportunity Radar' })).toBeVisible();
-    await expect(page.getByText('Tracker mode')).toBeVisible();
+    await expect(page.getByText('Watch sources')).toBeVisible();
     await expect(page.getByText('Activity + research')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Updates' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Not sure? Ask Scout' })).toBeVisible();
 
     const modeOptionBoxes = await page.locator('label:has(input[name="tracker-mode"])').evaluateAll((nodes) =>
       nodes.map((node) => {
@@ -877,18 +941,25 @@ test.describe('desktop app flows', () => {
           width: rect.width,
           height: rect.height,
           left: rect.left,
+          right: rect.right,
           top: rect.top,
         };
       }),
     );
 
     expect(modeOptionBoxes).toHaveLength(3);
+    const viewportWidth = page.viewportSize()?.width || 0;
     for (const box of modeOptionBoxes) {
-      expect(box.width).toBeGreaterThan(280);
-      expect(box.height).toBeLessThan(96);
+      expect(box.width).toBeGreaterThan(220);
+      expect(box.height).toBeLessThan(128);
+      expect(box.left).toBeGreaterThanOrEqual(0);
+      expect(box.right).toBeLessThanOrEqual(viewportWidth);
     }
-    expect(modeOptionBoxes[1].top).toBeGreaterThan(modeOptionBoxes[0].top);
-    expect(modeOptionBoxes[2].top).toBeGreaterThan(modeOptionBoxes[1].top);
+
+    await page.getByRole('button', { name: 'Not sure? Ask Scout' }).click();
+    const scoutPanel = page.getByRole('dialog', { name: 'Ask Scout' });
+    await expect(scoutPanel).toBeVisible();
+    await expect(scoutPanel.getByText('Tracker name: AI/ML Data Science Radar')).toBeVisible();
 
     const fitsViewport = await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
     expect(fitsViewport).toBeTruthy();

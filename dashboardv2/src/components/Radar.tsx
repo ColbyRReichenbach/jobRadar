@@ -511,44 +511,55 @@ export function Radar({ focusRequest }: RadarProps) {
           ) : null}
         </div>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(320px,420px)_minmax(0,1fr)]">
         <div className="space-y-4">
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-2">
-            <h2 className="font-semibold text-slate-800">Trackers</h2>
+          <div className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="font-semibold text-slate-800">Trackers</h2>
+                <p className="mt-1 text-xs text-slate-500">
+                  Each tracker describes a search lane Radar should monitor for you.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingMode('create')}
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                New tracker
+              </button>
+            </div>
             {!profiles.length ? (
-              <div className="text-sm text-slate-500">No trackers yet. Create one to tell Radar what to watch.</div>
+              <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-500">
+                No trackers yet. Create one to tell Radar what to watch.
+              </div>
             ) : (
-              profiles.map((profile) => (
-                <button
-                  key={profile.id}
-                  type="button"
-                  onClick={() => {
-                    setSelectedProfileId(profile.id);
-                    setEditingMode('edit');
-                    load(profile.id, undefined, undefined, profile.mode === 'research' ? 'reports' : surface);
-                  }}
-                  className={`w-full rounded-xl border px-3 py-2 text-left ${
-                    selectedProfileId === profile.id ? 'border-slate-300 bg-slate-100' : 'border-slate-200'
-                  }`}
-                >
-                  <div className="text-sm font-medium text-slate-900">{profile.name}</div>
-                  <div className="mt-1 text-xs text-slate-500">
-                    {profile.mode} · {profile.frequency} · min {profile.minimum_score}
-                  </div>
-                  <div className="mt-1 text-[11px] text-slate-500">
-                    {profile.active ? 'active' : 'paused'}
-                    {profile.next_run_at ? ` · next ${new Date(profile.next_run_at).toLocaleString()}` : ''}
-                  </div>
-                </button>
-              ))
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-3">
+                {profiles.map((profile) => (
+                  <button
+                    key={profile.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedProfileId(profile.id);
+                      setEditingMode('edit');
+                      load(profile.id, undefined, undefined, profile.mode === 'research' ? 'reports' : surface);
+                    }}
+                    className={`rounded-xl border px-3 py-3 text-left ${
+                      selectedProfileId === profile.id ? 'border-slate-400 bg-slate-100' : 'border-slate-200 bg-white hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="text-sm font-medium text-slate-900">{profile.name}</div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      {profile.mode} · {profile.frequency} · min {profile.minimum_score}
+                    </div>
+                    <div className="mt-1 text-[11px] text-slate-500">
+                      {profile.active ? 'active' : 'paused'}
+                      {profile.next_run_at ? ` · next ${new Date(profile.next_run_at).toLocaleString()}` : ''}
+                    </div>
+                  </button>
+                ))}
+              </div>
             )}
           </div>
-
-          <RadarModeSwitch
-            trackerMode={selectedProfile?.mode}
-            surface={surface}
-            onChange={(nextSurface) => setSurface(nextSurface)}
-          />
 
           <details
             className="overflow-hidden rounded-2xl border border-slate-200 bg-white"
@@ -556,9 +567,9 @@ export function Radar({ focusRequest }: RadarProps) {
           >
             <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-slate-800 transition-colors hover:bg-slate-50">
               <div className="flex items-center justify-between gap-3">
-                <span>{editingMode === 'create' || !selectedProfile ? 'New tracker' : 'Tracker settings'}</span>
+                <span>{editingMode === 'create' || !selectedProfile ? 'Create Radar' : 'Edit tracker'}</span>
                 <span className="text-xs font-normal text-slate-500">
-                  {selectedProfile ? selectedProfile.name : 'Define scope'}
+                  {selectedProfile ? selectedProfile.name : 'Describe what to watch'}
                 </span>
               </div>
             </summary>
@@ -577,49 +588,43 @@ export function Radar({ focusRequest }: RadarProps) {
             </div>
           </details>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-4">
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <h2 className="font-semibold text-slate-800">Recent runs</h2>
-              {selectedProfile ? <div className="text-xs text-slate-500">{selectedProfile.name}</div> : null}
+          <RadarModeSwitch
+            trackerMode={selectedProfile?.mode}
+            surface={surface}
+            onChange={(nextSurface) => setSurface(nextSurface)}
+          />
+
+          <div className="grid grid-cols-1 gap-4 2xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.72fr)]">
+            <div className="flex min-h-[32rem] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                <h2 className="font-semibold text-slate-800">{surface === 'signals' ? 'Signal feed' : 'Report history'}</h2>
+                {selectedProfile ? <div className="text-xs text-slate-500">Tracker: {selectedProfile.name}</div> : null}
+              </div>
+
+              <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                {surface === 'signals' ? (
+                  <SignalFeed
+                    loading={loading}
+                    signals={signals}
+                    selectedSignalId={selectedSignal?.id}
+                    onSelectSignal={(signal) => setSelectedSignalId(signal.id)}
+                  />
+                ) : (
+                  <ResearchReportList
+                    reports={reports}
+                    selectedReportId={selectedReportId}
+                    loading={loading}
+                    onSelectReport={(report) => {
+                      setSelectedReportId(report.id);
+                      setSelectedRunId(report.run_id || null);
+                      setSurface('reports');
+                    }}
+                  />
+                )}
+              </div>
             </div>
-            <ResearchRunHistory
-              runs={runs}
-              selectedRunId={selectedRunId}
-              onSelectRun={(runId) => setSelectedRunId(runId)}
-            />
-          </div>
-        </div>
 
-        <div className="flex min-h-[32rem] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm xl:min-h-[calc(100vh-13rem)]">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-            <h2 className="font-semibold text-slate-800">{surface === 'signals' ? 'Signal feed' : 'Report history'}</h2>
-            {selectedProfile ? <div className="text-xs text-slate-500">Tracker: {selectedProfile.name}</div> : null}
-          </div>
-
-          <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-            {surface === 'signals' ? (
-              <SignalFeed
-                loading={loading}
-                signals={signals}
-                selectedSignalId={selectedSignal?.id}
-                onSelectSignal={(signal) => setSelectedSignalId(signal.id)}
-              />
-            ) : (
-              <ResearchReportList
-                reports={reports}
-                selectedReportId={selectedReportId}
-                loading={loading}
-                onSelectReport={(report) => {
-                  setSelectedReportId(report.id);
-                  setSelectedRunId(report.run_id || null);
-                  setSurface('reports');
-                }}
-              />
-            )}
-          </div>
-        </div>
-
-        <div className="space-y-4 xl:col-span-2">
+            <div className="space-y-4">
           {surface === 'signals' ? (
             <>
               <div className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -717,18 +722,33 @@ export function Radar({ focusRequest }: RadarProps) {
             </>
           )}
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-4">
-            <h2 className="mb-2 font-semibold text-slate-800">Radar quality</h2>
-            <RadarInsightsPanel stats={feedbackStats} />
-          </div>
-
           {surface === 'reports' && selectedReportSummary && !selectedReport ? (
             <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
               Loading report {selectedReportSummary.title}...
             </div>
           ) : null}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(340px,0.6fr)]">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <h2 className="font-semibold text-slate-800">Recent runs</h2>
+                {selectedProfile ? <div className="text-xs text-slate-500">{selectedProfile.name}</div> : null}
+              </div>
+              <ResearchRunHistory
+                runs={runs}
+                selectedRunId={selectedRunId}
+                onSelectRun={(runId) => setSelectedRunId(runId)}
+              />
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-4">
+              <h2 className="mb-2 font-semibold text-slate-800">Radar quality</h2>
+              <RadarInsightsPanel stats={feedbackStats} />
+            </div>
+          </div>
         </div>
-      </div>
     </div>
     </div>
   );
