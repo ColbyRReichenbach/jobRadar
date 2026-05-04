@@ -716,7 +716,10 @@ export function ResearchTrackerForm({
             checked={form.active}
             onChange={(event) => setForm((current) => ({ ...current, active: event.target.checked }))}
           />
-          Tracker active
+          <span>
+            <span className="font-medium text-slate-800">Tracker active</span>
+            <span className="ml-1 text-xs text-slate-500">Scheduled cadence runs only while this is on.</span>
+          </span>
         </label>
 
         <div className="flex flex-wrap justify-end gap-2">
