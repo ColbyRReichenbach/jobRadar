@@ -20,6 +20,13 @@ async def upsert_company_job_source(
     verification_status: str | None = None,
 ) -> CompanyJobSource:
     now = datetime.now(timezone.utc)
+    conflicting = await _find_conflicting_source(db, config)
+    forced_status = verification_status or config.verification_status
+    if conflicting:
+        conflicting.verification_status = "needs_review"
+        conflicting.failure_reason = "company_identity_conflict"
+        conflicting.updated_at = now
+        forced_status = "needs_review"
     existing = (
         await db.execute(
             select(CompanyJobSource).where(
@@ -36,7 +43,7 @@ async def upsert_company_job_source(
         existing.company_id = company_id or existing.company_id
         existing.public_jobs_endpoint = config.public_jobs_endpoint or existing.public_jobs_endpoint
         existing.source_config = _safe_source_config(config.source_config)
-        existing.verification_status = verification_status or config.verification_status or existing.verification_status
+        existing.verification_status = forced_status or existing.verification_status
         existing.terms_risk = config.terms_risk or existing.terms_risk
         existing.last_seen_at = now
         existing.updated_at = now
@@ -52,7 +59,7 @@ async def upsert_company_job_source(
         career_url=config.career_url,
         public_jobs_endpoint=config.public_jobs_endpoint,
         source_config=_safe_source_config(config.source_config),
-        verification_status=verification_status or config.verification_status,
+        verification_status=forced_status,
         terms_risk=config.terms_risk,
         discovered_from=discovered_from,
         first_seen_at=now,
@@ -63,6 +70,21 @@ async def upsert_company_job_source(
     db.add(source)
     await db.flush()
     return source
+
+
+async def _find_conflicting_source(db: AsyncSession, config: SourceConfig) -> CompanyJobSource | None:
+    if not config.company_domain:
+        return None
+    result = await db.execute(
+        select(CompanyJobSource).where(
+            CompanyJobSource.provider_type == config.provider_type,
+            CompanyJobSource.provider_key == config.provider_key,
+            CompanyJobSource.access_mode == config.access_mode,
+            CompanyJobSource.company_domain.isnot(None),
+            CompanyJobSource.company_domain != config.company_domain,
+        )
+    )
+    return result.scalar_one_or_none()
 
 
 async def upsert_job_posting(
@@ -171,4 +193,3 @@ def _description_hash(description: str | None) -> str | None:
     import hashlib
 
     return hashlib.sha256(description.encode("utf-8")).hexdigest()
-

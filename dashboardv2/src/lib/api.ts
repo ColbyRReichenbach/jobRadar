@@ -1698,6 +1698,15 @@ export async function deleteSourcePrivateLink(id: string): Promise<void> {
   if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to delete private link'));
 }
 
+export async function reprocessSourceIntelligence(): Promise<{ links_stored: number; discovery_events: number }> {
+  const res = await apiFetch(`${API_BASE}/api/settings/source-intelligence/reprocess`, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to reprocess application links'));
+  return res.json();
+}
+
 export interface AdminJobSource {
   id: string;
   company_name: string;

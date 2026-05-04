@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import type { Dispatch, MouseEvent, SetStateAction } from 'react';
 import { useId, useRef, useState } from 'react';
 import { Job } from '../types';
-import { searchJobs, createJob, checkJobDuplicates, getSearchMatchPreview } from '../lib/api';
+import { searchJobs, createJob, checkJobDuplicates, createResearchProfile, getSearchMatchPreview } from '../lib/api';
 import type { JobSearchResponse } from '../lib/api';
 import { DialogShell } from './DialogShell';
 
@@ -81,6 +81,7 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [sourceSummary, setSourceSummary] = useState<JobSearchResponse['source_summary'] | null>(null);
+  const [trackingSourceId, setTrackingSourceId] = useState<string | null>(null);
 
   const openExternal = (url?: string) => {
     if (!url) return;
@@ -219,6 +220,51 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
     } catch (err) {
       setJobs(prev => prev.filter(j => j.id !== optimisticId));
       setErrorMessage(err instanceof Error ? err.message : 'Failed to save job.');
+    }
+  };
+
+  const handleTrackSource = async (e: MouseEvent, result: SearchResult) => {
+    e.stopPropagation();
+    if (!result.company || !result.role) {
+      setErrorMessage('This source is missing a company or job title, so it cannot be tracked yet.');
+      return;
+    }
+
+    setTrackingSourceId(result.id);
+    setErrorMessage(null);
+    setStatusMessage(null);
+    const sourceName = result.sourceLabel || (result.source ? providerLabel(result.source) : 'company source');
+    try {
+      await createResearchProfile({
+        name: `${result.company} ${result.role} source`,
+        objective: `Track ${result.role} opportunities at ${result.company} from ${sourceName}.`,
+        selected_domains: [],
+        selected_roles: [result.role],
+        selected_companies: [result.company],
+        keywords: [result.role],
+        excluded_keywords: [],
+        source_types: ['application'],
+        mode: 'internal',
+        frequency: 'weekly',
+        depth: 'standard',
+        notification_mode: 'in_app',
+        minimum_score: 70,
+        target_locations: result.location ? [result.location] : [],
+        remote_types: [],
+        seniority_levels: [],
+        research_source_scopes: [],
+        use_profile_context: true,
+        include_public_web_research: false,
+        max_search_queries: 8,
+        max_sources_per_run: 20,
+        active: true,
+      });
+      setStatusMessage(`Tracking ${result.company} source in Radar.`);
+      setSelectedJob(null);
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to track this source.');
+    } finally {
+      setTrackingSourceId(null);
     }
   };
 
@@ -498,6 +544,13 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
                     : jobs.some(j => j.company === selectedJob.company && j.role === selectedJob.role)
                       ? 'Saved to Pipeline'
                       : 'Save to Pipeline'}
+                </button>
+                <button
+                  onClick={(e) => handleTrackSource(e, selectedJob)}
+                  disabled={!selectedJob.company || !selectedJob.role || trackingSourceId === selectedJob.id}
+                  className="w-full sm:flex-1 py-3 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl font-medium transition-colors disabled:bg-slate-50 disabled:text-slate-400"
+                >
+                  {trackingSourceId === selectedJob.id ? 'Tracking...' : 'Track this source'}
                 </button>
                 {selectedJob?.url ? (
                   <button

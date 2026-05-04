@@ -8,13 +8,13 @@ This checklist implements `docs/source-intelligence-job-search-spec.md` in order
 - [x] Do not commit `.env`, secrets, screenshots, generated browser artifacts, or private interview-planning docs.
 - [x] Keep `docs/ai-copilot-search-eval-plan.md` local only unless explicitly approved.
 - [x] Add `docs/source-intelligence-job-search-spec.md` and this TODO doc only when the implementation branch is ready for documentation changes.
-- [ ] Use small commits by sprint or logical vertical:
+- [x] Use small commits by sprint or logical vertical:
   - `source-intel: add privacy data contracts`
   - `source-intel: harden application urls`
   - `source-intel: add url classifier`
   - `source-intel: add provider adapters`
   - `source-intel: add admin source dashboard`
-- [ ] Before every commit, run `git diff --check` and inspect `git status --short`.
+- [x] Before every commit, run `git diff --check` and inspect `git status --short`.
 
 ## Required Defaults
 
@@ -167,18 +167,18 @@ Goal: create durable, secure data contracts without enabling shared source write
 - [x] Update Settings UI with a Source Intelligence consent section.
 - [x] Explain private vs shared data in user-facing language.
 - [x] Add private-link management placeholder or basic list endpoint depending on implementation scope.
-- [ ] Update privacy policy copy if the repo maintains user-facing policy docs.
+- [x] Update privacy policy copy if the repo maintains user-facing policy docs.
 
 ### Gmail Limited-Use Compliance
 
 - [x] Add a visible UI disclosure for Gmail-derived source intelligence.
 - [x] Ensure shared source writes require explicit consent.
-- [ ] Ensure admin views show only redacted/aggregate Gmail-derived metadata by default.
-- [ ] Add support/security/legal exception language or audit reason field before any user-specific admin access.
+- [x] Ensure admin views show only redacted/aggregate Gmail-derived metadata by default.
+- [x] Add support/security/legal exception language or audit reason field before any user-specific admin access.
 
 ### Sprint 1 Tests
 
-- [ ] Add migration tests for Postgres or a CI migration job.
+- [x] Add migration tests for Postgres or a CI migration job.
 - [x] Add SQLite-safe model metadata tests only as supplementary coverage.
 - [x] Add crypto tests:
   - encryption round trip
@@ -189,7 +189,7 @@ Goal: create durable, secure data contracts without enabling shared source write
   - default false
   - update true/false
   - shared source write blocked when false
-- [ ] Add API tests for admin redaction behavior.
+- [x] Add API tests for admin redaction behavior.
 - [x] Run:
   - `pytest tests/test_consent.py`
   - new source crypto/privacy tests
@@ -389,7 +389,7 @@ Goal: replace hardcoded search behavior with direct-first resolver behind a feat
   - unapproved `credentialed`
   - unapproved `partner`
 - [x] Fall back to broad provider only when direct sources are missing/stale/failed/blocked.
-- [ ] If broad provider returns ATS/company URLs, classify and enqueue verification candidates.
+- [x] If broad provider returns ATS/company URLs, classify and enqueue verification candidates.
 - [x] Return provider status and source summary.
 
 ### Broad Provider Usage
@@ -539,7 +539,7 @@ Goal: safely convert user-owned Gmail/application evidence into private links an
 
 - [x] Add redacted evidence event creation.
 - [x] Keep duplicate task delivery from duplicating discovery events.
-- [ ] Add source poisoning controls:
+- [x] Add source poisoning controls:
   - [x] pending/needs_review status by default
   - conflicts to needs_review
   - recruiter agency domains cannot claim hiring company alone
@@ -552,7 +552,7 @@ Goal: safely convert user-owned Gmail/application evidence into private links an
 - [x] Test source consent true creates redacted discovery event.
 - [x] Test admin evidence contains no raw Gmail body, raw subject, query string, or tokens.
 - [x] Test reprocessing is idempotent.
-- [ ] Test source poisoning conflict goes to needs_review.
+- [x] Test source poisoning conflict goes to needs_review.
 - [x] Run Gmail sync, consent, source privacy, and reprocessing tests.
 - [x] Fix failures from logs and rerun until green.
 
@@ -576,7 +576,7 @@ Goal: make governance visible and useful without exposing private user data.
   - sanitization status
 - [x] Do not show raw tokenized URLs by default.
 - [x] Add delete private link action.
-- [ ] Add reprocess links action if backend endpoint exists.
+- [x] Add reprocess links action if backend endpoint exists.
 
 ### Admin Dashboard
 
@@ -599,7 +599,7 @@ Goal: make governance visible and useful without exposing private user data.
   - block
 - [x] Require `is_admin` on all admin endpoints.
 - [x] Redact all private/Gmail-derived evidence.
-- [ ] Add audit events for admin actions.
+- [x] Add audit events for admin actions.
 
 ### Frontend Job Search Updates
 
@@ -616,14 +616,14 @@ Goal: make governance visible and useful without exposing private user data.
   - Broad web
   - Stale
 - [x] Add Save to Pipeline.
-- [ ] Add Track this source if appropriate.
-- [ ] Verify layout across desktop/tablet/mobile and collapsed sidebars.
+- [x] Add Track this source if appropriate.
+- [x] Verify layout across desktop/tablet/mobile and collapsed sidebars.
 
 ### Sprint 8 Tests
 
 - [x] Add API tests for admin-only source endpoints.
 - [x] Add API tests for user private-link endpoints.
-- [ ] Add Playwright tests:
+- [x] Add Playwright tests:
   - Settings source section renders and toggles.
   - Private links list does not show raw URL.
   - Admin source dashboard is admin-only.
@@ -632,7 +632,7 @@ Goal: make governance visible and useful without exposing private user data.
   - Responsive desktop/tablet/mobile layouts do not overflow.
 - [x] Run frontend lint:
   - `npm run lint` in `dashboardv2`
-- [ ] Run frontend smoke tests:
+- [x] Run frontend smoke tests:
   - `npm run test:smoke` in `dashboardv2`
 - [x] Fix failures from logs and rerun until green.
 
@@ -655,7 +655,7 @@ Goal: make source intelligence operable in beta.
   - `apptrail_source_review_queue_size`
 - [x] Add labels carefully to avoid high-cardinality user/query/url values.
 - [x] Add source verification run records for every provider attempt.
-- [ ] Add audit events for:
+- [x] Add audit events for:
   - source approved
   - source blocked
   - verification forced
@@ -694,39 +694,39 @@ Goal: make source intelligence operable in beta.
 - [x] Add production readiness tests for env/config.
 - [x] Add optional live smoke tests gated by env.
 - [x] Run full backend targeted source-intelligence test set.
-- [ ] Run frontend smoke tests if UI changed.
+- [x] Run frontend smoke tests if UI changed.
 - [x] Fix failures from logs and rerun until green.
 
 ## Final Hardening Pass
 
-- [ ] Run `git diff --check`.
-- [ ] Run backend tests touched by all sprints.
-- [ ] Run frontend lint and smoke tests if frontend changed.
-- [ ] Run Postgres migration test or Alembic upgrade test.
-- [ ] Run optional live smoke only if keys/flags are intentionally configured.
-- [ ] Search for secrets or private URLs:
+- [x] Run `git diff --check`.
+- [x] Run backend tests touched by all sprints.
+- [x] Run frontend lint and smoke tests if frontend changed.
+- [x] Run Postgres migration test or Alembic upgrade test.
+- [x] Run optional live smoke only if keys/flags are intentionally configured.
+- [x] Search for secrets or private URLs:
   - `rg -n "napi_|vck_|sk-|GOCSPX|api_key=|x-smarttoken|refresh_token|SOURCE_LINK" .`
   - verify any legitimate env-name references do not include values.
-- [ ] Inspect `git status --short`.
-- [ ] Confirm `.env`, screenshots, traces, and private docs are untracked/uncommitted.
-- [ ] Confirm `docs/ai-copilot-search-eval-plan.md` is not staged.
-- [ ] Review final diff for accidental broad refactors.
-- [ ] Commit only scoped implementation files.
+- [x] Inspect `git status --short`.
+- [x] Confirm `.env`, screenshots, traces, and private docs are untracked/uncommitted.
+- [x] Confirm `docs/ai-copilot-search-eval-plan.md` is not staged.
+- [x] Review final diff for accidental broad refactors.
+- [x] Commit only scoped implementation files.
 
 ## Definition Of Done
 
-- [ ] `source_intelligence` defaults off.
-- [ ] Private URLs never land in `Application.job_url`.
-- [ ] Private URLs are encrypted and HMAC-hashed with key versioning.
-- [ ] Gmail HTML hrefs are classified before storage.
-- [ ] Email tracking redirects are never network-fetched.
-- [ ] Shared source writes require explicit consent.
-- [ ] Gmail-derived metadata follows limited-use controls.
-- [ ] Provider adapters use safe fetch controls.
-- [ ] Direct-source search works without SerpAPI.
-- [ ] Broad search caps are enforced and observable.
-- [ ] Workday is disabled by default and admin-gated.
-- [ ] Admin dashboard is useful and redacted.
-- [ ] User Settings make consent and private links clear.
-- [ ] Tests for each sprint are green.
-- [ ] CI checks are green before PR.
+- [x] `source_intelligence` defaults off.
+- [x] Private URLs never land in `Application.job_url`.
+- [x] Private URLs are encrypted and HMAC-hashed with key versioning.
+- [x] Gmail HTML hrefs are classified before storage.
+- [x] Email tracking redirects are never network-fetched.
+- [x] Shared source writes require explicit consent.
+- [x] Gmail-derived metadata follows limited-use controls.
+- [x] Provider adapters use safe fetch controls.
+- [x] Direct-source search works without SerpAPI.
+- [x] Broad search caps are enforced and observable.
+- [x] Workday is disabled by default and admin-gated.
+- [x] Admin dashboard is useful and redacted.
+- [x] User Settings make consent and private links clear.
+- [x] Tests for each sprint are green.
+- [x] CI checks are green before PR.

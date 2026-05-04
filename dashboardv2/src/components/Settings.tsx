@@ -12,6 +12,7 @@ import {
   fetchGmailSyncAudit,
   fetchNotificationPreferences,
   fetchSourcePrivateLinks,
+  reprocessSourceIntelligence,
   generateApiKey,
   updateConsent,
   updateNotificationPreferences,
@@ -70,6 +71,7 @@ export function Settings() {
   const [gmailAuditRows, setGmailAuditRows] = useState<GmailSyncAuditRow[]>([]);
   const [sourcePrivateLinks, setSourcePrivateLinks] = useState<SourcePrivateLink[]>([]);
   const [deletingPrivateLinkId, setDeletingPrivateLinkId] = useState<string | null>(null);
+  const [reprocessingSources, setReprocessingSources] = useState(false);
   const [showAllGmailDiagnostics, setShowAllGmailDiagnostics] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteInput, setDeleteInput] = useState('');
@@ -173,6 +175,21 @@ export function Settings() {
       setErrorMessage(err instanceof Error ? err.message : 'Failed to delete private link.');
     } finally {
       setDeletingPrivateLinkId(null);
+    }
+  };
+
+  const handleReprocessSourceLinks = async () => {
+    setReprocessingSources(true);
+    setErrorMessage(null);
+    try {
+      const result = await reprocessSourceIntelligence();
+      const privateLinks = await fetchSourcePrivateLinks().catch(() => sourcePrivateLinks);
+      setSourcePrivateLinks(privateLinks);
+      setStatusMessage(`Reprocessed ${result.links_stored} application links.`);
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to reprocess application links.');
+    } finally {
+      setReprocessingSources(false);
     }
   };
 
@@ -721,13 +738,23 @@ export function Settings() {
                       <h3 className="text-sm font-semibold text-slate-900">Private Application Links</h3>
                       <p className="text-xs text-slate-500">Raw tokenized URLs stay encrypted and user-scoped.</p>
                     </div>
-                    <button
-                      onClick={loadPrefs}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50"
-                    >
-                      <RefreshCw className="w-3.5 h-3.5" />
-                      Refresh
-                    </button>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={handleReprocessSourceLinks}
+                        disabled={reprocessingSources}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        {reprocessingSources ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                        Reprocess
+                      </button>
+                      <button
+                        onClick={loadPrefs}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        Refresh
+                      </button>
+                    </div>
                   </div>
                   {sourcePrivateLinks.length > 0 ? (
                     <div className="divide-y divide-slate-100">

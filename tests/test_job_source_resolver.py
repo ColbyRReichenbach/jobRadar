@@ -187,6 +187,30 @@ async def test_broad_provider_usage_hashes_query(db_session):
 
 
 @pytest.mark.asyncio
+async def test_broad_results_enqueue_direct_source_candidates(db_session):
+    from backend.models import CompanyJobSource
+    from backend.services.job_sources.resolver import resolve_job_search
+
+    async def fake_broad(query, location):
+        return [
+            {
+                "title": "Analyst",
+                "company": "Acme",
+                "url": "https://boards.greenhouse.io/acme/jobs/123",
+                "source": "serpapi",
+            }
+        ]
+
+    result = await resolve_job_search(db_session, user_id=TEST_USER_ID, query="Acme", location="", broad_search=fake_broad)
+    sources = (await db_session.execute(select(CompanyJobSource))).scalars().all()
+
+    assert result.provider_status["mode"] == "broad_only"
+    assert sources[0].provider_type == "greenhouse"
+    assert sources[0].provider_key == "acme"
+    assert sources[0].discovered_from == "broad_search"
+
+
+@pytest.mark.asyncio
 async def test_search_api_returns_source_summary_for_direct_source(monkeypatch, client, db_session):
     from backend.models import CompanyJobSource
     from backend.services.job_sources import greenhouse

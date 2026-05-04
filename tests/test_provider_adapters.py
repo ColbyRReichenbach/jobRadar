@@ -255,3 +255,37 @@ async def test_source_registry_upserts_are_idempotent(db_session):
     assert job_a.id == job_b.id
     assert job_a.dedupe_key == "greenhouse:acme:123"
     assert "api_key" not in str(source_a.source_config).lower()
+
+
+@pytest.mark.asyncio
+async def test_source_registry_conflicting_company_domain_needs_review(db_session):
+    from backend.services.job_sources.base import SourceConfig
+    from backend.services.job_sources.registry import upsert_company_job_source
+
+    first = SourceConfig(
+        provider_type="greenhouse",
+        provider_key="shared",
+        access_mode="public",
+        company_name="Acme",
+        company_domain="acme.com",
+        career_url="https://boards.greenhouse.io/shared",
+        public_jobs_endpoint="https://boards-api.greenhouse.io/v1/boards/shared/jobs",
+        source_config={"board_token": "shared"},
+    )
+    second = SourceConfig(
+        provider_type="greenhouse",
+        provider_key="shared",
+        access_mode="public",
+        company_name="Other",
+        company_domain="other.com",
+        career_url="https://boards.greenhouse.io/shared",
+        public_jobs_endpoint="https://boards-api.greenhouse.io/v1/boards/shared/jobs",
+        source_config={"board_token": "shared"},
+    )
+
+    source_a = await upsert_company_job_source(db_session, first, discovered_from="unit")
+    source_b = await upsert_company_job_source(db_session, second, discovered_from="unit")
+
+    assert source_a.verification_status == "needs_review"
+    assert source_a.failure_reason == "company_identity_conflict"
+    assert source_b.verification_status == "needs_review"

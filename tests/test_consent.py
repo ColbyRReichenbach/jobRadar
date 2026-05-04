@@ -60,3 +60,29 @@ async def test_source_intelligence_settings_endpoint_updates_only_source_consent
     assert get_resp.status_code == 200
     assert get_resp.json()["source_intelligence"] is True
     assert get_resp.json()["private_link_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_source_intelligence_consent_change_writes_redacted_audit_event(client, db_session):
+    from sqlalchemy import select
+    from backend.models import SourceDiscoveryEvent
+
+    resp = await client.put(
+        "/api/consent",
+        json={
+            "core": True,
+            "ai_processing": False,
+            "third_party_enrichment": False,
+            "web_research": False,
+            "source_intelligence": True,
+        },
+        headers=AUTH_HEADER,
+    )
+
+    assert resp.status_code == 200
+    event = (
+        await db_session.execute(
+            select(SourceDiscoveryEvent).where(SourceDiscoveryEvent.event_type == "source_intelligence_consent_changed")
+        )
+    ).scalar_one()
+    assert event.redacted_evidence == {"granted": True, "surface": "consent"}

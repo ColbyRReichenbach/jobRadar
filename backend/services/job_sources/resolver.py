@@ -18,8 +18,9 @@ from backend.metrics import (
 )
 from backend.services.job_sources import ashby, greenhouse, lever, workable
 from backend.services.job_sources.base import NormalizedJobPosting, SearchQuery, SourceConfig
-from backend.services.job_sources.registry import upsert_job_posting
+from backend.services.job_sources.registry import upsert_company_job_source, upsert_job_posting
 from backend.services.job_sources.role_matcher import rank_postings
+from backend.services.source_intelligence.discovery import parse_source_config
 from backend.services.source_intelligence.url_sanitizer import source_link_hash
 
 
@@ -113,6 +114,7 @@ async def resolve_job_search(
             observe_job_search_broad_api_call(provider="serpapi")
             broad_used = bool(broad_results)
             if broad_results:
+                await _upsert_broad_source_candidates(db, broad_results)
                 await record_broad_provider_usage(
                     db,
                     user_id=user_id,
@@ -147,6 +149,19 @@ async def resolve_job_search(
     for result in result_payloads:
         observe_job_search_results(source_type=result.get("source"), count=1)
     return SearchResolution(results=result_payloads, provider_status=provider_status, source_summary=summary)
+
+
+async def _upsert_broad_source_candidates(db: AsyncSession, broad_results: list[dict]) -> None:
+    seen: set[str] = set()
+    for result in broad_results:
+        url = str(result.get("url") or "").strip()
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        config = parse_source_config(url)
+        if not config:
+            continue
+        await upsert_company_job_source(db, config, discovered_from="broad_search")
 
 
 async def broad_provider_capacity(

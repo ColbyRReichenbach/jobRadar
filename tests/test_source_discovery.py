@@ -125,3 +125,26 @@ async def test_reprocess_source_intelligence_is_idempotent(db_session):
     assert private_link_count == 2
     assert source_count == 2
     assert event_count == 2
+
+
+@pytest.mark.asyncio
+async def test_reprocess_endpoint_processes_current_user_links(client, db_session):
+    from backend.models import Application, DataConsent, UserApplicationLink
+    from tests.conftest import AUTH_HEADER
+
+    db_session.add(DataConsent(user_id=TEST_USER_ID, consent_type="source_intelligence", granted=True, granted_at=datetime.now(timezone.utc)))
+    db_session.add(Application(
+        user_id=TEST_USER_ID,
+        company="Acme",
+        role_title="Engineer",
+        job_url="https://boards.greenhouse.io/acme/jobs/456",
+        source="manual",
+    ))
+    await db_session.commit()
+
+    response = await client.post("/api/settings/source-intelligence/reprocess", headers=AUTH_HEADER)
+
+    assert response.status_code == 200
+    assert response.json()["links_stored"] == 1
+    link_count = (await db_session.execute(select(func.count(UserApplicationLink.id)))).scalar_one()
+    assert link_count == 1

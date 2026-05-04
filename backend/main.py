@@ -8091,6 +8091,13 @@ async def update_consent(
                 existing.revoked_at = None
             elif not granted and was_granted:
                 existing.revoked_at = now
+            if consent_type == "source_intelligence" and requested_value is not None and was_granted != granted:
+                _record_source_audit_event(
+                    db,
+                    event_type="source_intelligence_consent_changed",
+                    actor_user_id=current_user.id,
+                    redacted_evidence={"granted": granted, "surface": "consent"},
+                )
         else:
             consent = DataConsent(
                 user_id=current_user.id,
@@ -8101,6 +8108,13 @@ async def update_consent(
                 updated_at=now,
             )
             db.add(consent)
+            if consent_type == "source_intelligence" and requested_value is not None:
+                _record_source_audit_event(
+                    db,
+                    event_type="source_intelligence_consent_changed",
+                    actor_user_id=current_user.id,
+                    redacted_evidence={"granted": granted, "surface": "consent"},
+                )
 
     current_user.data_consent_accepted_at = now
     current_user.updated_at = now
@@ -8161,6 +8175,13 @@ async def update_source_intelligence_settings(
             consent.revoked_at = None
         elif not body.source_intelligence and was_granted:
             consent.revoked_at = now
+        if was_granted != body.source_intelligence:
+            _record_source_audit_event(
+                db,
+                event_type="source_intelligence_consent_changed",
+                actor_user_id=current_user.id,
+                redacted_evidence={"granted": body.source_intelligence, "surface": "source_intelligence_settings"},
+            )
     else:
         db.add(DataConsent(
             user_id=current_user.id,
@@ -8170,6 +8191,12 @@ async def update_source_intelligence_settings(
             ip_address=ip,
             updated_at=now,
         ))
+        _record_source_audit_event(
+            db,
+            event_type="source_intelligence_consent_changed",
+            actor_user_id=current_user.id,
+            redacted_evidence={"granted": body.source_intelligence, "surface": "source_intelligence_settings"},
+        )
     await db.commit()
     return {
         "source_intelligence": body.source_intelligence,
@@ -8220,9 +8247,31 @@ async def delete_source_intelligence_private_link(
     link = result.scalar_one_or_none()
     if not link:
         raise HTTPException(status_code=404, detail="Private link not found.")
+    _record_source_audit_event(
+        db,
+        event_type="private_link_deleted",
+        actor_user_id=current_user.id,
+        redacted_evidence={
+            "provider_type": link.provider_type,
+            "link_type": link.link_type,
+            "sanitization_status": link.sanitization_status,
+        },
+    )
     await db.delete(link)
     await db.commit()
     return Response(status_code=204)
+
+
+@app.post("/api/settings/source-intelligence/reprocess")
+async def reprocess_source_intelligence_links(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from backend.tasks.reprocess_source_intelligence import reprocess_source_intelligence_in_session
+
+    result = await reprocess_source_intelligence_in_session(db, current_user.id)
+    await db.commit()
+    return result
 
 
 @app.get("/api/admin/job-sources")
@@ -8345,6 +8394,13 @@ async def admin_verify_job_source(
 
     source = await _get_admin_job_source(db, source_id)
     result = await verify_company_job_source(db, source, verified_by=str(admin.id))
+    _record_source_audit_event(
+        db,
+        event_type="source_verification_forced",
+        actor_user_id=admin.id,
+        source_id=source.id,
+        redacted_evidence={"provider_type": source.provider_type, "status": result.status},
+    )
     await db.commit()
     await db.refresh(source)
     return {"source": _serialize_admin_job_source(source), "verification_result": result.__dict__}
@@ -8365,6 +8421,13 @@ async def admin_approve_job_source(
     source.failure_reason = None
     source.last_verified_at = datetime.now(timezone.utc)
     source.updated_at = source.last_verified_at
+    _record_source_audit_event(
+        db,
+        event_type="source_approved",
+        actor_user_id=admin.id,
+        source_id=source.id,
+        redacted_evidence={"provider_type": source.provider_type, "access_mode": source.access_mode},
+    )
     await db.commit()
     await db.refresh(source)
     return {"source": _serialize_admin_job_source(source)}
@@ -8384,6 +8447,13 @@ async def admin_block_job_source(
     source.verified_by = str(admin.id)
     source.failure_reason = (body.reason if body and body.reason else "admin_blocked")[:240]
     source.updated_at = datetime.now(timezone.utc)
+    _record_source_audit_event(
+        db,
+        event_type="source_blocked",
+        actor_user_id=admin.id,
+        source_id=source.id,
+        redacted_evidence={"provider_type": source.provider_type, "reason": source.failure_reason},
+    )
     await db.commit()
     await db.refresh(source)
     return {"source": _serialize_admin_job_source(source)}
@@ -8448,6 +8518,37 @@ def _serialize_source_verification_run(run: SourceVerificationRun) -> dict:
 def _redact_source_config(config: dict | None) -> dict:
     blocked = {"token", "api_key", "authorization", "cookie", "headers", "query", "raw_url", "password"}
     return {key: value for key, value in (config or {}).items() if key.lower() not in blocked}
+
+
+def _record_source_audit_event(
+    db: AsyncSession,
+    *,
+    event_type: str,
+    actor_user_id: _uuid.UUID,
+    source_id: _uuid.UUID | None = None,
+    redacted_evidence: dict | None = None,
+) -> None:
+    db.add(SourceDiscoveryEvent(
+        source_id=source_id,
+        user_id=actor_user_id,
+        event_type=event_type,
+        redacted_evidence=_redact_audit_evidence(redacted_evidence),
+    ))
+
+
+def _redact_audit_evidence(evidence: dict | None) -> dict:
+    blocked = {"token", "api_key", "authorization", "cookie", "headers", "query", "raw_url", "url", "subject", "body"}
+    clean: dict = {}
+    for key, value in (evidence or {}).items():
+        if key.lower() in blocked:
+            continue
+        if isinstance(value, str):
+            clean[key] = value.replace("\r", " ").replace("\n", " ")[:240]
+        elif isinstance(value, (bool, int, float)) or value is None:
+            clean[key] = value
+        else:
+            clean[key] = str(value).replace("\r", " ").replace("\n", " ")[:240]
+    return clean
 
 
 class DeleteAccountBody(BaseModel):

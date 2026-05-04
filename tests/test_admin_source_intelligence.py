@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 import uuid
 
 import pytest
+from sqlalchemy import select
 
 from tests.conftest import AUTH_HEADER, TEST_USER_ID, make_auth_header
 
@@ -41,7 +42,7 @@ async def test_admin_job_sources_are_admin_only_and_redacted(client, db_session)
 
 @pytest.mark.asyncio
 async def test_admin_source_verify_approve_block_flow(client, db_session):
-    from backend.models import CompanyJobSource, SourceVerificationRun
+    from backend.models import CompanyJobSource, SourceDiscoveryEvent, SourceVerificationRun
     from sqlalchemy import func, select
 
     source = CompanyJobSource(
@@ -70,13 +71,19 @@ async def test_admin_source_verify_approve_block_flow(client, db_session):
     assert block.status_code == 200
     assert block.json()["source"]["verification_status"] == "blocked"
     assert block.json()["source"]["access_mode"] == "blocked"
+    event_types = {
+        row[0]
+        for row in (await db_session.execute(select(SourceDiscoveryEvent.event_type))).all()
+    }
+    assert {"source_verification_forced", "source_approved", "source_blocked"} <= event_types
 
 
 @pytest.mark.asyncio
 async def test_private_link_list_does_not_show_raw_urls(client, db_session):
+    from backend.models import SourceDiscoveryEvent
     from backend.services.source_intelligence.link_store import store_user_application_link
 
-    await store_user_application_link(
+    stored = await store_user_application_link(
         db_session,
         user_id=TEST_USER_ID,
         raw_url="https://example.com/status?token=secret&candidateId=private",
@@ -91,3 +98,8 @@ async def test_private_link_list_does_not_show_raw_urls(client, db_session):
     assert set(payload) == {"id", "provider", "link_type", "company_domain", "created_at", "sanitization_status"}
     assert "secret" not in str(payload)
     assert "candidateId" not in str(payload)
+
+    delete_resp = await client.delete(f"/api/settings/source-intelligence/private-links/{stored.user_link.id}", headers=AUTH_HEADER)
+    assert delete_resp.status_code == 204
+    audit_event = (await db_session.execute(select(SourceDiscoveryEvent).where(SourceDiscoveryEvent.event_type == "private_link_deleted"))).scalar_one()
+    assert "secret" not in str(audit_event.redacted_evidence)

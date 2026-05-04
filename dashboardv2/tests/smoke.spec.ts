@@ -74,6 +74,10 @@ type MockState = {
   interviews?: any[];
   interviewSuggestions?: any[];
   gmailAuditRows?: any[];
+  sourcePrivateLinks?: any[];
+  adminJobSources?: any[];
+  adminSourceHealth?: any;
+  adminSourceUsage?: any[];
   searchResponse?: any;
   profile?: MockProfile;
   alerts?: MockAlert[];
@@ -113,6 +117,10 @@ async function mockLoggedInApi(page: Page, initialState: MockState = {}) {
     interviews: [] as any[],
     interviewSuggestions: [] as any[],
     gmailAuditRows: [] as any[],
+    sourcePrivateLinks: [] as any[],
+    adminJobSources: [] as any[],
+    adminSourceHealth: null as any,
+    adminSourceUsage: [] as any[],
     searchResponse: null as any,
     profile: null as MockProfile,
     alerts: [] as MockAlert[],
@@ -180,6 +188,7 @@ async function mockLoggedInApi(page: Page, initialState: MockState = {}) {
             ai_processing: true,
             third_party_enrichment: true,
             web_research: false,
+            source_intelligence: false,
           },
           accepted_at: '2026-03-12T12:00:00Z',
         }),
@@ -198,9 +207,39 @@ async function mockLoggedInApi(page: Page, initialState: MockState = {}) {
             ai_processing: body?.ai_processing ?? true,
             third_party_enrichment: body?.third_party_enrichment ?? true,
             web_research: body?.web_research ?? false,
+            source_intelligence: body?.source_intelligence ?? false,
           },
           accepted_at: '2026-03-12T12:00:00Z',
         }),
+      });
+      return;
+    }
+
+    if (path === '/api/settings/source-intelligence/private-links' && method === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(state.sourcePrivateLinks),
+      });
+      return;
+    }
+
+    if (path.startsWith('/api/settings/source-intelligence/private-links/') && method === 'DELETE') {
+      const linkId = path.split('/').pop();
+      state.sourcePrivateLinks = state.sourcePrivateLinks.filter((link) => link.id !== linkId);
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'ok' }),
+      });
+      return;
+    }
+
+    if (path === '/api/settings/source-intelligence/reprocess' && method === 'POST') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ links_stored: state.sourcePrivateLinks.length, discovery_events: 0 }),
       });
       return;
     }
@@ -373,6 +412,63 @@ async function mockLoggedInApi(page: Page, initialState: MockState = {}) {
       return;
     }
 
+    if (path === '/api/admin/job-sources' && method === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ sources: state.adminJobSources }),
+      });
+      return;
+    }
+
+    if (path === '/api/admin/job-sources/health' && method === 'GET') {
+      const health = state.adminSourceHealth || {
+        totals: {
+          verified: state.adminJobSources.filter((source) => source.verification_status === 'verified').length,
+          pending_review: state.adminJobSources.filter((source) => ['pending', 'needs_review'].includes(source.verification_status)).length,
+          failed_stale: state.adminJobSources.filter((source) => ['failed', 'stale'].includes(source.verification_status)).length,
+          blocked: state.adminJobSources.filter((source) => source.verification_status === 'blocked').length,
+          private_links_rejected_from_sharing: 0,
+        },
+        by_provider: {},
+      };
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(health),
+      });
+      return;
+    }
+
+    if (path === '/api/admin/job-sources/usage' && method === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ usage: state.adminSourceUsage }),
+      });
+      return;
+    }
+
+    if (path.startsWith('/api/admin/job-sources/') && method === 'POST') {
+      const parts = path.split('/');
+      const sourceId = parts[4];
+      const action = parts[5];
+      state.adminJobSources = state.adminJobSources.map((source) => {
+        if (source.id !== sourceId) return source;
+        if (action === 'verify') return { ...source, verification_status: 'verified', last_verified_at: '2026-05-04T12:00:00Z' };
+        if (action === 'approve') return { ...source, verification_status: 'verified', access_mode: 'public' };
+        if (action === 'block') return { ...source, verification_status: 'blocked', active: false, failure_reason: 'admin_blocked' };
+        return source;
+      });
+      const updated = state.adminJobSources.find((source) => source.id === sourceId);
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ source: updated }),
+      });
+      return;
+    }
+
     if (path === '/api/search' && method === 'GET') {
       await route.fulfill({
         status: 200,
@@ -386,6 +482,14 @@ async function mockLoggedInApi(page: Page, initialState: MockState = {}) {
             greenhouse_targets_searched: [],
             degraded: true,
             degraded_reasons: ['Broad job search is not configured, so external job board results are unavailable.'],
+            mode: 'provider_limited',
+          },
+          source_summary: {
+            direct_sources: [],
+            broad_provider_used: false,
+            verified_source_count: 0,
+            stale_source_count: 0,
+            blocked_source_count: 0,
           },
         }),
       });
@@ -507,6 +611,48 @@ async function mockLoggedInApi(page: Page, initialState: MockState = {}) {
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify(state.researchProfiles),
+      });
+      return;
+    }
+
+    if (path === '/api/research/profiles' && method === 'POST') {
+      const body = await json();
+      const created = {
+        id: `profile-${state.researchProfiles.length + 1}`,
+        name: body?.name || 'Tracked source',
+        objective: body?.objective || null,
+        selected_domains: body?.selected_domains || [],
+        selected_roles: body?.selected_roles || [],
+        selected_companies: body?.selected_companies || [],
+        keywords: body?.keywords || [],
+        excluded_keywords: body?.excluded_keywords || [],
+        source_types: body?.source_types || [],
+        mode: body?.mode || 'internal',
+        frequency: body?.frequency || 'weekly',
+        depth: body?.depth || 'standard',
+        notification_mode: body?.notification_mode || 'in_app',
+        minimum_score: body?.minimum_score ?? 70,
+        target_locations: body?.target_locations || [],
+        remote_types: body?.remote_types || [],
+        seniority_levels: body?.seniority_levels || [],
+        research_source_scopes: body?.research_source_scopes || [],
+        use_profile_context: body?.use_profile_context ?? true,
+        include_public_web_research: body?.include_public_web_research ?? false,
+        report_prompt_notes: body?.report_prompt_notes || null,
+        max_search_queries: body?.max_search_queries ?? 8,
+        max_sources_per_run: body?.max_sources_per_run ?? 20,
+        active: body?.active ?? true,
+        last_run_at: null,
+        next_run_at: '2026-05-11T12:00:00Z',
+        last_successful_run_at: null,
+        created_at: '2026-05-04T12:00:00Z',
+        updated_at: '2026-05-04T12:00:00Z',
+      };
+      state.researchProfiles = [created, ...state.researchProfiles];
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify(created),
       });
       return;
     }
@@ -850,6 +996,7 @@ test.describe('desktop app flows', () => {
     await expect(page.getByRole('button', { name: 'Conversations' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Classifier Audit' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Extraction Reports' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Source Intelligence' })).toHaveCount(0);
     await expect(page.getByText('Test User')).toBeVisible();
   });
 
@@ -870,6 +1017,73 @@ test.describe('desktop app flows', () => {
 
     await expect(page.getByRole('button', { name: 'Classifier Audit' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Extraction Reports' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Source Intelligence' })).toBeVisible();
+  });
+
+  test('admin source intelligence page shows redacted source governance data', async ({ page }) => {
+    await mockLoggedInApi(page, {
+      user: {
+        id: '00000000-0000-0000-0000-000000000001',
+        email: 'admin@apptrail.test',
+        name: 'Admin User',
+        picture: '',
+        gmail_connected: true,
+        calendar_connected: false,
+        data_consent_accepted_at: '2026-03-12T12:00:00Z',
+        is_admin: true,
+      },
+      adminJobSources: [
+        {
+          id: 'source-greenhouse-1',
+          company_name: 'Acme',
+          company_domain: 'acme.com',
+          provider_type: 'greenhouse',
+          provider_key: 'acme',
+          access_mode: 'public',
+          career_url: 'https://boards.greenhouse.io/acme',
+          public_jobs_endpoint: 'https://boards-api.greenhouse.io/v1/boards/acme/jobs',
+          source_config: { hostname_hash: 'hosthash_123' },
+          verification_status: 'needs_review',
+          active: true,
+          terms_risk: 'low',
+          discovered_from: 'gmail_application',
+          evidence_count: 2,
+          failure_count: 0,
+          failure_reason: null,
+          last_verified_at: null,
+          updated_at: '2026-05-04T12:00:00Z',
+        },
+      ],
+      adminSourceUsage: [
+        { provider: 'serpapi', month_bucket: '2026-05-01', request_count: 3, result_count: 14 },
+      ],
+      adminSourceHealth: {
+        totals: {
+          verified: 0,
+          pending_review: 1,
+          failed_stale: 0,
+          blocked: 0,
+          private_links_rejected_from_sharing: 4,
+        },
+        by_provider: { greenhouse: { needs_review: 1 } },
+      },
+    });
+
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Source Intelligence' }).click();
+
+    await expect(page.getByRole('heading', { name: 'Source Intelligence' })).toBeVisible();
+    await expect(page.getByText('Source Registry')).toBeVisible();
+    await expect(page.getByText('Acme', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('greenhouse')).toBeVisible();
+    await expect(page.getByText('Private Rejected')).toBeVisible();
+    await expect(page.getByText('serpapi')).toBeVisible();
+    await expect(page.getByText(/token|candidateId|applicationId|secret-token/i)).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Approve' }).click();
+    await expect(page.getByText('verified')).toBeVisible();
+    await page.getByRole('button', { name: 'Block' }).click();
+    await expect(page.getByText('blocked')).toBeVisible();
   });
 
   test('auth callback route bootstraps back into the app shell', async ({ page }) => {
@@ -1057,6 +1271,37 @@ test.describe('desktop app flows', () => {
     await expect(page.getByText('Checked Gmail message 4')).toHaveCount(0);
   });
 
+  test('settings source intelligence manages private links without exposing raw URLs', async ({ page }) => {
+    await mockLoggedInApi(page, {
+      sourcePrivateLinks: [
+        {
+          id: 'private-link-1',
+          provider: 'workday',
+          link_type: 'interview_scheduler',
+          company_domain: 'bank.example',
+          created_at: '2026-05-04T12:00:00Z',
+          sanitization_status: 'private_user_only',
+          raw_url: 'https://candidate.example/schedule?token=secret-token',
+        },
+      ],
+    });
+
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Settings' }).click();
+
+    await expect(page.getByText('Source Intelligence').first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Private Application Links' })).toBeVisible();
+    await expect(page.getByText('workday')).toBeVisible();
+    await expect(page.getByText('interview scheduler')).toBeVisible();
+    await expect(page.getByText(/secret-token|candidate\\.example|token=/i)).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Reprocess' }).click();
+    await expect(page.getByText('Reprocessed 1 application links.')).toBeVisible();
+    await page.getByRole('button', { name: 'Delete', exact: true }).click();
+    await expect(page.getByText('Private link deleted.')).toBeVisible();
+    await expect(page.getByText('workday')).toHaveCount(0);
+  });
+
   test('calendar asks for a time before accepting unscheduled Gmail interview suggestions', async ({ page }) => {
     await mockLoggedInApi(page, {
       interviewSuggestions: [
@@ -1105,6 +1350,54 @@ test.describe('desktop app flows', () => {
 
     await expect(page.getByText('No jobs returned')).toBeVisible();
     await expect(page.getByText(/Broad job search is not configured/)).toBeVisible();
+  });
+
+  test('job search shows direct source summary and provider badges', async ({ page }) => {
+    await mockLoggedInApi(page, {
+      searchResponse: {
+        results: [
+          {
+            id: 'job-acme-analyst',
+            title: 'Data Analyst',
+            company: 'Acme',
+            location: 'Remote',
+            source: 'greenhouse',
+            freshness: 'seen_today',
+            url: 'https://boards.greenhouse.io/acme/jobs/123',
+            posted_at: '2026-05-04T00:00:00Z',
+            description: 'Analyze product and customer data.',
+          },
+        ],
+        cached: false,
+        provider_status: {
+          mode: 'direct_source',
+          broad_search_used: false,
+          degraded: false,
+          degraded_reasons: [],
+        },
+        source_summary: {
+          direct_sources: [{ provider_type: 'greenhouse', provider_key: 'acme', verification_status: 'verified' }],
+          broad_provider_used: false,
+          verified_source_count: 1,
+          stale_source_count: 0,
+          blocked_source_count: 0,
+        },
+      },
+    });
+
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Job Search' }).click();
+    await page.getByPlaceholder('Search roles, companies, or keywords...').fill('data analyst Acme');
+    await page.getByRole('button', { name: 'Search', exact: true }).click();
+
+    await expect(page.getByText('Searching verified company career sources.')).toBeVisible();
+    await expect(page.getByText('Company sources')).toBeVisible();
+    await expect(page.getByText('Greenhouse')).toBeVisible();
+    await expect(page.getByText('Fresh today')).toBeVisible();
+    await page.getByRole('button', { name: /Open Data Analyst at Acme/ }).click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await page.getByRole('button', { name: 'Track this source' }).click();
+    await expect(page.getByText('Tracking Acme source in Radar.')).toBeVisible();
   });
 
   test('network duplicate review supports keep separate and merge', async ({ page }) => {
