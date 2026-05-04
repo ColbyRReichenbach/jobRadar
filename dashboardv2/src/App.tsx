@@ -15,6 +15,7 @@ import { ConsentModal } from './components/ConsentModal';
 import { CopilotLauncher } from './components/copilot/CopilotLauncher';
 import { cn } from './lib/utils';
 import { Logo } from './components/Logo';
+import { COPILOT_ENABLED } from './lib/featureFlags';
 
 // Lazy-loaded route components for code splitting
 const KanbanBoard = lazy(() => import('./components/KanbanBoard').then(m => ({ default: m.KanbanBoard })));
@@ -59,8 +60,6 @@ function LazyFallback() {
 }
 
 const USE_API = true;
-const COPILOT_ENABLED = import.meta.env.VITE_COPILOT_ENABLED === 'true';
-
 function AppContent() {
   const { user, loading: authLoading, needsConsent, signOut, refreshUser } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');

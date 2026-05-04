@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { CopilotPanel } from './CopilotPanel';
 import { ScoutLogo } from './ScoutLogo';
@@ -9,6 +9,22 @@ interface CopilotLauncherProps {
 
 export function CopilotLauncher({ onNavigate }: CopilotLauncherProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [seedPrompt, setSeedPrompt] = useState<{ id: number; prompt: string; autoSubmit?: boolean } | null>(null);
+
+  useEffect(() => {
+    const handleOpenScout = (event: Event) => {
+      const detail = (event as CustomEvent<{ prompt?: string; autoSubmit?: boolean }>).detail;
+      setSeedPrompt({
+        id: Date.now(),
+        prompt: detail?.prompt || '',
+        autoSubmit: detail?.autoSubmit,
+      });
+      setIsOpen(true);
+    };
+
+    window.addEventListener('apptrail:open-scout', handleOpenScout);
+    return () => window.removeEventListener('apptrail:open-scout', handleOpenScout);
+  }, []);
 
   return (
     <>
@@ -16,6 +32,7 @@ export function CopilotLauncher({ onNavigate }: CopilotLauncherProps) {
         isOpen={isOpen}
         onClose={() => setIsOpen(false)}
         onNavigate={onNavigate}
+        seedPrompt={seedPrompt}
       />
       {!isOpen && (
         <motion.button

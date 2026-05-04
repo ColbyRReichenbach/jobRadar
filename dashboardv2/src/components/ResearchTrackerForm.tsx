@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ResearchProfile } from '../types';
+import { COPILOT_ENABLED } from '../lib/featureFlags';
+import { ScoutLogo } from './copilot/ScoutLogo';
 
 const INTERNAL_SOURCE_OPTIONS = [
   { value: 'application', label: 'Applications' },
@@ -111,6 +113,50 @@ function SectionLabel({ title, body }: { title: string; body: string }) {
   );
 }
 
+function buildScoutTrackerPrompt({
+  name,
+  objective,
+  domains,
+  roles,
+  companies,
+  locations,
+  avoid,
+}: {
+  name: string;
+  objective: string;
+  domains: string;
+  roles: string;
+  companies: string;
+  locations: string;
+  avoid: string;
+}) {
+  const knownContext = [
+    name.trim() ? `Tracker name idea: ${name.trim()}` : null,
+    objective.trim() ? `What I care about: ${objective.trim()}` : null,
+    roles.trim() ? `Roles I mentioned: ${roles.trim()}` : null,
+    companies.trim() ? `Companies I mentioned: ${companies.trim()}` : null,
+    domains.trim() ? `Domains I mentioned: ${domains.trim()}` : null,
+    locations.trim() ? `Locations I mentioned: ${locations.trim()}` : null,
+    avoid.trim() ? `Things to avoid: ${avoid.trim()}` : null,
+  ].filter(Boolean);
+
+  return [
+    'Help me set up an Opportunity Radar tracker.',
+    'Use my AppTrail profile, applications, inbox, and saved context when available.',
+    'Return concise values I can paste into the tracker form using this format:',
+    'Tracker name:',
+    'What Radar should watch:',
+    'Watch sources: Activity, Research, or Activity + research',
+    'Cadence:',
+    'Roles:',
+    'Companies:',
+    'Domains:',
+    'Locations:',
+    'Avoid:',
+    knownContext.length ? `Known context:\n${knownContext.join('\n')}` : 'Known context: I am not sure yet, so ask only the few questions needed and then propose a strong starter tracker.',
+  ].join('\n');
+}
+
 export function ResearchTrackerForm({
   mode,
   profile,
@@ -147,10 +193,11 @@ export function ResearchTrackerForm({
 
   const canSubmit = useMemo(() => {
     if (!form.name.trim()) return false;
+    if (!form.objective.trim()) return false;
     if (supportsReports && !researchConsentEnabled) return false;
     if (!supportsReports) return form.source_types.length > 0;
     return true;
-  }, [form.name, form.source_types.length, researchConsentEnabled, supportsReports]);
+  }, [form.name, form.objective, form.source_types.length, researchConsentEnabled, supportsReports]);
 
   useEffect(() => {
     setForm((current) => {
@@ -204,17 +251,34 @@ export function ResearchTrackerForm({
     }
   };
 
+  const askScoutForTracker = () => {
+    window.dispatchEvent(new CustomEvent('apptrail:open-scout', {
+      detail: {
+        autoSubmit: true,
+        prompt: buildScoutTrackerPrompt({
+          name: form.name,
+          objective: form.objective,
+          domains: domainsText,
+          roles: rolesText,
+          companies: companiesText,
+          locations: locationsText,
+          avoid: excludedKeywordsText,
+        }),
+      },
+    }));
+  };
+
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-4">
-      <div className="flex items-start justify-between gap-3">
+    <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <h2 className="font-semibold text-slate-800">{mode === 'create' ? 'New tracker' : 'Tracker settings'}</h2>
-          <p className="mt-1 text-xs text-slate-500">
-            Define the roles, companies, and research cadence Radar should monitor for this tracker.
+          <h2 className="font-semibold text-slate-800">{mode === 'create' ? 'Create Radar' : 'Tracker settings'}</h2>
+          <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500">
+            Describe what you want Radar to watch. Optional details and production-style controls stay tucked away until you need them.
           </p>
         </div>
         {mode === 'edit' && profile?.last_run_at ? (
-          <div className="text-right text-[11px] text-slate-500">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-left text-[11px] text-slate-500 lg:text-right">
             <div>Last run</div>
             <div>{new Date(profile.last_run_at).toLocaleString()}</div>
           </div>
@@ -227,99 +291,103 @@ export function ResearchTrackerForm({
         </div>
       ) : null}
 
-      <div className="space-y-2">
-        <label className="block text-xs font-medium text-slate-600">
-          Tracker name
-          <input
-            value={form.name}
-            onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-            placeholder="Series B platform roles"
-            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
-        </label>
+      <div className="rounded-2xl border border-slate-200 bg-[#F8F8F4] p-4">
+        <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div className="text-sm font-semibold text-slate-900">Start with plain language</div>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              Radar can infer roles, companies, domains, and keywords from this description.
+            </p>
+          </div>
+          {COPILOT_ENABLED ? (
+            <button
+              type="button"
+              onClick={askScoutForTracker}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50"
+            >
+              <ScoutLogo className="h-5 w-5 text-slate-800" />
+              Not sure? Ask Scout
+            </button>
+          ) : null}
+        </div>
 
-        <label className="block text-xs font-medium text-slate-600">
-          Objective
-          <textarea
-            value={form.objective}
-            onChange={(event) => setForm((current) => ({ ...current, objective: event.target.value }))}
-            placeholder="Look for backend and platform openings at companies expanding infrastructure teams."
-            className="mt-1 min-h-[88px] w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
-        </label>
-      </div>
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(220px,0.45fr)_minmax(0,1fr)]">
+          <label className="block text-xs font-medium text-slate-600">
+            Tracker name
+            <input
+              value={form.name}
+              onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+              placeholder="AI/ML data science roles"
+              className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+            />
+          </label>
 
-      <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-        <SectionLabel
-          title="Tracker mode"
-          body="Choose whether Radar should focus on your AppTrail activity, public research, or both."
-        />
-        <div className="grid gap-2">
-          {[
-            ['internal', 'Activity'],
-            ['research', 'Research'],
-            ['hybrid', 'Activity + research'],
-          ].map(([value, label]) => {
-            const needsConsent = value !== 'internal';
-            const disabled = needsConsent && !researchConsentEnabled;
-            const checked = form.mode === value;
-            return (
-              <label
-                key={value}
-                className={`block rounded-xl border px-3 py-3 text-sm transition-colors ${
-                  checked ? 'border-slate-900 bg-white text-slate-900 shadow-sm' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
-                } ${disabled ? 'opacity-50' : 'cursor-pointer'}`}
-              >
-                <div className="flex items-start gap-2">
-                  <input
-                    type="radio"
-                    name="tracker-mode"
-                    checked={checked}
-                    disabled={disabled}
-                    onChange={() => setForm((current) => ({ ...current, mode: value as ResearchProfile['mode'] }))}
-                    className="mt-0.5"
-                  />
-                  <div className="min-w-0">
-                    <div className="font-medium">{label}</div>
-                    <div className="mt-1 text-xs leading-5 text-slate-500">
-                      {value === 'internal'
-                        ? 'Signals and next steps from your pipeline and messages.'
-                        : value === 'research'
-                          ? 'Saved reports with sourced findings and dated updates.'
-                          : 'Pipeline-aware signals plus saved research reports.'}
-                    </div>
-                  </div>
-                </div>
-              </label>
-            );
-          })}
+          <label className="block text-xs font-medium text-slate-600">
+            What should Radar watch?
+            <textarea
+              value={form.objective}
+              onChange={(event) => setForm((current) => ({ ...current, objective: event.target.value }))}
+              placeholder="I am targeting AI/ML data scientist roles at banks, fintech companies, and teams building virtual assistants. Prioritize NLP, search, LLM evaluation, Python analytics, and production ML systems. Avoid internships and unpaid roles."
+              className="mt-1 min-h-[132px] w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm leading-6"
+            />
+          </label>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        <label className="block text-xs font-medium text-slate-600">
-          Minimum score
-          <input
-            type="number"
-            min={0}
-            max={100}
-            value={form.minimum_score}
-            onChange={(event) =>
-              setForm((current) => ({
-                ...current,
-                minimum_score: Math.max(0, Math.min(100, Number(event.target.value || 0))),
-              }))
-            }
-            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+      <div className="grid grid-cols-1 gap-4 2xl:grid-cols-[minmax(0,1fr)_minmax(260px,0.42fr)]">
+        <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3">
+          <SectionLabel
+            title="Watch sources"
+            body="Choose the signal lane. You can start with AppTrail activity and turn on research once consent is enabled."
           />
-        </label>
+          <div className="grid gap-2 lg:grid-cols-3">
+            {[
+              ['internal', 'Activity'],
+              ['research', 'Research'],
+              ['hybrid', 'Activity + research'],
+            ].map(([value, label]) => {
+              const needsConsent = value !== 'internal';
+              const disabled = needsConsent && !researchConsentEnabled;
+              const checked = form.mode === value;
+              return (
+                <label
+                  key={value}
+                  className={`block rounded-xl border px-3 py-3 text-sm transition-colors ${
+                    checked ? 'border-slate-900 bg-slate-50 text-slate-900 shadow-sm' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                  } ${disabled ? 'opacity-50' : 'cursor-pointer'}`}
+                >
+                  <div className="flex items-start gap-2">
+                    <input
+                      type="radio"
+                      name="tracker-mode"
+                      checked={checked}
+                      disabled={disabled}
+                      onChange={() => setForm((current) => ({ ...current, mode: value as ResearchProfile['mode'] }))}
+                      className="mt-0.5"
+                    />
+                    <div className="min-w-0">
+                      <div className="font-medium">{label}</div>
+                      <div className="mt-1 text-xs leading-5 text-slate-500">
+                        {value === 'internal'
+                          ? 'Signals and next steps from your pipeline and messages.'
+                          : value === 'research'
+                            ? 'Saved reports with sourced findings and dated updates.'
+                            : 'Pipeline-aware signals plus saved research reports.'}
+                      </div>
+                    </div>
+                  </div>
+                </label>
+              );
+            })}
+          </div>
+        </div>
 
-        <label className="block text-xs font-medium text-slate-600">
-          Cadence
+        <label className="block rounded-xl border border-slate-200 bg-white p-3 text-xs font-medium text-slate-600">
+          Update cadence
           <select
             value={form.frequency}
             onChange={(event) => setForm((current) => ({ ...current, frequency: event.target.value as ResearchProfile['frequency'] }))}
-            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
           >
             <option value="manual">Manual</option>
             <option value="daily">Daily</option>
@@ -327,285 +395,321 @@ export function ResearchTrackerForm({
             <option value="biweekly">Biweekly</option>
             <option value="monthly">Monthly</option>
           </select>
-        </label>
-
-        <label className="block text-xs font-medium text-slate-600">
-          Depth
-          <select
-            value={form.depth}
-            onChange={(event) => setForm((current) => ({ ...current, depth: event.target.value as ResearchProfile['depth'] }))}
-            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            disabled={!supportsReports}
-          >
-            <option value="quick">Quick scan</option>
-            <option value="standard">Standard</option>
-            <option value="deep">Deep dive</option>
-          </select>
-        </label>
-
-        <label className="block text-xs font-medium text-slate-600">
-          Notification mode
-          <select
-            value={form.notification_mode}
-            onChange={(event) => setForm((current) => ({ ...current, notification_mode: event.target.value as ResearchProfile['notification_mode'] }))}
-            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          >
-            <option value="in_app">In app</option>
-            <option value="email_digest">Email digest</option>
-          </select>
+          <span className="mt-2 block text-xs font-normal leading-5 text-slate-500">
+            Weekly is a good default for market and company movement.
+          </span>
         </label>
       </div>
 
-      <div className="grid grid-cols-1 gap-2">
-        <label className="block text-xs font-medium text-slate-600">
-          Domains
-          <input
-            value={domainsText}
-            onChange={(event) => setDomainsText(event.target.value)}
-            placeholder="ai_infrastructure, devtools, fintech"
-            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
-        </label>
-
-        <label className="block text-xs font-medium text-slate-600">
-          Roles
-          <input
-            value={rolesText}
-            onChange={(event) => setRolesText(event.target.value)}
-            placeholder="Platform Engineer, Senior Backend Engineer"
-            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
-        </label>
-
-        <label className="block text-xs font-medium text-slate-600">
-          Companies
-          <input
-            value={companiesText}
-            onChange={(event) => setCompaniesText(event.target.value)}
-            placeholder="OpenAI, Anthropic, Datadog"
-            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
-        </label>
-
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         <label className="block text-xs font-medium text-slate-600">
           Target locations
           <input
             value={locationsText}
             onChange={(event) => setLocationsText(event.target.value)}
-            placeholder="New York, San Francisco, Remote"
-            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            placeholder="Charlotte, Plano, New York, Remote"
+            className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
           />
         </label>
 
         <label className="block text-xs font-medium text-slate-600">
-          Positive keywords
-          <input
-            value={keywordsText}
-            onChange={(event) => setKeywordsText(event.target.value)}
-            placeholder="data platform, experimentation, distributed systems"
-            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
-        </label>
-
-        <label className="block text-xs font-medium text-slate-600">
-          Excluded keywords
+          Avoid
           <input
             value={excludedKeywordsText}
             onChange={(event) => setExcludedKeywordsText(event.target.value)}
-            placeholder="intern, contract, front-end"
-            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            placeholder="internships, unpaid roles, front-end-only roles"
+            className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
           />
         </label>
       </div>
 
-      <div className="space-y-3 rounded-xl border border-slate-200 p-3">
-        <SectionLabel
-          title="Internal signal inputs"
-          body="These are used by internal and hybrid trackers when Radar ranks opportunities from your existing AppTrail activity."
-        />
-        <div className="grid gap-2 sm:grid-cols-3">
-          {INTERNAL_SOURCE_OPTIONS.map((option) => {
-            const checked = form.source_types.includes(option.value);
-            return (
-              <label
-                key={option.value}
-                className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs ${
-                  checked ? 'border-slate-400 bg-slate-50 text-slate-900' : 'border-slate-200 text-slate-600'
-                }`}
+      <details className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-slate-800 transition-colors hover:bg-slate-50">
+          Optional focus details
+        </summary>
+        <div className="grid grid-cols-1 gap-3 border-t border-slate-200 p-4 lg:grid-cols-2">
+          <label className="block text-xs font-medium text-slate-600">
+            Roles
+            <input
+              value={rolesText}
+              onChange={(event) => setRolesText(event.target.value)}
+              placeholder="Data Scientist, ML Engineer, NLP Data Scientist"
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            />
+          </label>
+
+          <label className="block text-xs font-medium text-slate-600">
+            Companies
+            <input
+              value={companiesText}
+              onChange={(event) => setCompaniesText(event.target.value)}
+              placeholder="Bank of America, JPMorgan Chase, Capital One"
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            />
+          </label>
+
+          <label className="block text-xs font-medium text-slate-600">
+            Domains
+            <input
+              value={domainsText}
+              onChange={(event) => setDomainsText(event.target.value)}
+              placeholder="banking, fintech, virtual assistants, search"
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            />
+          </label>
+
+          <label className="block text-xs font-medium text-slate-600">
+            Positive keywords
+            <input
+              value={keywordsText}
+              onChange={(event) => setKeywordsText(event.target.value)}
+              placeholder="NLP, LLM evaluation, Python, SQL, production ML"
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+            />
+          </label>
+        </div>
+      </details>
+
+      <details className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-slate-800 transition-colors hover:bg-slate-50">
+          Advanced settings
+        </summary>
+        <div className="space-y-4 border-t border-slate-200 p-4">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+            <label className="block text-xs font-medium text-slate-600">
+              Minimum score
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={form.minimum_score}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    minimum_score: Math.max(0, Math.min(100, Number(event.target.value || 0))),
+                  }))
+                }
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              />
+            </label>
+
+            <label className="block text-xs font-medium text-slate-600">
+              Depth
+              <select
+                value={form.depth}
+                onChange={(event) => setForm((current) => ({ ...current, depth: event.target.value as ResearchProfile['depth'] }))}
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                disabled={!supportsReports}
               >
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      source_types: toggleListEntry(current.source_types, option.value, event.target.checked),
-                    }))
-                  }
-                  disabled={!supportsSignals}
-                />
-                {option.label}
-              </label>
-            );
-          })}
-        </div>
-      </div>
+                <option value="quick">Quick scan</option>
+                <option value="standard">Standard</option>
+                <option value="deep">Deep dive</option>
+              </select>
+            </label>
 
-      <div className={`space-y-3 rounded-xl border p-3 ${supportsReports ? 'border-slate-200' : 'border-slate-100 bg-slate-50/80'}`}>
-        <SectionLabel
-          title="Research run settings"
-          body="These settings control saved research reports, public web coverage, and the size of each run."
-        />
+            <label className="block text-xs font-medium text-slate-600">
+              Notification mode
+              <select
+                value={form.notification_mode}
+                onChange={(event) => setForm((current) => ({ ...current, notification_mode: event.target.value as ResearchProfile['notification_mode'] }))}
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              >
+                <option value="in_app">In app</option>
+                <option value="email_digest">Email digest</option>
+              </select>
+            </label>
+          </div>
 
-        <div className="grid gap-2 sm:grid-cols-2">
-          <label className="block text-xs font-medium text-slate-600">
-            Max search queries
-            <input
-              type="number"
-              min={1}
-              max={25}
-              value={form.max_search_queries}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  max_search_queries: Math.max(1, Math.min(25, Number(event.target.value || 1))),
-                }))
-              }
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              disabled={!supportsReports}
+          <div className="space-y-3 rounded-xl border border-slate-200 p-3">
+            <SectionLabel
+              title="Internal signal inputs"
+              body="Used by activity and hybrid trackers when Radar ranks opportunities from existing AppTrail activity."
             />
-          </label>
-
-          <label className="block text-xs font-medium text-slate-600">
-            Max sources per run
-            <input
-              type="number"
-              min={1}
-              max={100}
-              value={form.max_sources_per_run}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  max_sources_per_run: Math.max(1, Math.min(100, Number(event.target.value || 1))),
-                }))
-              }
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              disabled={!supportsReports}
-            />
-          </label>
-        </div>
-
-        <div className="grid gap-2 sm:grid-cols-2">
-          <div>
-            <div className="mb-2 text-xs font-medium text-slate-600">Remote preference</div>
-            <div className="flex flex-wrap gap-2">
-              {REMOTE_TYPE_OPTIONS.map((option) => (
-                <label key={option} className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={form.remote_types.includes(option)}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        remote_types: toggleListEntry(current.remote_types, option, event.target.checked),
-                      }))
-                    }
-                    disabled={!supportsReports}
-                  />
-                  {option}
-                </label>
-              ))}
+            <div className="grid gap-2 sm:grid-cols-3">
+              {INTERNAL_SOURCE_OPTIONS.map((option) => {
+                const checked = form.source_types.includes(option.value);
+                return (
+                  <label
+                    key={option.value}
+                    className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs ${
+                      checked ? 'border-slate-400 bg-slate-50 text-slate-900' : 'border-slate-200 text-slate-600'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          source_types: toggleListEntry(current.source_types, option.value, event.target.checked),
+                        }))
+                      }
+                      disabled={!supportsSignals}
+                    />
+                    {option.label}
+                  </label>
+                );
+              })}
             </div>
           </div>
 
-          <div>
-            <div className="mb-2 text-xs font-medium text-slate-600">Seniority</div>
-            <div className="flex flex-wrap gap-2">
-              {SENIORITY_OPTIONS.map((option) => (
-                <label key={option} className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={form.seniority_levels.includes(option)}
-                    onChange={(event) =>
-                      setForm((current) => ({
-                        ...current,
-                        seniority_levels: toggleListEntry(current.seniority_levels, option, event.target.checked),
-                      }))
-                    }
-                    disabled={!supportsReports}
-                  />
-                  {option}
-                </label>
-              ))}
-            </div>
-          </div>
-        </div>
+          <div className={`space-y-3 rounded-xl border p-3 ${supportsReports ? 'border-slate-200' : 'border-slate-100 bg-slate-50/80'}`}>
+            <SectionLabel
+              title="Research run settings"
+              body="Controls saved reports, public web coverage, and run size."
+            />
 
-        <div>
-          <div className="mb-2 text-xs font-medium text-slate-600">Research source scopes</div>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {RESEARCH_SCOPE_OPTIONS.map((option) => (
-              <label key={option.value} className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-700">
+            <div className="grid gap-2 sm:grid-cols-2">
+              <label className="block text-xs font-medium text-slate-600">
+                Max search queries
                 <input
-                  type="checkbox"
-                  checked={form.research_source_scopes.includes(option.value)}
+                  type="number"
+                  min={1}
+                  max={25}
+                  value={form.max_search_queries}
                   onChange={(event) =>
                     setForm((current) => ({
                       ...current,
-                      research_source_scopes: toggleListEntry(current.research_source_scopes, option.value, event.target.checked),
+                      max_search_queries: Math.max(1, Math.min(25, Number(event.target.value || 1))),
                     }))
                   }
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                   disabled={!supportsReports}
                 />
-                {option.label}
               </label>
-            ))}
+
+              <label className="block text-xs font-medium text-slate-600">
+                Max sources per run
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={form.max_sources_per_run}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      max_sources_per_run: Math.max(1, Math.min(100, Number(event.target.value || 1))),
+                    }))
+                  }
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  disabled={!supportsReports}
+                />
+              </label>
+            </div>
+
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div>
+                <div className="mb-2 text-xs font-medium text-slate-600">Remote preference</div>
+                <div className="flex flex-wrap gap-2">
+                  {REMOTE_TYPE_OPTIONS.map((option) => (
+                    <label key={option} className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={form.remote_types.includes(option)}
+                        onChange={(event) =>
+                          setForm((current) => ({
+                            ...current,
+                            remote_types: toggleListEntry(current.remote_types, option, event.target.checked),
+                          }))
+                        }
+                        disabled={!supportsReports}
+                      />
+                      {option}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <div className="mb-2 text-xs font-medium text-slate-600">Seniority</div>
+                <div className="flex flex-wrap gap-2">
+                  {SENIORITY_OPTIONS.map((option) => (
+                    <label key={option} className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={form.seniority_levels.includes(option)}
+                        onChange={(event) =>
+                          setForm((current) => ({
+                            ...current,
+                            seniority_levels: toggleListEntry(current.seniority_levels, option, event.target.checked),
+                          }))
+                        }
+                        disabled={!supportsReports}
+                      />
+                      {option}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div className="mb-2 text-xs font-medium text-slate-600">Research source scopes</div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {RESEARCH_SCOPE_OPTIONS.map((option) => (
+                  <label key={option.value} className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={form.research_source_scopes.includes(option.value)}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          research_source_scopes: toggleListEntry(current.research_source_scopes, option.value, event.target.checked),
+                        }))
+                      }
+                      disabled={!supportsReports}
+                    />
+                    {option.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <label className="block text-xs font-medium text-slate-600">
+              Research notes
+              <textarea
+                value={form.report_prompt_notes}
+                onChange={(event) => setForm((current) => ({ ...current, report_prompt_notes: event.target.value }))}
+                placeholder="Bias toward teams with recent hiring, clear product momentum, and strong engineering blog coverage."
+                className="mt-1 min-h-[88px] w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                disabled={!supportsReports}
+              />
+            </label>
+
+            <div className="grid gap-2 sm:grid-cols-2">
+              <label className="flex items-start gap-2 rounded-lg border border-slate-200 px-3 py-3 text-xs text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={form.use_profile_context}
+                  onChange={(event) => setForm((current) => ({ ...current, use_profile_context: event.target.checked }))}
+                  disabled={!supportsReports}
+                />
+                <span>
+                  <span className="block font-medium text-slate-900">Use account context</span>
+                  Pull in profile, application history, and company interactions to tailor the report.
+                </span>
+              </label>
+
+              <label className="flex items-start gap-2 rounded-lg border border-slate-200 px-3 py-3 text-xs text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={supportsReports ? true : form.include_public_web_research}
+                  onChange={(event) => setForm((current) => ({ ...current, include_public_web_research: event.target.checked }))}
+                  disabled
+                />
+                <span>
+                  <span className="block font-medium text-slate-900">Include public web research</span>
+                  {supportsReports
+                    ? 'Required for report-capable trackers so Radar can gather external evidence and save dated reports.'
+                    : 'Available automatically when you switch this tracker into research or hybrid mode.'}
+                </span>
+              </label>
+            </div>
           </div>
         </div>
+      </details>
 
-        <label className="block text-xs font-medium text-slate-600">
-          Research notes
-          <textarea
-            value={form.report_prompt_notes}
-            onChange={(event) => setForm((current) => ({ ...current, report_prompt_notes: event.target.value }))}
-            placeholder="Bias toward platform teams with recent hiring, clear product momentum, and strong engineering blog coverage."
-            className="mt-1 min-h-[88px] w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-            disabled={!supportsReports}
-          />
-        </label>
-
-        <div className="grid gap-2 sm:grid-cols-2">
-          <label className="flex items-start gap-2 rounded-lg border border-slate-200 px-3 py-3 text-xs text-slate-700">
-            <input
-              type="checkbox"
-              checked={form.use_profile_context}
-              onChange={(event) => setForm((current) => ({ ...current, use_profile_context: event.target.checked }))}
-              disabled={!supportsReports}
-            />
-            <span>
-              <span className="block font-medium text-slate-900">Use account context</span>
-              Pull in profile, application history, and company interactions to tailor the report.
-            </span>
-          </label>
-
-          <label className="flex items-start gap-2 rounded-lg border border-slate-200 px-3 py-3 text-xs text-slate-700">
-            <input
-              type="checkbox"
-              checked={supportsReports ? true : form.include_public_web_research}
-              onChange={(event) => setForm((current) => ({ ...current, include_public_web_research: event.target.checked }))}
-              disabled
-            />
-            <span>
-              <span className="block font-medium text-slate-900">Include public web research</span>
-              {supportsReports
-                ? 'Required for report-capable trackers so Radar can gather external evidence and save dated reports.'
-                : 'Available automatically when you switch this tracker into research or hybrid mode.'}
-            </span>
-          </label>
-        </div>
-      </div>
-
-      <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+      <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
         <label className="flex items-center gap-2 text-sm text-slate-700">
           <input
             type="checkbox"
