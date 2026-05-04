@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ResearchProfile } from '../types';
+import { COPILOT_ENABLED } from '../lib/featureFlags';
 import { ScoutLogo } from './copilot/ScoutLogo';
 
 const INTERNAL_SOURCE_OPTIONS = [
@@ -298,14 +299,16 @@ export function ResearchTrackerForm({
               Radar can infer roles, companies, domains, and keywords from this description.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={askScoutForTracker}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50"
-          >
-            <ScoutLogo className="h-5 w-5 text-slate-800" />
-            Not sure? Ask Scout
-          </button>
+          {COPILOT_ENABLED ? (
+            <button
+              type="button"
+              onClick={askScoutForTracker}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm transition-colors hover:bg-slate-50"
+            >
+              <ScoutLogo className="h-5 w-5 text-slate-800" />
+              Not sure? Ask Scout
+            </button>
+          ) : null}
         </div>
 
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(220px,0.45fr)_minmax(0,1fr)]">
