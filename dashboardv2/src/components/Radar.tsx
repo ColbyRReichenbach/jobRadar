@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ConsentStatus,
   acceptRecommendedAction,
@@ -94,6 +94,7 @@ function hasResearchConsent(consent: ConsentStatus | null): boolean {
 }
 
 export function Radar({ focusRequest }: RadarProps) {
+  const trackerFormRef = useRef<HTMLDetailsElement | null>(null);
   const [profiles, setProfiles] = useState<ResearchProfile[]>([]);
   const [signals, setSignals] = useState<OpportunitySignal[]>([]);
   const [briefs, setBriefs] = useState<OpportunityBrief[]>([]);
@@ -157,6 +158,17 @@ export function Radar({ focusRequest }: RadarProps) {
   const latestRun = runs[0] || null;
   const latestRunSignalCount = Object.values(latestRun?.signal_counts || {}).reduce((total, count) => total + count, 0);
   const researchConsentEnabled = hasResearchConsent(consent);
+
+  const startCreateTracker = () => {
+    setEditingMode('create');
+    window.requestAnimationFrame(() => {
+      const trackerForm = trackerFormRef.current;
+      if (!trackerForm) return;
+      trackerForm.open = true;
+      trackerForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      trackerForm.querySelector<HTMLInputElement>('input')?.focus();
+    });
+  };
 
   const load = async (
     requestedProfileId?: string | null,
@@ -463,7 +475,8 @@ export function Radar({ focusRequest }: RadarProps) {
             <div className="flex flex-wrap gap-2 sm:gap-3">
               <button
                 type="button"
-                onClick={() => setEditingMode('create')}
+                onClick={startCreateTracker}
+                aria-controls="radar-tracker-form"
                 className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
               >
                 New tracker
@@ -522,7 +535,8 @@ export function Radar({ focusRequest }: RadarProps) {
               </div>
               <button
                 type="button"
-                onClick={() => setEditingMode('create')}
+                onClick={startCreateTracker}
+                aria-controls="radar-tracker-form"
                 className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
               >
                 New tracker
@@ -562,6 +576,8 @@ export function Radar({ focusRequest }: RadarProps) {
           </div>
 
           <details
+            id="radar-tracker-form"
+            ref={trackerFormRef}
             className="overflow-hidden rounded-2xl border border-slate-200 bg-white"
             open={editingMode === 'create' || !selectedProfile}
           >

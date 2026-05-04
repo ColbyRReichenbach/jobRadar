@@ -934,6 +934,9 @@ test.describe('desktop app flows', () => {
     await expect(page.getByRole('heading', { name: 'Updates' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Not sure? Ask Scout' })).toBeVisible();
 
+    await page.getByRole('button', { name: 'New tracker' }).first().click();
+    await expect(page.locator('#radar-tracker-form input').first()).toBeFocused();
+
     const modeOptionBoxes = await page.locator('label:has(input[name="tracker-mode"])').evaluateAll((nodes) =>
       nodes.map((node) => {
         const rect = node.getBoundingClientRect();
