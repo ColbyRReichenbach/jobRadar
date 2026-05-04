@@ -116,3 +116,45 @@ async def test_fetch_public_https_rejects_oversized_response(monkeypatch):
 
     with pytest.raises(httpx.HTTPError, match="max byte limit"):
         await url_safety.fetch_public_https("https://8.8.8.8/start", timeout=1, max_bytes=8)
+
+
+@pytest.mark.asyncio
+async def test_fetch_public_https_strips_decoded_content_headers(monkeypatch):
+    import httpx
+    from backend.services import url_safety
+
+    class FakeResponse:
+        is_redirect = False
+        status_code = 200
+        headers = {"content-encoding": "gzip", "content-length": "99"}
+        request = httpx.Request("GET", "https://8.8.8.8/start")
+
+        async def aiter_bytes(self):
+            yield b'{"status":"ok"}'
+
+    class FakeStream:
+        async def __aenter__(self):
+            return FakeResponse()
+
+        async def __aexit__(self, *args):
+            return False
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        def stream(self, method, url):
+            return FakeStream()
+
+    monkeypatch.setattr(url_safety.httpx, "AsyncClient", FakeClient)
+
+    response = await url_safety.fetch_public_https("https://8.8.8.8/start", timeout=1)
+
+    assert response.headers.get("content-encoding") is None
+    assert response.json() == {"status": "ok"}

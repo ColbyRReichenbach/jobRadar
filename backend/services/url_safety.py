@@ -106,9 +106,12 @@ async def fetch_public_https(
                     content.extend(chunk)
                     if len(content) > byte_limit:
                         raise httpx.HTTPError("Public URL response exceeded max byte limit")
+                response_headers = httpx.Headers(response.headers)
+                for decoded_header in ("content-encoding", "content-length", "transfer-encoding"):
+                    response_headers.pop(decoded_header, None)
                 return httpx.Response(
                     status_code=response.status_code,
-                    headers=response.headers,
+                    headers=response_headers,
                     request=response.request,
                     content=bytes(content),
                 )
