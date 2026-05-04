@@ -1,6 +1,6 @@
 # AppTrail Privacy Policy
 
-Last updated: April 22, 2026
+Last updated: May 4, 2026
 
 This policy explains what AppTrail collects, how that information is used, and what choices users have when they use the dashboard, backend services, and Chrome extension.
 
@@ -44,6 +44,10 @@ If a user connects Gmail, AppTrail stores the data needed to support the product
 - email metadata
 - message snippets and message content needed for classification, threading, and draft context
 
+AppTrail may also classify job-related URLs found in user-owned Gmail messages and applications. Raw application, scheduling, candidate-home, status, magic-login, and tokenized links remain user-private and are stored only in encrypted, user-scoped form when needed for the user's own workflow.
+
+With explicit Source Intelligence consent, AppTrail may use sanitized job-source metadata derived from applications or Gmail messages to improve visible product features such as company job search, Opportunity Radar reports, and source-health checks. This shared metadata is limited to public provider/source information such as ATS provider type, public board or site identifiers, company domains when safely known, verification status, and redacted rule IDs. AppTrail does not share raw Gmail bodies, raw subjects, private links, query strings, tokens, scheduler links, candidate IDs, application IDs, cookies, or credentials as source intelligence.
+
 ### Extension data
 
 The extension stores and may sync:
@@ -75,6 +79,7 @@ AppTrail uses stored information to:
 - save jobs from the extension
 - surface contact, interview, and follow-up context
 - run product reports and activity history
+- identify verified company career sources and reduce reliance on broad web search when Source Intelligence is enabled
 - secure the service and investigate failures
 
 AppTrail does not sell personal information.
@@ -85,8 +90,12 @@ Some AppTrail features depend on extra processing or outside services. The produ
 
 - AI-assisted processing
 - third-party enrichment
+- public web research
+- source intelligence from sanitized application and job-source metadata
 
 If those features are turned off, AppTrail falls back to the product behavior that does not require them.
+
+Gmail-derived source intelligence is treated as Google user data and is used only for visible AppTrail features with user consent. Human admin access to user-specific Gmail-derived evidence is prohibited by default. Admin views show redacted metadata, aggregate counts, rule IDs, source IDs, and provider health unless a user-authorized support, security abuse, or legal compliance exception applies.
 
 ## How Information Is Shared
 

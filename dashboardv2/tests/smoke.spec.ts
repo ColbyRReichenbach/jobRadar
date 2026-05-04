@@ -70,6 +70,15 @@ type MockState = {
   user?: Record<string, unknown>;
   jobs?: any[];
   emails?: any[];
+  researchProfiles?: any[];
+  interviews?: any[];
+  interviewSuggestions?: any[];
+  gmailAuditRows?: any[];
+  sourcePrivateLinks?: any[];
+  adminJobSources?: any[];
+  adminSourceHealth?: any;
+  adminSourceUsage?: any[];
+  searchResponse?: any;
   profile?: MockProfile;
   alerts?: MockAlert[];
   networkContacts?: MockContact[];
@@ -104,6 +113,15 @@ async function mockLoggedInApi(page: Page, initialState: MockState = {}) {
     },
     jobs: [] as any[],
     emails: [] as any[],
+    researchProfiles: [] as any[],
+    interviews: [] as any[],
+    interviewSuggestions: [] as any[],
+    gmailAuditRows: [] as any[],
+    sourcePrivateLinks: [] as any[],
+    adminJobSources: [] as any[],
+    adminSourceHealth: null as any,
+    adminSourceUsage: [] as any[],
+    searchResponse: null as any,
     profile: null as MockProfile,
     alerts: [] as MockAlert[],
     networkContacts: [] as MockContact[],
@@ -170,6 +188,7 @@ async function mockLoggedInApi(page: Page, initialState: MockState = {}) {
             ai_processing: true,
             third_party_enrichment: true,
             web_research: false,
+            source_intelligence: false,
           },
           accepted_at: '2026-03-12T12:00:00Z',
         }),
@@ -188,9 +207,92 @@ async function mockLoggedInApi(page: Page, initialState: MockState = {}) {
             ai_processing: body?.ai_processing ?? true,
             third_party_enrichment: body?.third_party_enrichment ?? true,
             web_research: body?.web_research ?? false,
+            source_intelligence: body?.source_intelligence ?? false,
           },
           accepted_at: '2026-03-12T12:00:00Z',
         }),
+      });
+      return;
+    }
+
+    if (path === '/api/settings/source-intelligence/private-links' && method === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(state.sourcePrivateLinks),
+      });
+      return;
+    }
+
+    if (path.startsWith('/api/settings/source-intelligence/private-links/') && method === 'DELETE') {
+      const linkId = path.split('/').pop();
+      state.sourcePrivateLinks = state.sourcePrivateLinks.filter((link) => link.id !== linkId);
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'ok' }),
+      });
+      return;
+    }
+
+    if (path === '/api/settings/source-intelligence/reprocess' && method === 'POST') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ links_stored: state.sourcePrivateLinks.length, discovery_events: 0 }),
+      });
+      return;
+    }
+
+    if (path === '/api/notifications/preferences' && method === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          sms_enabled: false,
+          sms_phone: null,
+          weekly_digest_enabled: false,
+          radar_updates_enabled: true,
+          inbox_updates_enabled: true,
+          conversations_enabled: true,
+          network_enabled: true,
+          interviews_enabled: true,
+          followups_enabled: true,
+          listings_enabled: true,
+          browser_notifications_enabled: false,
+          quiet_hours_enabled: false,
+          quiet_hours_start: null,
+          quiet_hours_end: null,
+        }),
+      });
+      return;
+    }
+
+    if (path === '/api/notifications/preferences' && method === 'PUT') {
+      const body = await json();
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(body || {}),
+      });
+      return;
+    }
+
+    if (path === '/api/auth/api-key' && method === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ has_api_key: false, last4: null, created_at: null, last_used_at: null }),
+      });
+      return;
+    }
+
+    if (path === '/api/gmail/sync/audit' && method === 'GET') {
+      const limit = Number(url.searchParams.get('limit') || '50');
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(state.gmailAuditRows.slice(0, limit)),
       });
       return;
     }
@@ -209,6 +311,200 @@ async function mockLoggedInApi(page: Page, initialState: MockState = {}) {
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify(state.emails),
+      });
+      return;
+    }
+
+    if (path === '/api/interviews' && method === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(state.interviews),
+      });
+      return;
+    }
+
+    if (path === '/api/interviews' && method === 'POST') {
+      const body = await json();
+      const created = {
+        id: `interview-${state.interviews.length + 1}`,
+        application_id: body?.application_id ?? null,
+        interview_type: body?.interview_type ?? 'phone',
+        scheduled_at: body?.scheduled_at ?? null,
+        duration_minutes: body?.duration_minutes ?? null,
+        interviewer_name: body?.interviewer_name ?? null,
+        interviewer_email: body?.interviewer_email ?? null,
+        location_or_link: body?.location_or_link ?? null,
+        notes: body?.notes ?? null,
+        outcome: 'pending',
+        created_at: '2026-05-03T12:00:00Z',
+      };
+      state.interviews = [...state.interviews, created];
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify(created),
+      });
+      return;
+    }
+
+    if (path === '/api/interviews/past-due' && method === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([]),
+      });
+      return;
+    }
+
+    if (path === '/api/interview-suggestions' && method === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(state.interviewSuggestions),
+      });
+      return;
+    }
+
+    if (path.startsWith('/api/interview-suggestions/') && path.endsWith('/accept') && method === 'POST') {
+      const emailId = path.split('/')[3];
+      const body = await json();
+      if (!body?.scheduled_at) {
+        await route.fulfill({
+          status: 400,
+          contentType: 'application/json',
+          body: JSON.stringify({ detail: 'Choose a date and time before adding this interview to your calendar.' }),
+        });
+        return;
+      }
+      const suggestion = state.interviewSuggestions.find((item) => item.email_id === emailId);
+      const created = {
+        id: `interview-${state.interviews.length + 1}`,
+        application_id: body?.application_id ?? suggestion?.application_id ?? null,
+        interview_type: body?.interview_type ?? suggestion?.interview_type ?? 'phone',
+        scheduled_at: body.scheduled_at,
+        duration_minutes: body?.duration_minutes ?? suggestion?.duration_minutes ?? null,
+        interviewer_name: body?.interviewer_name ?? suggestion?.sender ?? null,
+        interviewer_email: body?.interviewer_email ?? suggestion?.sender_email ?? null,
+        location_or_link: body?.location_or_link ?? suggestion?.location_or_link ?? null,
+        notes: body?.notes ?? null,
+        outcome: 'pending',
+        created_at: '2026-05-03T12:00:00Z',
+      };
+      state.interviews = [...state.interviews, created];
+      state.interviewSuggestions = state.interviewSuggestions.filter((item) => item.email_id !== emailId);
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify(created),
+      });
+      return;
+    }
+
+    if (path.startsWith('/api/interview-suggestions/') && path.endsWith('/dismiss') && method === 'POST') {
+      const emailId = path.split('/')[3];
+      state.interviewSuggestions = state.interviewSuggestions.filter((item) => item.email_id !== emailId);
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'ok' }),
+      });
+      return;
+    }
+
+    if (path === '/api/admin/job-sources' && method === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ sources: state.adminJobSources }),
+      });
+      return;
+    }
+
+    if (path === '/api/admin/job-sources/health' && method === 'GET') {
+      const health = state.adminSourceHealth || {
+        totals: {
+          verified: state.adminJobSources.filter((source) => source.verification_status === 'verified').length,
+          pending_review: state.adminJobSources.filter((source) => ['pending', 'needs_review'].includes(source.verification_status)).length,
+          failed_stale: state.adminJobSources.filter((source) => ['failed', 'stale'].includes(source.verification_status)).length,
+          blocked: state.adminJobSources.filter((source) => source.verification_status === 'blocked').length,
+          private_links_rejected_from_sharing: 0,
+        },
+        by_provider: {},
+      };
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(health),
+      });
+      return;
+    }
+
+    if (path === '/api/admin/job-sources/usage' && method === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ usage: state.adminSourceUsage }),
+      });
+      return;
+    }
+
+    if (path.startsWith('/api/admin/job-sources/') && method === 'POST') {
+      const parts = path.split('/');
+      const sourceId = parts[4];
+      const action = parts[5];
+      state.adminJobSources = state.adminJobSources.map((source) => {
+        if (source.id !== sourceId) return source;
+        if (action === 'verify') return { ...source, verification_status: 'verified', last_verified_at: '2026-05-04T12:00:00Z' };
+        if (action === 'approve') return { ...source, verification_status: 'verified', access_mode: 'public' };
+        if (action === 'block') return { ...source, verification_status: 'blocked', active: false, failure_reason: 'admin_blocked' };
+        return source;
+      });
+      const updated = state.adminJobSources.find((source) => source.id === sourceId);
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ source: updated }),
+      });
+      return;
+    }
+
+    if (path === '/api/search' && method === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(state.searchResponse || {
+          results: [],
+          cached: false,
+          provider_status: {
+            serpapi_configured: false,
+            greenhouse_targets: ['captech', 'draftkings', 'twitch'],
+            greenhouse_targets_searched: [],
+            degraded: true,
+            degraded_reasons: ['Broad job search is not configured, so external job board results are unavailable.'],
+            mode: 'provider_limited',
+          },
+          source_summary: {
+            direct_sources: [],
+            broad_provider_used: false,
+            verified_source_count: 0,
+            stale_source_count: 0,
+            blocked_source_count: 0,
+          },
+        }),
+      });
+      return;
+    }
+
+    if (path === '/api/search/match-preview' && method === 'POST') {
+      const body = await json();
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          profile_available: false,
+          jobs: (body?.jobs || []).map((job: any) => ({ id: job.id, url: job.url, score: null, fit_label: null, matched_skills: [] })),
+        }),
       });
       return;
     }
@@ -310,9 +606,84 @@ async function mockLoggedInApi(page: Page, initialState: MockState = {}) {
       return;
     }
 
+    if (path === '/api/research/profiles' && method === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(state.researchProfiles),
+      });
+      return;
+    }
+
+    if (path === '/api/research/profiles' && method === 'POST') {
+      const body = await json();
+      const created = {
+        id: `profile-${state.researchProfiles.length + 1}`,
+        name: body?.name || 'Tracked source',
+        objective: body?.objective || null,
+        selected_domains: body?.selected_domains || [],
+        selected_roles: body?.selected_roles || [],
+        selected_companies: body?.selected_companies || [],
+        keywords: body?.keywords || [],
+        excluded_keywords: body?.excluded_keywords || [],
+        source_types: body?.source_types || [],
+        mode: body?.mode || 'internal',
+        frequency: body?.frequency || 'weekly',
+        depth: body?.depth || 'standard',
+        notification_mode: body?.notification_mode || 'in_app',
+        minimum_score: body?.minimum_score ?? 70,
+        target_locations: body?.target_locations || [],
+        remote_types: body?.remote_types || [],
+        seniority_levels: body?.seniority_levels || [],
+        research_source_scopes: body?.research_source_scopes || [],
+        use_profile_context: body?.use_profile_context ?? true,
+        include_public_web_research: body?.include_public_web_research ?? false,
+        report_prompt_notes: body?.report_prompt_notes || null,
+        max_search_queries: body?.max_search_queries ?? 8,
+        max_sources_per_run: body?.max_sources_per_run ?? 20,
+        active: body?.active ?? true,
+        last_run_at: null,
+        next_run_at: '2026-05-11T12:00:00Z',
+        last_successful_run_at: null,
+        created_at: '2026-05-04T12:00:00Z',
+        updated_at: '2026-05-04T12:00:00Z',
+      };
+      state.researchProfiles = [created, ...state.researchProfiles];
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify(created),
+      });
+      return;
+    }
+
+    if (path.startsWith('/api/research/profiles/') && method === 'PATCH') {
+      const profileId = path.split('/').pop();
+      const body = await json();
+      const profile = state.researchProfiles.find((row) => row.id === profileId);
+      if (!profile) {
+        await route.fulfill({
+          status: 404,
+          contentType: 'application/json',
+          body: JSON.stringify({ detail: 'Profile not found' }),
+        });
+        return;
+      }
+
+      Object.assign(profile, body || {}, {
+        updated_at: '2026-05-02T14:45:00Z',
+        next_run_at: body?.active === false ? null : profile.next_run_at,
+      });
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(profile),
+      });
+      return;
+    }
+
     if (
       [
-        '/api/research/profiles',
         '/api/research/signals',
         '/api/research/briefs',
         '/api/research/actions',
@@ -625,6 +996,7 @@ test.describe('desktop app flows', () => {
     await expect(page.getByRole('button', { name: 'Conversations' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Classifier Audit' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Extraction Reports' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Source Intelligence' })).toHaveCount(0);
     await expect(page.getByText('Test User')).toBeVisible();
   });
 
@@ -645,6 +1017,73 @@ test.describe('desktop app flows', () => {
 
     await expect(page.getByRole('button', { name: 'Classifier Audit' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Extraction Reports' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Source Intelligence' })).toBeVisible();
+  });
+
+  test('admin source intelligence page shows redacted source governance data', async ({ page }) => {
+    await mockLoggedInApi(page, {
+      user: {
+        id: '00000000-0000-0000-0000-000000000001',
+        email: 'admin@apptrail.test',
+        name: 'Admin User',
+        picture: '',
+        gmail_connected: true,
+        calendar_connected: false,
+        data_consent_accepted_at: '2026-03-12T12:00:00Z',
+        is_admin: true,
+      },
+      adminJobSources: [
+        {
+          id: 'source-greenhouse-1',
+          company_name: 'Acme',
+          company_domain: 'acme.com',
+          provider_type: 'greenhouse',
+          provider_key: 'acme',
+          access_mode: 'public',
+          career_url: 'https://boards.greenhouse.io/acme',
+          public_jobs_endpoint: 'https://boards-api.greenhouse.io/v1/boards/acme/jobs',
+          source_config: { hostname_hash: 'hosthash_123' },
+          verification_status: 'needs_review',
+          active: true,
+          terms_risk: 'low',
+          discovered_from: 'gmail_application',
+          evidence_count: 2,
+          failure_count: 0,
+          failure_reason: null,
+          last_verified_at: null,
+          updated_at: '2026-05-04T12:00:00Z',
+        },
+      ],
+      adminSourceUsage: [
+        { provider: 'serpapi', month_bucket: '2026-05-01', request_count: 3, result_count: 14 },
+      ],
+      adminSourceHealth: {
+        totals: {
+          verified: 0,
+          pending_review: 1,
+          failed_stale: 0,
+          blocked: 0,
+          private_links_rejected_from_sharing: 4,
+        },
+        by_provider: { greenhouse: { needs_review: 1 } },
+      },
+    });
+
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Source Intelligence' }).click();
+
+    await expect(page.getByRole('heading', { name: 'Source Intelligence' })).toBeVisible();
+    await expect(page.getByText('Source Registry')).toBeVisible();
+    await expect(page.getByText('Acme', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('greenhouse')).toBeVisible();
+    await expect(page.getByText('Private Rejected')).toBeVisible();
+    await expect(page.getByText('serpapi')).toBeVisible();
+    await expect(page.getByText(/token|candidateId|applicationId|secret-token/i)).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Approve' }).click();
+    await expect(page.getByText('verified')).toBeVisible();
+    await page.getByRole('button', { name: 'Block' }).click();
+    await expect(page.getByText('blocked')).toBeVisible();
   });
 
   test('auth callback route bootstraps back into the app shell', async ({ page }) => {
@@ -797,6 +1236,170 @@ test.describe('desktop app flows', () => {
     });
   });
 
+  test('settings keeps Gmail sync diagnostics collapsed until expanded', async ({ page }) => {
+    await mockLoggedInApi(page, {
+      gmailAuditRows: Array.from({ length: 5 }, (_, index) => ({
+        id: `audit-${index + 1}`,
+        sync_run_id: 'sync-run-1',
+        email_event_id: null,
+        gmail_message_id: `gmail-${index + 1}`,
+        thread_id: `thread-${index + 1}`,
+        sender: 'Recruiting Team',
+        sender_email: `recruiting-${index + 1}@example.com`,
+        sender_domain: 'example.com',
+        subject: `Checked Gmail message ${index + 1}`,
+        received_at: '2026-05-03T12:00:00Z',
+        decision: index % 2 === 0 ? 'stored' : 'filtered',
+        reason: index % 2 === 0 ? 'job_related' : 'not_job_related',
+        classification: index % 2 === 0 ? 'interview_request' : null,
+        created_at: `2026-05-03T12:0${index}:00Z`,
+      })),
+    });
+
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Settings' }).click();
+
+    await expect(page.getByRole('heading', { name: 'Gmail Sync Diagnostics' })).toBeVisible();
+    await expect(page.getByText('Checked Gmail message 1')).toBeVisible();
+    await expect(page.getByText('Checked Gmail message 3')).toBeVisible();
+    await expect(page.getByText('Checked Gmail message 4')).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Show all checked messages' }).click();
+    await expect(page.getByText('Checked Gmail message 5')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Show fewer' }).click();
+    await expect(page.getByText('Checked Gmail message 4')).toHaveCount(0);
+  });
+
+  test('settings source intelligence manages private links without exposing raw URLs', async ({ page }) => {
+    await mockLoggedInApi(page, {
+      sourcePrivateLinks: [
+        {
+          id: 'private-link-1',
+          provider: 'workday',
+          link_type: 'interview_scheduler',
+          company_domain: 'bank.example',
+          created_at: '2026-05-04T12:00:00Z',
+          sanitization_status: 'private_user_only',
+          raw_url: 'https://candidate.example/schedule?token=secret-token',
+        },
+      ],
+    });
+
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Settings' }).click();
+
+    await expect(page.getByText('Source Intelligence').first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Private Application Links' })).toBeVisible();
+    await expect(page.getByText('workday')).toBeVisible();
+    await expect(page.getByText('interview scheduler')).toBeVisible();
+    await expect(page.getByText(/secret-token|candidate\\.example|token=/i)).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Reprocess' }).click();
+    await expect(page.getByText('Reprocessed 1 application links.')).toBeVisible();
+    await page.getByRole('button', { name: 'Delete', exact: true }).click();
+    await expect(page.getByText('Private link deleted.')).toBeVisible();
+    await expect(page.getByText('workday')).toHaveCount(0);
+  });
+
+  test('calendar asks for a time before accepting unscheduled Gmail interview suggestions', async ({ page }) => {
+    await mockLoggedInApi(page, {
+      interviewSuggestions: [
+        {
+          email_id: 'email-interview-unscheduled',
+          subject: 'Select a timeslot for your BankCo interview',
+          sender: 'BankCo Scheduling',
+          sender_email: 'scheduling@bankco.com',
+          company_name: 'BankCo',
+          role_title: 'Data Scientist',
+          application_id: null,
+          interview_type: 'phone',
+          scheduled_at: null,
+          duration_minutes: 30,
+          location_or_link: null,
+          snippet: 'Please select a timeslot for your interview.',
+          received_at: '2026-05-03T12:00:00Z',
+          confidence: 0.9,
+        },
+      ],
+    });
+
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Calendar' }).click();
+
+    await expect(page.getByText('Time not detected')).toBeVisible();
+    await page.getByRole('button', { name: 'Add details' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Add Interview' });
+    await expect(dialog).toBeVisible();
+    await expect(page.getByText('Choose a date and time before adding this interview to your calendar.')).toBeVisible();
+
+    await dialog.getByLabel('Date & Time').fill('2026-05-07T14:30');
+    await dialog.getByRole('button', { name: 'Add Interview', exact: true }).click();
+
+    await expect(page.getByText('Interview added from Gmail.')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'BankCo Scheduling', exact: true })).toBeVisible();
+  });
+
+  test('job search explains provider-limited empty results', async ({ page }) => {
+    await mockLoggedInApi(page);
+
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Job Search' }).click();
+    await page.getByPlaceholder('Search roles, companies, or keywords...').fill('Bank of America');
+    await page.getByRole('button', { name: 'Search', exact: true }).click();
+
+    await expect(page.getByText('No jobs returned')).toBeVisible();
+    await expect(page.getByText(/Broad job search is not configured/)).toBeVisible();
+  });
+
+  test('job search shows direct source summary and provider badges', async ({ page }) => {
+    await mockLoggedInApi(page, {
+      searchResponse: {
+        results: [
+          {
+            id: 'job-acme-analyst',
+            title: 'Data Analyst',
+            company: 'Acme',
+            location: 'Remote',
+            source: 'greenhouse',
+            freshness: 'seen_today',
+            url: 'https://boards.greenhouse.io/acme/jobs/123',
+            posted_at: '2026-05-04T00:00:00Z',
+            description: 'Analyze product and customer data.',
+          },
+        ],
+        cached: false,
+        provider_status: {
+          mode: 'direct_source',
+          broad_search_used: false,
+          degraded: false,
+          degraded_reasons: [],
+        },
+        source_summary: {
+          direct_sources: [{ provider_type: 'greenhouse', provider_key: 'acme', verification_status: 'verified' }],
+          broad_provider_used: false,
+          verified_source_count: 1,
+          stale_source_count: 0,
+          blocked_source_count: 0,
+        },
+      },
+    });
+
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Job Search' }).click();
+    await page.getByPlaceholder('Search roles, companies, or keywords...').fill('data analyst Acme');
+    await page.getByRole('button', { name: 'Search', exact: true }).click();
+
+    await expect(page.getByText('Searching verified company career sources.')).toBeVisible();
+    await expect(page.getByText('Company sources')).toBeVisible();
+    await expect(page.getByText('Greenhouse')).toBeVisible();
+    await expect(page.getByText('Fresh today')).toBeVisible();
+    await page.getByRole('button', { name: /Open Data Analyst at Acme/ }).click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await page.getByRole('button', { name: 'Track this source' }).click();
+    await expect(page.getByText('Tracking Acme source in Radar.')).toBeVisible();
+  });
+
   test('network duplicate review supports keep separate and merge', async ({ page }) => {
     await mockLoggedInApi(page, {
       networkContacts: [
@@ -933,9 +1536,11 @@ test.describe('desktop app flows', () => {
     await expect(page.getByText('Activity + research')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Updates' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Not sure? Ask Scout' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Radar quality' })).toHaveCount(0);
 
     await page.getByRole('button', { name: 'New tracker' }).first().click();
     await expect(page.locator('#radar-tracker-form input').first()).toBeFocused();
+    await expect(page.getByRole('status').filter({ hasText: 'New tracker draft started' })).toBeVisible();
 
     const modeOptionBoxes = await page.locator('label:has(input[name="tracker-mode"])').evaluateAll((nodes) =>
       nodes.map((node) => {
@@ -966,6 +1571,58 @@ test.describe('desktop app flows', () => {
 
     const fitsViewport = await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
     expect(fitsViewport).toBeTruthy();
+  });
+
+  test('radar tracker cadence can be paused and resumed from the tracker card', async ({ page }) => {
+    await mockLoggedInApi(page, {
+      researchProfiles: [
+        {
+          id: 'profile-1',
+          name: 'BOA AI roles',
+          objective: 'Track AI and NLP roles at banks.',
+          selected_domains: [],
+          selected_roles: [],
+          selected_companies: [],
+          keywords: [],
+          excluded_keywords: [],
+          source_types: ['application'],
+          mode: 'internal',
+          frequency: 'weekly',
+          depth: 'standard',
+          notification_mode: 'in_app',
+          minimum_score: 70,
+          target_locations: [],
+          remote_types: [],
+          seniority_levels: [],
+          research_source_scopes: [],
+          use_profile_context: true,
+          include_public_web_research: false,
+          report_prompt_notes: null,
+          max_search_queries: 8,
+          max_sources_per_run: 20,
+          active: true,
+          last_run_at: null,
+          next_run_at: '2026-05-10T12:00:00Z',
+          last_successful_run_at: null,
+          created_at: '2026-05-02T14:30:00Z',
+          updated_at: '2026-05-02T14:30:00Z',
+        },
+      ],
+    });
+
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Radar' }).click();
+
+    await expect(page.getByRole('button', { name: /BOA AI roles/ })).toBeVisible();
+    await expect(page.locator('span').filter({ hasText: /^Active$/ })).toBeVisible();
+    await page.getByRole('button', { name: 'Pause cadence' }).click();
+    await expect(page.locator('span').filter({ hasText: /^Paused$/ })).toBeVisible();
+    await expect(page.getByText('Cadence paused')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Resume cadence' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Resume cadence' }).click();
+    await expect(page.locator('span').filter({ hasText: /^Active$/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Pause cadence' })).toBeVisible();
   });
 });
 

@@ -1,9 +1,18 @@
 from __future__ import annotations
 
+import ssl
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 
 ASYNC_PG_SSL_QUERY_KEYS = {"sslmode", "channel_binding"}
+
+
+def _build_ssl_connect_arg() -> ssl.SSLContext | bool:
+    try:
+        import certifi
+    except Exception:
+        return True
+    return ssl.create_default_context(cafile=certifi.where())
 
 
 def normalize_asyncpg_database_url(database_url: str | None) -> tuple[str | None, dict[str, object]]:
@@ -46,5 +55,5 @@ def normalize_asyncpg_database_url(database_url: str | None) -> tuple[str | None
             parts.fragment,
         )
     )
-    connect_args: dict[str, object] = {"ssl": True} if ssl_requested else {}
+    connect_args: dict[str, object] = {"ssl": _build_ssl_connect_arg()} if ssl_requested else {}
     return normalized_url, connect_args

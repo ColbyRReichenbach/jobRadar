@@ -16,6 +16,10 @@ os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
 os.environ["REDIS_URL"] = ""
 os.environ.setdefault("APPTRAIL_API_KEY", "test-api-key-for-testing")
 os.environ.setdefault("APPTRAIL_GMAIL_TOKEN_ENCRYPTION_KEY", "9gesi-IgHlO6wRffB63j5cbQhIXnGGCKuxr0IFnAcaM=")
+os.environ.setdefault("SOURCE_LINK_ENCRYPTION_KEY", "9gesi-IgHlO6wRffB63j5cbQhIXnGGCKuxr0IFnAcaM=")
+os.environ.setdefault("SOURCE_LINK_ENCRYPTION_KEY_VERSION", "test-v1")
+os.environ.setdefault("SOURCE_LINK_HASH_KEY", "test-source-link-hash-key")
+os.environ.setdefault("SOURCE_LINK_HASH_KEY_VERSION", "test-v1")
 os.environ.setdefault("JWT_SECRET", "test-jwt-secret-for-testing")
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-key")
 os.environ.setdefault("OPENAI_API_KEY", "test-key")
@@ -73,6 +77,9 @@ _USER_SCOPED_MODELS = {
     "EmailSyncAudit",
     "ApplicationSuggestionDecision",
     "InterviewSuggestionDecision",
+    "UserApplicationLink",
+    "SourceDiscoveryEvent",
+    "ApplicationSourceLink",
 }
 
 

@@ -17,7 +17,7 @@ from pydantic import BaseModel, EmailStr, Field
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
-from sqlalchemy import inspect as sa_inspect, select, text, update
+from sqlalchemy import func, inspect as sa_inspect, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -53,6 +53,7 @@ from backend.metrics import (
     metrics_headers,
     metrics_payload,
     observe_request,
+    set_source_review_queue_size,
 )
 from backend.models import (
     Alert,
@@ -60,6 +61,7 @@ from backend.models import (
     ApplicationSuggestionDecision,
     AtsBehavior,
     Company,
+    CompanyJobSource,
     CompanyTechProfile,
     CompanyVisit,
     Contact,
@@ -75,6 +77,7 @@ from backend.models import (
     Interview,
     InterviewNote,
     InterviewSuggestionDecision,
+    JobSearchProviderUsage,
     NotificationPreference,
     OpportunityBrief,
     OpportunityScore,
@@ -90,7 +93,10 @@ from backend.models import (
     ResearchSourceItem,
     ResumeDraft,
     RoleUmbrella,
+    SourceDiscoveryEvent,
+    SourceVerificationRun,
     User,
+    UserApplicationLink,
     UserProfile,
     UserRoleInterest,
     WarmConnection,
@@ -103,6 +109,10 @@ from backend.services.notification_preferences import is_alert_enabled, serializ
 from backend.services.feature_flags import radar_enabled, radar_research_enabled
 from backend.services.research_radar.observability import build_trace_payload
 from backend.services.scraper import extract_job, validate_job_parse_url
+from backend.services.source_intelligence.discovery import process_stored_links_for_source_discovery
+from backend.services.source_intelligence.link_store import store_many_user_application_links, store_user_application_link
+from backend.services.source_intelligence.url_classifier import classify_url, extract_urls_from_gmail_payload, extract_urls_from_text
+from backend.services.source_intelligence.url_sanitizer import sanitize_public_job_url
 from backend.routes.admin_ai import router as admin_ai_router
 from backend.routes.copilot import router as copilot_router
 import structlog
@@ -712,59 +722,8 @@ def _sorted_contact_email_pair(email_a: str | None, email_b: str | None) -> tupl
     return tuple(sorted((normalized_a, normalized_b)))
 
 
-_TRACKING_QUERY_PREFIXES = ("utm_",)
-_TRACKING_QUERY_PARAMS = {
-    "gh_src",
-    "gh_jid",
-    "gh_src_id",
-    "li_fat_id",
-    "li_medium",
-    "li_source",
-    "mc_cid",
-    "mc_eid",
-    "ref",
-    "referrer",
-    "source",
-}
-
-
 def _normalize_job_url(url: str | None) -> str | None:
-    if not url:
-        return None
-
-    trimmed = url.strip()
-    if not trimmed:
-        return None
-
-    parsed = urlparse(trimmed)
-    if not parsed.scheme or not parsed.netloc:
-        return trimmed
-
-    scheme = parsed.scheme.lower()
-    netloc = parsed.netloc.lower()
-    if scheme == "https" and netloc.endswith(":443"):
-        netloc = netloc[:-4]
-    if scheme == "http" and netloc.endswith(":80"):
-        netloc = netloc[:-3]
-
-    path = parsed.path or "/"
-    if path != "/":
-        path = path.rstrip("/") or "/"
-
-    filtered_query = [
-        (key, value)
-        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
-        if not key.lower().startswith(_TRACKING_QUERY_PREFIXES) and key.lower() not in _TRACKING_QUERY_PARAMS
-    ]
-
-    return urlunparse((
-        scheme,
-        netloc,
-        path,
-        "",
-        urlencode(filtered_query, doseq=True),
-        "",
-    ))
+    return sanitize_public_job_url(url)
 
 
 async def _find_job_url_duplicate_for_user(db: AsyncSession, user_id: str, job_url: str | None) -> tuple[Application | None, str | None]:
@@ -1176,13 +1135,21 @@ def _extract_role_from_email_event(event: EmailEvent, company: str | None = None
 
 
 def _extract_first_url_from_email_event(event: EmailEvent) -> str | None:
+    candidates: list[str] = []
     if event.action_url:
-        return _limit_text(event.action_url, MAX_URL_LEN)
-    text_value = " ".join(part for part in [event.body, event.snippet, event.summary] if part)
-    match = re.search(r"https?://[^\s)>\"']+", text_value)
-    if not match:
-        return None
-    return _limit_text(match.group(0), MAX_URL_LEN)
+        candidates.append(event.action_url)
+    for text_value in [event.body, event.snippet, event.summary, event.key_sentence]:
+        candidates.extend(extract_urls_from_text(text_value))
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        safe_url = _normalize_job_url(candidate)
+        if safe_url:
+            return _limit_text(safe_url, MAX_URL_LEN)
+    return None
 
 
 def _application_suggestion_key(company: str, role_title: str) -> str:
@@ -1501,6 +1468,9 @@ async def parse_job(request: Request, req: JobParseRequest):
         validated_url = await validate_job_parse_url(req.url)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    classification = classify_url(validated_url)
+    if not classification.safe_to_share or classification.contains_private_token:
+        raise HTTPException(status_code=400, detail="Private or unsafe job URLs cannot be parsed.")
 
     result = await extract_job(validated_url)
     return {"status": "ok", "data": result}
@@ -1555,6 +1525,23 @@ async def create_application(payload: ApplicationCreate, auth: dict = Depends(ve
 
     db.add(new_app)
     try:
+        await db.flush()
+        if payload.job_url and classify_url(payload.job_url).normalized_url:
+            stored_link = await store_user_application_link(
+                db,
+                user_id=user_id,
+                raw_url=payload.job_url,
+                application_id=new_app.id,
+                created_from="application_create",
+            )
+            await process_stored_links_for_source_discovery(
+                db,
+                user_id=user_id,
+                stored_links=[stored_link],
+                discovered_from="application_create",
+            )
+            if stored_link.sanitized.canonical_public_url and not new_app.job_url:
+                new_app.job_url = stored_link.sanitized.canonical_public_url
         await db.commit()
         await db.refresh(new_app)
     except IntegrityError:
@@ -1715,6 +1702,22 @@ async def update_application(
         app_row.source = payload.source
     if payload.job_url is not None:
         app_row.job_url = _normalize_job_url(payload.job_url)
+        if payload.job_url and classify_url(payload.job_url).normalized_url:
+            stored_link = await store_user_application_link(
+                db,
+                user_id=user_id,
+                raw_url=payload.job_url,
+                application_id=app_row.id,
+                created_from="application_update",
+            )
+            await process_stored_links_for_source_discovery(
+                db,
+                user_id=user_id,
+                stored_links=[stored_link],
+                discovered_from="application_update",
+            )
+            if stored_link.sanitized.canonical_public_url:
+                app_row.job_url = stored_link.sanitized.canonical_public_url
 
     await db.flush()
     from backend.services.search.indexer import index_record
@@ -2614,12 +2617,45 @@ async def accept_application_suggestion(
         )
         db.add(app_row)
         await db.flush()
+        if payload.job_url and classify_url(payload.job_url).normalized_url:
+            stored_link = await store_user_application_link(
+                db,
+                user_id=user_id,
+                raw_url=payload.job_url,
+                application_id=app_row.id,
+                created_from="application_suggestion_accept",
+            )
+            await process_stored_links_for_source_discovery(
+                db,
+                user_id=user_id,
+                stored_links=[stored_link],
+                discovered_from="application_suggestion_accept",
+            )
+            if stored_link.sanitized.canonical_public_url and not app_row.job_url:
+                app_row.job_url = stored_link.sanitized.canonical_public_url
 
         from backend.services.role_classifier import classify_role
 
         role_result = await classify_role(db, app_row.role_title, app_row.description_text or "")
         if role_result["umbrella_id"]:
             app_row.umbrella_id = role_result["umbrella_id"]
+
+    if payload.job_url and classify_url(payload.job_url).normalized_url:
+        stored_link = await store_user_application_link(
+            db,
+            user_id=user_id,
+            raw_url=payload.job_url,
+            application_id=app_row.id,
+            created_from="application_suggestion_accept",
+        )
+        await process_stored_links_for_source_discovery(
+            db,
+            user_id=user_id,
+            stored_links=[stored_link],
+            discovered_from="application_suggestion_accept",
+        )
+        if stored_link.sanitized.canonical_public_url and not app_row.job_url:
+            app_row.job_url = stored_link.sanitized.canonical_public_url
 
     latest_email_at = None
     for event in events:
@@ -3363,8 +3399,10 @@ async def sync_gmail(
             except Exception:
                 pass
 
-        # Parse body with improved MIME parser
-        body_text = parse_email_body(msg.get("payload", {}))
+        # Parse raw links before HTML stripping so href-only job links are preserved.
+        gmail_payload = msg.get("payload", {})
+        raw_candidate_urls = extract_urls_from_gmail_payload(gmail_payload)
+        body_text = parse_email_body(gmail_payload)
         snippet = msg.get("snippet", "")
 
         is_from_user = sender_email_addr.lower() == user_email.lower() if user_email else False
@@ -3496,6 +3534,21 @@ async def sync_gmail(
         )
         db.add(email_event)
         await db.flush()
+        if raw_candidate_urls:
+            stored_links = await store_many_user_application_links(
+                db,
+                user_id=user_id,
+                raw_urls=raw_candidate_urls,
+                application_id=app_id,
+                email_event_id=email_event.id,
+                created_from="gmail_sync",
+            )
+            await process_stored_links_for_source_discovery(
+                db,
+                user_id=user_id,
+                stored_links=stored_links,
+                discovered_from="gmail_sync",
+            )
         await index_record(db, email_event)
         sync_stats["stored"] += 1
         record_sync_audit(
@@ -3721,10 +3774,19 @@ async def search_jobs_endpoint(
 
     from backend.models import JobListing
     from backend.dependencies import check_enrichment_consent
-    from backend.services.job_search import search_jobs
+    from backend.services.job_search import job_search_provider_status, search_jobs, search_serpapi
+    from backend.services.job_sources.resolver import direct_sources_enabled, resolve_job_search
 
     user_id = _require_user_id(auth)
     include_logo = await check_enrichment_consent(user_id, db)
+    provider_status = job_search_provider_status(q)
+    default_source_summary = {
+        "direct_sources": [],
+        "broad_provider_used": False,
+        "verified_source_count": 0,
+        "stale_source_count": 0,
+        "blocked_source_count": 0,
+    }
 
     # Check cache: listings saved within 24h matching this query
     cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
@@ -3752,6 +3814,32 @@ async def search_jobs_endpoint(
         return {
             "results": serialized_cached,
             "cached": True,
+            "provider_status": provider_status,
+            "source_summary": default_source_summary,
+        }
+
+    if direct_sources_enabled():
+        resolution = await resolve_job_search(
+            db,
+            user_id=user_id,
+            query=q,
+            location=location,
+            broad_search=search_serpapi,
+        )
+        if resolution.results:
+            await db.commit()
+        serialized_results = []
+        for r in resolution.results:
+            serialized_results.append({
+                **r,
+                "description": r.get("description"),
+                "logo_url": await _resolve_search_logo_url(db, r.get("company"), r.get("url"), include_logo),
+            })
+        return {
+            "results": serialized_results,
+            "cached": False,
+            "provider_status": {**provider_status, **resolution.provider_status},
+            "source_summary": resolution.source_summary.to_dict(),
         }
 
     # Fresh search
@@ -3779,7 +3867,7 @@ async def search_jobs_endpoint(
             "logo_url": await _resolve_search_logo_url(db, r.get("company"), r.get("url"), include_logo),
         })
 
-    return {"results": serialized_results, "cached": False}
+    return {"results": serialized_results, "cached": False, "provider_status": provider_status, "source_summary": default_source_summary}
 
 
 @app.get("/api/search/global")
@@ -4921,10 +5009,22 @@ def _detect_interview_type_from_email(event: EmailEvent) -> str:
     return "phone"
 
 
+def _interview_datetime_text(event: EmailEvent) -> str:
+    return "\n".join(
+        value
+        for value in [event.body, event.summary, event.snippet, event.key_sentence]
+        if value
+    )
+
+
 def _interview_values_from_email(event: EmailEvent, payload: InterviewSuggestionAccept | None = None) -> dict:
     from backend.services.calendar_sync import extract_interview_datetime
 
-    extracted = extract_interview_datetime(event.body or "", event.subject or "") or {}
+    extracted = extract_interview_datetime(
+        _interview_datetime_text(event),
+        event.subject or "",
+        event.received_at,
+    ) or {}
     scheduled_at = None
     scheduled_at_value = payload.scheduled_at if payload and payload.scheduled_at else extracted.get("scheduled_at")
     if scheduled_at_value:
@@ -5135,7 +5235,11 @@ async def create_interview_from_email(
         raise HTTPException(status_code=404, detail="Email not found")
 
     # Extract datetime from email
-    extracted = extract_interview_datetime(event.body or "", event.subject or "")
+    extracted = extract_interview_datetime(
+        _interview_datetime_text(event),
+        event.subject or "",
+        event.received_at,
+    )
 
     scheduled_at = None
     duration_minutes = None
@@ -5279,6 +5383,11 @@ async def accept_interview_suggestion(
             raise HTTPException(status_code=404, detail="Application not found")
 
     values = _interview_values_from_email(event, payload)
+    if not values["scheduled_at"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Choose a date and time before adding this interview to your calendar.",
+        )
     duplicate_interview = None
     if values["scheduled_at"] and values["interviewer_email"]:
         duplicate_interview = (
@@ -7897,12 +8006,13 @@ async def extraction_version_stats(
 # Data Consent & Account Management
 # ---------------------------------------------------------------------------
 
-CONSENT_TYPES = ("core", "ai_processing", "third_party_enrichment", "web_research")
+CONSENT_TYPES = ("core", "ai_processing", "third_party_enrichment", "web_research", "source_intelligence")
 CONSENT_DISCLOSURES = {
     "core": "Stores saved jobs, pipeline state, contacts, inbox classifications, calendar items, and account settings so the app can function.",
     "ai_processing": "Sends selected career data, email text, resume text, and retrieved AppTrail context to OpenAI for classification, Copilot answers, drafts, resume parsing, and Radar summaries. Safety filters redact secrets before provider calls where possible.",
     "third_party_enrichment": "Sends company domains to enrichment providers for contact discovery and company identity data. Personal Gmail content is not sent for enrichment.",
     "web_research": "Lets Radar query public sources and save dated reports with citations, deltas, and follow-up actions tied to your profile.",
+    "source_intelligence": "Uses sanitized job-source metadata from your applications to improve company job search. Private application links, scheduling links, and email contents are not shared.",
     "retention": "AI trace payloads are retained for a limited audit window, then redacted while ledger rows and aggregate metrics are kept for governance.",
 }
 
@@ -7912,6 +8022,16 @@ class ConsentBody(BaseModel):
     ai_processing: bool
     third_party_enrichment: bool
     web_research: bool | None = None
+    source_intelligence: bool | None = None
+
+
+class SourceIntelligenceSettingsBody(BaseModel):
+    source_intelligence: bool
+
+
+class AdminSourceActionBody(BaseModel):
+    reason: str | None = None
+    access_mode: str | None = None
 
 
 @app.get("/api/consent")
@@ -7947,6 +8067,7 @@ async def update_consent(
         "ai_processing": body.ai_processing,
         "third_party_enrichment": body.third_party_enrichment,
         "web_research": body.web_research,
+        "source_intelligence": body.source_intelligence,
     }
     mapping: dict[str, bool] = {}
 
@@ -7970,6 +8091,13 @@ async def update_consent(
                 existing.revoked_at = None
             elif not granted and was_granted:
                 existing.revoked_at = now
+            if consent_type == "source_intelligence" and requested_value is not None and was_granted != granted:
+                _record_source_audit_event(
+                    db,
+                    event_type="source_intelligence_consent_changed",
+                    actor_user_id=current_user.id,
+                    redacted_evidence={"granted": granted, "surface": "consent"},
+                )
         else:
             consent = DataConsent(
                 user_id=current_user.id,
@@ -7980,6 +8108,13 @@ async def update_consent(
                 updated_at=now,
             )
             db.add(consent)
+            if consent_type == "source_intelligence" and requested_value is not None:
+                _record_source_audit_event(
+                    db,
+                    event_type="source_intelligence_consent_changed",
+                    actor_user_id=current_user.id,
+                    redacted_evidence={"granted": granted, "surface": "consent"},
+                )
 
     current_user.data_consent_accepted_at = now
     current_user.updated_at = now
@@ -7990,6 +8125,430 @@ async def update_consent(
         "accepted_at": now.isoformat(),
         "disclosures": CONSENT_DISCLOSURES,
     }
+
+
+@app.get("/api/settings/source-intelligence")
+async def get_source_intelligence_settings(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    consent_result = await db.execute(
+        select(DataConsent).where(
+            DataConsent.user_id == current_user.id,
+            DataConsent.consent_type == "source_intelligence",
+        )
+    )
+    consent = consent_result.scalar_one_or_none()
+    links_result = await db.execute(
+        select(UserApplicationLink.id).where(UserApplicationLink.user_id == current_user.id)
+    )
+    return {
+        "source_intelligence": bool(consent and consent.granted),
+        "private_link_count": len(links_result.scalars().all()),
+        "disclosure": CONSENT_DISCLOSURES["source_intelligence"],
+    }
+
+
+@app.put("/api/settings/source-intelligence")
+async def update_source_intelligence_settings(
+    body: SourceIntelligenceSettingsBody,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    now = datetime.now(timezone.utc)
+    ip = request.client.host if request.client else None
+    result = await db.execute(
+        select(DataConsent).where(
+            DataConsent.user_id == current_user.id,
+            DataConsent.consent_type == "source_intelligence",
+        )
+    )
+    consent = result.scalar_one_or_none()
+    if consent:
+        was_granted = consent.granted
+        consent.granted = body.source_intelligence
+        consent.updated_at = now
+        consent.ip_address = ip
+        if body.source_intelligence and not was_granted:
+            consent.granted_at = now
+            consent.revoked_at = None
+        elif not body.source_intelligence and was_granted:
+            consent.revoked_at = now
+        if was_granted != body.source_intelligence:
+            _record_source_audit_event(
+                db,
+                event_type="source_intelligence_consent_changed",
+                actor_user_id=current_user.id,
+                redacted_evidence={"granted": body.source_intelligence, "surface": "source_intelligence_settings"},
+            )
+    else:
+        db.add(DataConsent(
+            user_id=current_user.id,
+            consent_type="source_intelligence",
+            granted=body.source_intelligence,
+            granted_at=now if body.source_intelligence else None,
+            ip_address=ip,
+            updated_at=now,
+        ))
+        _record_source_audit_event(
+            db,
+            event_type="source_intelligence_consent_changed",
+            actor_user_id=current_user.id,
+            redacted_evidence={"granted": body.source_intelligence, "surface": "source_intelligence_settings"},
+        )
+    await db.commit()
+    return {
+        "source_intelligence": body.source_intelligence,
+        "disclosure": CONSENT_DISCLOSURES["source_intelligence"],
+    }
+
+
+@app.get("/api/settings/source-intelligence/private-links")
+async def list_source_intelligence_private_links(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(UserApplicationLink)
+        .where(UserApplicationLink.user_id == current_user.id)
+        .order_by(UserApplicationLink.created_at.desc())
+        .limit(100)
+    )
+    return [
+        {
+            "id": str(row.id),
+            "provider": row.provider_type,
+            "link_type": row.link_type,
+            "company_domain": row.company_domain,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+            "sanitization_status": row.sanitization_status,
+        }
+        for row in result.scalars().all()
+    ]
+
+
+@app.delete("/api/settings/source-intelligence/private-links/{link_id}", status_code=204)
+async def delete_source_intelligence_private_link(
+    link_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        link_uuid = _uuid.UUID(link_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid private link id.") from exc
+    result = await db.execute(
+        select(UserApplicationLink).where(
+            UserApplicationLink.id == link_uuid,
+            UserApplicationLink.user_id == current_user.id,
+        )
+    )
+    link = result.scalar_one_or_none()
+    if not link:
+        raise HTTPException(status_code=404, detail="Private link not found.")
+    _record_source_audit_event(
+        db,
+        event_type="private_link_deleted",
+        actor_user_id=current_user.id,
+        redacted_evidence={
+            "provider_type": link.provider_type,
+            "link_type": link.link_type,
+            "sanitization_status": link.sanitization_status,
+        },
+    )
+    await db.delete(link)
+    await db.commit()
+    return Response(status_code=204)
+
+
+@app.post("/api/settings/source-intelligence/reprocess")
+async def reprocess_source_intelligence_links(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from backend.tasks.reprocess_source_intelligence import reprocess_source_intelligence_in_session
+
+    result = await reprocess_source_intelligence_in_session(db, current_user.id)
+    await db.commit()
+    return result
+
+
+@app.get("/api/admin/job-sources")
+async def admin_list_job_sources(
+    provider_type: str | None = Query(None),
+    status: str | None = Query(None),
+    limit: int = Query(100, ge=1, le=500),
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin_user),
+):
+    stmt = select(CompanyJobSource).order_by(CompanyJobSource.updated_at.desc()).limit(limit)
+    if provider_type:
+        stmt = stmt.where(CompanyJobSource.provider_type == provider_type)
+    if status:
+        stmt = stmt.where(CompanyJobSource.verification_status == status)
+    result = await db.execute(stmt)
+    return {"sources": [_serialize_admin_job_source(row) for row in result.scalars().all()]}
+
+
+@app.get("/api/admin/job-sources/health")
+async def admin_job_sources_health(
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin_user),
+):
+    rows = (
+        await db.execute(
+            select(
+                CompanyJobSource.provider_type,
+                CompanyJobSource.verification_status,
+                func.count(CompanyJobSource.id),
+            ).group_by(CompanyJobSource.provider_type, CompanyJobSource.verification_status)
+        )
+    ).all()
+    by_provider: dict[str, dict[str, int]] = {}
+    totals = {"verified": 0, "pending_review": 0, "failed_stale": 0, "blocked": 0}
+    for provider, status, count in rows:
+        by_provider.setdefault(provider or "unknown", {})[status or "unknown"] = count
+        if status == "verified":
+            totals["verified"] += count
+        elif status in {"pending", "needs_review"}:
+            totals["pending_review"] += count
+        elif status in {"failed", "stale"}:
+            totals["failed_stale"] += count
+        elif status == "blocked":
+            totals["blocked"] += count
+    private_rejected = (
+        await db.execute(
+            select(func.count(UserApplicationLink.id)).where(UserApplicationLink.sanitization_status != "safe_public")
+        )
+    ).scalar_one()
+    set_source_review_queue_size(reason="pending_review", value=totals["pending_review"])
+    set_source_review_queue_size(reason="failed_stale", value=totals["failed_stale"])
+    return {
+        "totals": {**totals, "private_links_rejected_from_sharing": private_rejected},
+        "by_provider": by_provider,
+    }
+
+
+@app.get("/api/admin/job-sources/usage")
+async def admin_job_sources_usage(
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin_user),
+):
+    rows = (
+        await db.execute(
+            select(
+                JobSearchProviderUsage.provider,
+                JobSearchProviderUsage.month_bucket,
+                func.sum(JobSearchProviderUsage.request_count),
+                func.sum(JobSearchProviderUsage.result_count),
+            ).group_by(JobSearchProviderUsage.provider, JobSearchProviderUsage.month_bucket)
+        )
+    ).all()
+    return {
+        "usage": [
+            {
+                "provider": provider,
+                "month_bucket": month_bucket.isoformat() if month_bucket else None,
+                "request_count": int(request_count or 0),
+                "result_count": int(result_count or 0),
+            }
+            for provider, month_bucket, request_count, result_count in rows
+        ]
+    }
+
+
+@app.get("/api/admin/job-sources/{source_id}")
+async def admin_get_job_source(
+    source_id: str,
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin_user),
+):
+    source = await _get_admin_job_source(db, source_id)
+    runs = (
+        await db.execute(
+            select(SourceVerificationRun)
+            .where(SourceVerificationRun.source_id == source.id)
+            .order_by(SourceVerificationRun.started_at.desc())
+            .limit(25)
+        )
+    ).scalars().all()
+    discovery_count = (
+        await db.execute(
+            select(func.count(SourceDiscoveryEvent.id)).where(SourceDiscoveryEvent.source_id == source.id)
+        )
+    ).scalar_one()
+    payload = _serialize_admin_job_source(source)
+    payload["verification_runs"] = [_serialize_source_verification_run(run) for run in runs]
+    payload["discovery_event_count"] = discovery_count
+    return payload
+
+
+@app.post("/api/admin/job-sources/{source_id}/verify")
+async def admin_verify_job_source(
+    source_id: str,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_admin_user),
+):
+    from backend.services.job_sources.verifier import verify_company_job_source
+
+    source = await _get_admin_job_source(db, source_id)
+    result = await verify_company_job_source(db, source, verified_by=str(admin.id))
+    _record_source_audit_event(
+        db,
+        event_type="source_verification_forced",
+        actor_user_id=admin.id,
+        source_id=source.id,
+        redacted_evidence={"provider_type": source.provider_type, "status": result.status},
+    )
+    await db.commit()
+    await db.refresh(source)
+    return {"source": _serialize_admin_job_source(source), "verification_result": result.__dict__}
+
+
+@app.post("/api/admin/job-sources/{source_id}/approve")
+async def admin_approve_job_source(
+    source_id: str,
+    body: AdminSourceActionBody | None = None,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_admin_user),
+):
+    source = await _get_admin_job_source(db, source_id)
+    source.verification_status = "verified"
+    source.active = True
+    source.access_mode = (body.access_mode if body and body.access_mode else source.access_mode if source.access_mode != "unknown" else "public")
+    source.verified_by = str(admin.id)
+    source.failure_reason = None
+    source.last_verified_at = datetime.now(timezone.utc)
+    source.updated_at = source.last_verified_at
+    _record_source_audit_event(
+        db,
+        event_type="source_approved",
+        actor_user_id=admin.id,
+        source_id=source.id,
+        redacted_evidence={"provider_type": source.provider_type, "access_mode": source.access_mode},
+    )
+    await db.commit()
+    await db.refresh(source)
+    return {"source": _serialize_admin_job_source(source)}
+
+
+@app.post("/api/admin/job-sources/{source_id}/block")
+async def admin_block_job_source(
+    source_id: str,
+    body: AdminSourceActionBody | None = None,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_admin_user),
+):
+    source = await _get_admin_job_source(db, source_id)
+    source.verification_status = "blocked"
+    source.access_mode = "blocked"
+    source.active = False
+    source.verified_by = str(admin.id)
+    source.failure_reason = (body.reason if body and body.reason else "admin_blocked")[:240]
+    source.updated_at = datetime.now(timezone.utc)
+    _record_source_audit_event(
+        db,
+        event_type="source_blocked",
+        actor_user_id=admin.id,
+        source_id=source.id,
+        redacted_evidence={"provider_type": source.provider_type, "reason": source.failure_reason},
+    )
+    await db.commit()
+    await db.refresh(source)
+    return {"source": _serialize_admin_job_source(source)}
+
+
+async def _get_admin_job_source(db: AsyncSession, source_id: str) -> CompanyJobSource:
+    try:
+        source_uuid = _uuid.UUID(source_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid source id.") from exc
+    source = (await db.execute(select(CompanyJobSource).where(CompanyJobSource.id == source_uuid))).scalar_one_or_none()
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found.")
+    return source
+
+
+def _serialize_admin_job_source(source: CompanyJobSource) -> dict:
+    return {
+        "id": str(source.id),
+        "company_id": str(source.company_id) if source.company_id else None,
+        "company_name": source.company_name,
+        "company_domain": source.company_domain,
+        "provider_type": source.provider_type,
+        "provider_key": source.provider_key,
+        "access_mode": source.access_mode,
+        "career_url": source.career_url,
+        "public_jobs_endpoint": source.public_jobs_endpoint,
+        "source_config": _redact_source_config(source.source_config),
+        "source_confidence": source.source_confidence,
+        "verification_status": source.verification_status,
+        "active": source.active,
+        "robots_allowed": source.robots_allowed,
+        "terms_risk": source.terms_risk,
+        "discovered_from": source.discovered_from,
+        "verified_by": source.verified_by,
+        "evidence_count": source.evidence_count,
+        "failure_count": source.failure_count,
+        "failure_reason": source.failure_reason,
+        "first_seen_at": source.first_seen_at.isoformat() if source.first_seen_at else None,
+        "last_seen_at": source.last_seen_at.isoformat() if source.last_seen_at else None,
+        "last_verified_at": source.last_verified_at.isoformat() if source.last_verified_at else None,
+        "stale_at": source.stale_at.isoformat() if source.stale_at else None,
+        "updated_at": source.updated_at.isoformat() if source.updated_at else None,
+    }
+
+
+def _serialize_source_verification_run(run: SourceVerificationRun) -> dict:
+    return {
+        "id": str(run.id),
+        "status": run.status,
+        "http_status": run.http_status,
+        "job_count": run.job_count,
+        "duration_ms": run.duration_ms,
+        "error_type": run.error_type,
+        "error_message_redacted": run.error_message_redacted,
+        "robots_allowed": run.robots_allowed,
+        "started_at": run.started_at.isoformat() if run.started_at else None,
+        "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+    }
+
+
+def _redact_source_config(config: dict | None) -> dict:
+    blocked = {"token", "api_key", "authorization", "cookie", "headers", "query", "raw_url", "password"}
+    return {key: value for key, value in (config or {}).items() if key.lower() not in blocked}
+
+
+def _record_source_audit_event(
+    db: AsyncSession,
+    *,
+    event_type: str,
+    actor_user_id: _uuid.UUID,
+    source_id: _uuid.UUID | None = None,
+    redacted_evidence: dict | None = None,
+) -> None:
+    db.add(SourceDiscoveryEvent(
+        source_id=source_id,
+        user_id=actor_user_id,
+        event_type=event_type,
+        redacted_evidence=_redact_audit_evidence(redacted_evidence),
+    ))
+
+
+def _redact_audit_evidence(evidence: dict | None) -> dict:
+    blocked = {"token", "api_key", "authorization", "cookie", "headers", "query", "raw_url", "url", "subject", "body"}
+    clean: dict = {}
+    for key, value in (evidence or {}).items():
+        if key.lower() in blocked:
+            continue
+        if isinstance(value, str):
+            clean[key] = value.replace("\r", " ").replace("\n", " ")[:240]
+        elif isinstance(value, (bool, int, float)) or value is None:
+            clean[key] = value
+        else:
+            clean[key] = str(value).replace("\r", " ").replace("\n", " ")[:240]
+    return clean
 
 
 class DeleteAccountBody(BaseModel):

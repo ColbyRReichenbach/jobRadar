@@ -75,6 +75,56 @@ RESEARCH_EVIDENCE_ITEMS = Counter(
     "Total Radar research evidence items produced by mode and evidence type.",
     ["mode", "evidence_type"],
 )
+JOB_SOURCE_DISCOVERED = Counter(
+    "apptrail_job_source_discovered_total",
+    "Total job sources discovered by provider, discovery surface, and status.",
+    ["provider_type", "discovered_from", "status"],
+)
+JOB_SOURCE_VERIFIED = Counter(
+    "apptrail_job_source_verified_total",
+    "Total job source verification attempts by provider and status.",
+    ["provider_type", "status"],
+)
+JOB_SOURCE_FETCH_DURATION = Histogram(
+    "apptrail_job_source_fetch_duration_seconds",
+    "Job source verification duration in seconds by provider.",
+    ["provider_type"],
+)
+JOB_SOURCE_FETCH_ERRORS = Counter(
+    "apptrail_job_source_fetch_errors_total",
+    "Job source verification errors by provider and error type.",
+    ["provider_type", "error_type"],
+)
+JOB_SEARCH_REQUESTS = Counter(
+    "apptrail_job_search_requests_total",
+    "Job search requests by source mode.",
+    ["mode"],
+)
+JOB_SEARCH_RESULTS = Counter(
+    "apptrail_job_search_results_total",
+    "Job search results returned by source type.",
+    ["source_type"],
+)
+JOB_SEARCH_BROAD_API_CALLS = Counter(
+    "apptrail_job_search_broad_api_calls_total",
+    "Broad job-search provider API calls.",
+    ["provider"],
+)
+JOB_SEARCH_BROAD_API_CALLS_AVOIDED = Counter(
+    "apptrail_job_search_broad_api_calls_avoided_total",
+    "Broad provider API calls avoided by direct source search.",
+    ["reason"],
+)
+PRIVATE_URL_REJECTED = Counter(
+    "apptrail_private_url_rejected_total",
+    "Private URL classifications rejected from shared source intelligence.",
+    ["rule_id"],
+)
+SOURCE_REVIEW_QUEUE_SIZE = Gauge(
+    "apptrail_source_review_queue_size",
+    "Current source review queue size by reason.",
+    ["reason"],
+)
 
 
 def metrics_payload() -> bytes:
@@ -152,3 +202,43 @@ def observe_research_sources_fetched(*, mode: str | None, source_type: str | Non
 
 def observe_research_evidence_items(*, mode: str | None, evidence_type: str | None, count: int = 1) -> None:
     RESEARCH_EVIDENCE_ITEMS.labels(mode=mode or "unknown", evidence_type=evidence_type or "unknown").inc(max(count, 0))
+
+
+def observe_job_source_discovered(*, provider_type: str | None, discovered_from: str | None, status: str | None) -> None:
+    JOB_SOURCE_DISCOVERED.labels(
+        provider_type=provider_type or "unknown",
+        discovered_from=discovered_from or "unknown",
+        status=status or "unknown",
+    ).inc()
+
+
+def observe_job_source_verified(*, provider_type: str | None, status: str | None, duration_seconds: float, error_type: str | None = None) -> None:
+    provider = provider_type or "unknown"
+    JOB_SOURCE_VERIFIED.labels(provider_type=provider, status=status or "unknown").inc()
+    JOB_SOURCE_FETCH_DURATION.labels(provider_type=provider).observe(max(duration_seconds, 0.0))
+    if error_type:
+        JOB_SOURCE_FETCH_ERRORS.labels(provider_type=provider, error_type=error_type).inc()
+
+
+def observe_job_search_request(*, mode: str | None) -> None:
+    JOB_SEARCH_REQUESTS.labels(mode=mode or "unknown").inc()
+
+
+def observe_job_search_results(*, source_type: str | None, count: int = 1) -> None:
+    JOB_SEARCH_RESULTS.labels(source_type=source_type or "unknown").inc(max(count, 0))
+
+
+def observe_job_search_broad_api_call(*, provider: str | None) -> None:
+    JOB_SEARCH_BROAD_API_CALLS.labels(provider=provider or "unknown").inc()
+
+
+def observe_job_search_broad_api_call_avoided(*, reason: str | None) -> None:
+    JOB_SEARCH_BROAD_API_CALLS_AVOIDED.labels(reason=reason or "unknown").inc()
+
+
+def observe_private_url_rejected(*, rule_id: str | None) -> None:
+    PRIVATE_URL_REJECTED.labels(rule_id=rule_id or "unknown").inc()
+
+
+def set_source_review_queue_size(*, reason: str | None, value: int) -> None:
+    SOURCE_REVIEW_QUEUE_SIZE.labels(reason=reason or "unknown").set(max(value, 0))

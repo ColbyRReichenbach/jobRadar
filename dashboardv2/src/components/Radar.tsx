@@ -48,6 +48,7 @@ import { ResearchReportList } from './ResearchReportList';
 import { ResearchReportDetail as ResearchReportDetailPanel } from './ResearchReportDetail';
 import { ResearchReportDiff as ResearchReportDiffPanel } from './ResearchReportDiff';
 import { ResearchRunTracePanel } from './ResearchRunTracePanel';
+import { useAuth } from '../lib/AuthContext';
 
 type RadarSurface = 'signals' | 'reports';
 
@@ -94,7 +95,9 @@ function hasResearchConsent(consent: ConsentStatus | null): boolean {
 }
 
 export function Radar({ focusRequest }: RadarProps) {
+  const { user } = useAuth();
   const trackerFormRef = useRef<HTMLDetailsElement | null>(null);
+  const createDraftNoticeTimeoutRef = useRef<number | null>(null);
   const [profiles, setProfiles] = useState<ResearchProfile[]>([]);
   const [signals, setSignals] = useState<OpportunitySignal[]>([]);
   const [briefs, setBriefs] = useState<OpportunityBrief[]>([]);
@@ -117,11 +120,14 @@ export function Radar({ focusRequest }: RadarProps) {
   const [creating, setCreating] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [deletingProfile, setDeletingProfile] = useState(false);
+  const [togglingProfileId, setTogglingProfileId] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [busyActionId, setBusyActionId] = useState<string | null>(null);
   const [savingFeedback, setSavingFeedback] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
   const [editingMode, setEditingMode] = useState<'create' | 'edit'>('edit');
+  const [createDraftKey, setCreateDraftKey] = useState(0);
+  const [createDraftNotice, setCreateDraftNotice] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const selectedProfile = useMemo(
@@ -158,9 +164,19 @@ export function Radar({ focusRequest }: RadarProps) {
   const latestRun = runs[0] || null;
   const latestRunSignalCount = Object.values(latestRun?.signal_counts || {}).reduce((total, count) => total + count, 0);
   const researchConsentEnabled = hasResearchConsent(consent);
+  const showRadarQuality = Boolean(user?.is_admin);
 
   const startCreateTracker = () => {
     setEditingMode('create');
+    setCreateDraftKey((current) => current + 1);
+    setCreateDraftNotice('New tracker draft started. Fill in the details below.');
+    if (createDraftNoticeTimeoutRef.current) {
+      window.clearTimeout(createDraftNoticeTimeoutRef.current);
+    }
+    createDraftNoticeTimeoutRef.current = window.setTimeout(() => {
+      setCreateDraftNotice(null);
+      createDraftNoticeTimeoutRef.current = null;
+    }, 4000);
     window.requestAnimationFrame(() => {
       const trackerForm = trackerFormRef.current;
       if (!trackerForm) return;
@@ -169,6 +185,14 @@ export function Radar({ focusRequest }: RadarProps) {
       trackerForm.querySelector<HTMLInputElement>('input')?.focus();
     });
   };
+
+  useEffect(() => {
+    return () => {
+      if (createDraftNoticeTimeoutRef.current) {
+        window.clearTimeout(createDraftNoticeTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const load = async (
     requestedProfileId?: string | null,
@@ -180,7 +204,7 @@ export function Radar({ focusRequest }: RadarProps) {
     try {
       const [profileRows, feedbackStatsRow, consentRow] = await Promise.all([
         fetchResearchProfiles(),
-        fetchResearchFeedbackStats(),
+        showRadarQuality ? fetchResearchFeedbackStats() : Promise.resolve(null),
         fetchConsent(),
       ]);
 
@@ -239,12 +263,26 @@ export function Radar({ focusRequest }: RadarProps) {
       setSelectedRunId(nextRunId);
       setSurface(nextSurface);
       setEditingMode(activeProfileId ? 'edit' : 'create');
+      setCreateDraftNotice(null);
       setErrorMessage(null);
       setFeedbackMessage(null);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Radar request failed');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const toggleProfileActive = async (profile: ResearchProfile) => {
+    setTogglingProfileId(profile.id);
+    try {
+      const updated = await updateResearchProfile(profile.id, { active: !profile.active });
+      await load(updated.id, undefined, undefined, updated.mode === 'research' ? 'reports' : surface);
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to update tracker cadence');
+    } finally {
+      setTogglingProfileId(null);
     }
   };
 
@@ -434,7 +472,9 @@ export function Radar({ focusRequest }: RadarProps) {
         rating: payload.rating,
         notes: payload.notes,
       });
-      setFeedbackStats(await fetchResearchFeedbackStats());
+      if (showRadarQuality) {
+        setFeedbackStats(await fetchResearchFeedbackStats());
+      }
       setFeedbackMessage('Feedback saved.');
       setErrorMessage(null);
     } catch (error) {
@@ -450,7 +490,9 @@ export function Radar({ focusRequest }: RadarProps) {
     setSavingFeedback(true);
     try {
       await sendResearchReportFeedback(selectedReportId, payload);
-      setFeedbackStats(await fetchResearchFeedbackStats());
+      if (showRadarQuality) {
+        setFeedbackStats(await fetchResearchFeedbackStats());
+      }
       setFeedbackMessage('Feedback saved.');
       setErrorMessage(null);
     } catch (error) {
@@ -549,27 +591,54 @@ export function Radar({ focusRequest }: RadarProps) {
             ) : (
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2 2xl:grid-cols-3">
                 {profiles.map((profile) => (
-                  <button
+                  <div
                     key={profile.id}
-                    type="button"
-                    onClick={() => {
-                      setSelectedProfileId(profile.id);
-                      setEditingMode('edit');
-                      load(profile.id, undefined, undefined, profile.mode === 'research' ? 'reports' : surface);
-                    }}
                     className={`rounded-xl border px-3 py-3 text-left ${
                       selectedProfileId === profile.id ? 'border-slate-400 bg-slate-100' : 'border-slate-200 bg-white hover:bg-slate-50'
                     }`}
                   >
-                    <div className="text-sm font-medium text-slate-900">{profile.name}</div>
-                    <div className="mt-1 text-xs text-slate-500">
-                      {profile.mode} · {profile.frequency} · min {profile.minimum_score}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedProfileId(profile.id);
+                        setEditingMode('edit');
+                        setCreateDraftNotice(null);
+                        load(profile.id, undefined, undefined, profile.mode === 'research' ? 'reports' : surface);
+                      }}
+                      className="block w-full text-left"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium text-slate-900">{profile.name}</div>
+                          <div className="mt-1 text-xs text-slate-500">
+                            {profile.mode} · {profile.frequency} · min {profile.minimum_score}
+                          </div>
+                        </div>
+                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                          profile.active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'
+                        }`}>
+                          {profile.active ? 'Active' : 'Paused'}
+                        </span>
+                      </div>
+                      <div className="mt-1 text-[11px] text-slate-500">
+                        {profile.next_run_at ? `Next run ${new Date(profile.next_run_at).toLocaleString()}` : profile.active ? 'Manual or unscheduled cadence' : 'Cadence paused'}
+                      </div>
+                    </button>
+                    <div className="mt-3 flex justify-end">
+                      <button
+                        type="button"
+                        disabled={togglingProfileId === profile.id}
+                        onClick={() => toggleProfileActive(profile)}
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        {togglingProfileId === profile.id
+                          ? 'Updating...'
+                          : profile.active
+                            ? 'Pause cadence'
+                            : 'Resume cadence'}
+                      </button>
                     </div>
-                    <div className="mt-1 text-[11px] text-slate-500">
-                      {profile.active ? 'active' : 'paused'}
-                      {profile.next_run_at ? ` · next ${new Date(profile.next_run_at).toLocaleString()}` : ''}
-                    </div>
-                  </button>
+                  </div>
                 ))}
               </div>
             )}
@@ -585,12 +654,18 @@ export function Radar({ focusRequest }: RadarProps) {
               <div className="flex items-center justify-between gap-3">
                 <span>{editingMode === 'create' || !selectedProfile ? 'Create Radar' : 'Edit tracker'}</span>
                 <span className="text-xs font-normal text-slate-500">
-                  {selectedProfile ? selectedProfile.name : 'Describe what to watch'}
+                  {editingMode === 'create' ? 'New tracker draft' : selectedProfile ? selectedProfile.name : 'Describe what to watch'}
                 </span>
               </div>
             </summary>
             <div className="border-t border-slate-200 p-4">
+              {createDraftNotice ? (
+                <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800" role="status">
+                  {createDraftNotice}
+                </div>
+              ) : null}
               <RadarProfileForm
+                key={editingMode === 'create' ? `create-${createDraftKey}` : `edit-${selectedProfile?.id || 'none'}`}
                 mode={editingMode === 'create' || !selectedProfile ? 'create' : 'edit'}
                 profile={editingMode === 'edit' ? selectedProfile : null}
                 busy={creating || savingProfile}
@@ -759,10 +834,12 @@ export function Radar({ focusRequest }: RadarProps) {
               />
             </div>
 
-            <div className="rounded-2xl border border-slate-200 bg-white p-4">
-              <h2 className="mb-2 font-semibold text-slate-800">Radar quality</h2>
-              <RadarInsightsPanel stats={feedbackStats} />
-            </div>
+            {showRadarQuality ? (
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <h2 className="mb-2 font-semibold text-slate-800">Radar quality</h2>
+                <RadarInsightsPanel stats={feedbackStats} />
+              </div>
+            ) : null}
           </div>
         </div>
     </div>

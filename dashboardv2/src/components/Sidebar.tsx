@@ -1,5 +1,5 @@
 import { motion } from 'motion/react';
-import { LayoutDashboard, Mail, Search, BarChart2, MessageSquare, LogOut, RefreshCw, Users, CalendarDays, Settings, FlaskConical, Bug, Radar as RadarIcon, BrainCircuit, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { LayoutDashboard, Mail, Search, BarChart2, MessageSquare, LogOut, RefreshCw, Users, CalendarDays, Settings, FlaskConical, Bug, Radar as RadarIcon, BrainCircuit, PanelLeftClose, PanelLeftOpen, Network } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Logo } from './Logo';
 import { useAuth } from '../lib/AuthContext';
@@ -34,6 +34,7 @@ export function Sidebar({ activeTab, setActiveTab, onGmailSync, collapsed = fals
     { id: 'analytics', label: 'Analytics', icon: BarChart2 },
     { id: 'audit', label: 'Classifier Audit', icon: FlaskConical, adminOnly: true },
     { id: 'extraction-reports', label: 'Extraction Reports', icon: Bug, adminOnly: true },
+    { id: 'source-intelligence', label: 'Source Intelligence', icon: Network, adminOnly: true },
     ...(AI_OPS_ENABLED ? [{ id: 'ai-ops', label: 'AI Ops', icon: BrainCircuit, adminOnly: true }] : []),
     { id: 'settings', label: 'Settings', icon: Settings },
   ];

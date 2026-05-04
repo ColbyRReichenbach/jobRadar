@@ -201,6 +201,37 @@ async def test_extract_interview_datetime():
 
 
 @pytest.mark.asyncio
+async def test_extract_interview_datetime_handles_numeric_dates_and_timezones():
+    """extract_interview_datetime handles common recruiter email formats."""
+    from backend.services.calendar_sync import extract_interview_datetime
+
+    result = extract_interview_datetime(
+        "You are confirmed for an interview on 05/07/2026 • 2:30 PM ET. "
+        "This will be a 30-minute video call. Join at https://meet.google.com/abc-defg-hij",
+        reference_datetime=datetime(2026, 5, 3, 12, 0, tzinfo=timezone.utc),
+    )
+
+    assert result is not None
+    assert result["scheduled_at"].startswith("2026-05-07T14:30:00")
+    assert result["duration_minutes"] == 30
+    assert result["location_or_link"] == "https://meet.google.com/abc-defg-hij"
+
+
+@pytest.mark.asyncio
+async def test_extract_interview_datetime_requires_actual_time():
+    """Scheduling portal emails without a selected slot should stay unscheduled."""
+    from backend.services.calendar_sync import extract_interview_datetime
+
+    result = extract_interview_datetime(
+        "Select a timeslot for your interview at Bank of America on 05/07/2026. "
+        "Your verification code is 113812.",
+        reference_datetime=datetime(2026, 5, 3, 12, 0, tzinfo=timezone.utc),
+    )
+
+    assert result is None
+
+
+@pytest.mark.asyncio
 async def test_calendar_sync_creates_and_updates_interview(client, db_session):
     """POST /api/calendar/sync upserts interview events from Google Calendar."""
     from backend.models import Alert, Application, Company, GmailToken, Interview, User

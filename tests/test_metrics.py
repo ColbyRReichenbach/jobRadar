@@ -114,3 +114,42 @@ async def test_metrics_endpoint_exposes_research_radar_metrics(client, monkeypat
     assert "apptrail_research_sources_fetched_total" in body
     assert "apptrail_research_evidence_items_total" in body
     assert 'mode="research"' in body
+
+
+@pytest.mark.asyncio
+async def test_metrics_endpoint_exposes_source_intelligence_metrics(client):
+    from backend.metrics import (
+        observe_job_search_broad_api_call,
+        observe_job_search_broad_api_call_avoided,
+        observe_job_search_request,
+        observe_job_search_results,
+        observe_job_source_discovered,
+        observe_job_source_verified,
+        observe_private_url_rejected,
+        set_source_review_queue_size,
+    )
+
+    observe_job_source_discovered(provider_type="greenhouse", discovered_from="unit", status="pending")
+    observe_job_source_verified(provider_type="greenhouse", status="verified", duration_seconds=0.01)
+    observe_job_search_request(mode="direct_source")
+    observe_job_search_results(source_type="greenhouse", count=2)
+    observe_job_search_broad_api_call(provider="serpapi")
+    observe_job_search_broad_api_call_avoided(reason="direct_source")
+    observe_private_url_rejected(rule_id="private_token_query_param")
+    set_source_review_queue_size(reason="pending_review", value=3)
+
+    response = await client.get("/metrics")
+
+    assert response.status_code == 200
+    body = response.text
+    assert "apptrail_job_source_discovered_total" in body
+    assert "apptrail_job_source_verified_total" in body
+    assert "apptrail_job_source_fetch_duration_seconds" in body
+    assert "apptrail_job_search_requests_total" in body
+    assert "apptrail_job_search_results_total" in body
+    assert "apptrail_job_search_broad_api_calls_total" in body
+    assert "apptrail_job_search_broad_api_calls_avoided_total" in body
+    assert "apptrail_private_url_rejected_total" in body
+    assert "apptrail_source_review_queue_size" in body
+    assert 'provider_type="greenhouse"' in body
+    assert 'rule_id="private_token_query_param"' in body

@@ -183,6 +183,7 @@ export interface ConsentStatus {
     ai_processing: boolean;
     third_party_enrichment: boolean;
     web_research: boolean;
+    source_intelligence: boolean;
   };
   accepted_at: string | null;
   disclosures?: Record<string, string>;
@@ -193,6 +194,7 @@ export interface ConsentUpdate {
   ai_processing: boolean;
   third_party_enrichment: boolean;
   web_research?: boolean;
+  source_intelligence?: boolean;
 }
 
 export interface NotificationPrefs {
@@ -747,12 +749,40 @@ export async function updateEmail(id: string, payload: {
 
 // --- Search API ---
 
-export async function searchJobs(query: string, location: string = ''): Promise<any[]> {
+export interface JobSearchProviderStatus {
+  mode?: string;
+  serpapi_configured?: boolean;
+  greenhouse_targets?: string[];
+  greenhouse_targets_searched?: string[];
+  degraded?: boolean;
+  degraded_reasons?: string[];
+  broad_search_used?: boolean;
+}
+
+export interface JobSearchResponse {
+  results: any[];
+  cached?: boolean;
+  provider_status?: JobSearchProviderStatus;
+  source_summary?: {
+    direct_sources: any[];
+    broad_provider_used: boolean;
+    verified_source_count: number;
+    stale_source_count: number;
+    blocked_source_count: number;
+  };
+}
+
+export async function searchJobs(query: string, location: string = ''): Promise<JobSearchResponse> {
   const params = new URLSearchParams({ q: query, location });
   const res = await apiFetch(`${API_BASE}/api/search?${params}`, { headers: authHeaders() });
   if (!res.ok) throw new Error(await readErrorDetail(res, `Failed to search: ${res.status}`));
   const data = await res.json();
-  return data.results || [];
+  return {
+    results: data.results || [],
+    cached: data.cached,
+    provider_status: data.provider_status,
+    source_summary: data.source_summary,
+  };
 }
 
 export async function getSearchMatchPreview(jobs: Array<{
@@ -1053,19 +1083,26 @@ export async function fetchInterviewSuggestions(): Promise<InterviewSuggestion[]
   return Array.isArray(data) ? data : [];
 }
 
-export async function acceptInterviewSuggestion(suggestion: InterviewSuggestion): Promise<any> {
+export async function acceptInterviewSuggestion(
+  suggestion: InterviewSuggestion,
+  overrides: Partial<Pick<InterviewSuggestion, 'application_id' | 'interview_type' | 'scheduled_at' | 'duration_minutes' | 'location_or_link'>> & {
+    interviewer_name?: string | null;
+    interviewer_email?: string | null;
+    notes?: string | null;
+  } = {},
+): Promise<any> {
   const res = await apiFetch(`${API_BASE}/api/interview-suggestions/${encodeURIComponent(suggestion.email_id)}/accept`, {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify({
-      application_id: suggestion.application_id || undefined,
-      interview_type: suggestion.interview_type,
-      scheduled_at: suggestion.scheduled_at || undefined,
-      duration_minutes: suggestion.duration_minutes ?? undefined,
-      interviewer_name: suggestion.sender || undefined,
-      interviewer_email: suggestion.sender_email || undefined,
-      location_or_link: suggestion.location_or_link || undefined,
-      notes: suggestion.subject ? `Created from email: ${suggestion.subject}` : undefined,
+      application_id: overrides.application_id ?? suggestion.application_id ?? undefined,
+      interview_type: overrides.interview_type ?? suggestion.interview_type,
+      scheduled_at: overrides.scheduled_at ?? suggestion.scheduled_at ?? undefined,
+      duration_minutes: overrides.duration_minutes ?? suggestion.duration_minutes ?? undefined,
+      interviewer_name: overrides.interviewer_name ?? suggestion.sender ?? undefined,
+      interviewer_email: overrides.interviewer_email ?? suggestion.sender_email ?? undefined,
+      location_or_link: overrides.location_or_link ?? suggestion.location_or_link ?? undefined,
+      notes: overrides.notes ?? (suggestion.subject ? `Created from email: ${suggestion.subject}` : undefined),
     }),
   });
   if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to add interview suggestion'));
@@ -1635,6 +1672,106 @@ export async function updateConsent(body: ConsentUpdate): Promise<ConsentStatus>
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to update consent'));
+  return res.json();
+}
+
+export interface SourcePrivateLink {
+  id: string;
+  provider: string | null;
+  link_type: string;
+  company_domain: string | null;
+  created_at: string | null;
+  sanitization_status: string;
+}
+
+export async function fetchSourcePrivateLinks(): Promise<SourcePrivateLink[]> {
+  const res = await apiFetch(`${API_BASE}/api/settings/source-intelligence/private-links`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to load private links'));
+  return res.json();
+}
+
+export async function deleteSourcePrivateLink(id: string): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/api/settings/source-intelligence/private-links/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to delete private link'));
+}
+
+export async function reprocessSourceIntelligence(): Promise<{ links_stored: number; discovery_events: number }> {
+  const res = await apiFetch(`${API_BASE}/api/settings/source-intelligence/reprocess`, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to reprocess application links'));
+  return res.json();
+}
+
+export interface AdminJobSource {
+  id: string;
+  company_name: string;
+  company_domain: string | null;
+  provider_type: string;
+  provider_key: string | null;
+  access_mode: string;
+  career_url: string | null;
+  public_jobs_endpoint: string | null;
+  source_config?: Record<string, unknown>;
+  verification_status: string;
+  active: boolean;
+  terms_risk: string;
+  discovered_from: string;
+  evidence_count: number;
+  failure_count: number;
+  failure_reason: string | null;
+  last_verified_at: string | null;
+  updated_at: string | null;
+}
+
+export interface AdminSourceHealth {
+  totals: {
+    verified: number;
+    pending_review: number;
+    failed_stale: number;
+    blocked: number;
+    private_links_rejected_from_sharing: number;
+  };
+  by_provider: Record<string, Record<string, number>>;
+}
+
+export async function fetchAdminJobSources(): Promise<{ sources: AdminJobSource[] }> {
+  const res = await apiFetch(`${API_BASE}/api/admin/job-sources`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to load job sources'));
+  return res.json();
+}
+
+export async function fetchAdminJobSourceHealth(): Promise<AdminSourceHealth> {
+  const res = await apiFetch(`${API_BASE}/api/admin/job-sources/health`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to load source health'));
+  return res.json();
+}
+
+export async function fetchAdminJobSourceUsage(): Promise<{ usage: Array<{ provider: string; month_bucket: string | null; request_count: number; result_count: number }> }> {
+  const res = await apiFetch(`${API_BASE}/api/admin/job-sources/usage`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to load source usage'));
+  return res.json();
+}
+
+export async function verifyAdminJobSource(id: string): Promise<{ source: AdminJobSource }> {
+  const res = await apiFetch(`${API_BASE}/api/admin/job-sources/${id}/verify`, { method: 'POST', headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to verify source'));
+  return res.json();
+}
+
+export async function approveAdminJobSource(id: string): Promise<{ source: AdminJobSource }> {
+  const res = await apiFetch(`${API_BASE}/api/admin/job-sources/${id}/approve`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ access_mode: 'public' }) });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to approve source'));
+  return res.json();
+}
+
+export async function blockAdminJobSource(id: string, reason = 'admin_blocked'): Promise<{ source: AdminJobSource }> {
+  const res = await apiFetch(`${API_BASE}/api/admin/job-sources/${id}/block`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ reason }) });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to block source'));
   return res.json();
 }
 

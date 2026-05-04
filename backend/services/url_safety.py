@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
+import os
 import socket
 from urllib.parse import urljoin, urlparse
 
@@ -9,6 +10,8 @@ import httpx
 
 
 _MAX_REDIRECTS = 5
+_DEFAULT_MAX_BYTES = 1_048_576
+DEFAULT_USER_AGENT = "OpportunityRadar/1.0 (+https://opportunity-radar.app)"
 
 
 def _is_disallowed_ip(value: str) -> bool:
@@ -64,21 +67,53 @@ async def fetch_public_https(
     url: str,
     *,
     timeout: float,
+    method: str = "GET",
     headers: dict[str, str] | None = None,
+    json_body: object | None = None,
     max_redirects: int = _MAX_REDIRECTS,
+    max_bytes: int | None = None,
 ) -> httpx.Response:
+    request_method = method.upper()
+    if request_method not in {"GET", "POST"}:
+        raise ValueError("Only GET and POST are allowed for public URL fetches")
     current_url = await validate_public_https_url(url)
-    async with httpx.AsyncClient(timeout=timeout, headers=headers, follow_redirects=False) as client:
+    byte_limit = max_bytes
+    if byte_limit is None:
+        byte_limit = int(os.getenv("SOURCE_FETCH_MAX_BYTES", str(_DEFAULT_MAX_BYTES)))
+    request_headers = {"User-Agent": DEFAULT_USER_AGENT}
+    if headers:
+        request_headers.update(headers)
+    async with httpx.AsyncClient(timeout=timeout, headers=request_headers, follow_redirects=False, cookies={}) as client:
         for _ in range(max_redirects + 1):
-            response = await client.get(current_url)
-            if not response.is_redirect:
-                return response
+            stream_kwargs = {"json": json_body} if json_body is not None else {}
+            async with client.stream(request_method, current_url, **stream_kwargs) as response:
+                if response.is_redirect:
+                    location = response.headers.get("location")
+                    if not location:
+                        return httpx.Response(
+                            status_code=response.status_code,
+                            headers=response.headers,
+                            request=response.request,
+                            content=b"",
+                        )
 
-            location = response.headers.get("location")
-            if not location:
-                return response
+                    next_url = urljoin(str(response.url), location)
+                    current_url = await validate_public_https_url(next_url)
+                    continue
 
-            next_url = urljoin(str(response.url), location)
-            current_url = await validate_public_https_url(next_url)
+                content = bytearray()
+                async for chunk in response.aiter_bytes():
+                    content.extend(chunk)
+                    if len(content) > byte_limit:
+                        raise httpx.HTTPError("Public URL response exceeded max byte limit")
+                response_headers = httpx.Headers(response.headers)
+                for decoded_header in ("content-encoding", "content-length", "transfer-encoding"):
+                    response_headers.pop(decoded_header, None)
+                return httpx.Response(
+                    status_code=response.status_code,
+                    headers=response_headers,
+                    request=response.request,
+                    content=bytes(content),
+                )
 
     raise httpx.HTTPError("Too many redirects while fetching public URL")

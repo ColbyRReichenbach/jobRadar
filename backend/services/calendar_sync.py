@@ -294,45 +294,71 @@ async def sync_calendar_events(
     }
 
 
-def extract_interview_datetime(email_body: str, email_subject: str = "") -> dict | None:
+def extract_interview_datetime(email_body: str, email_subject: str = "", reference_datetime: datetime | None = None) -> dict | None:
     """Extract interview date/time from email text.
 
     Returns dict with scheduled_at, duration_minutes, location_or_link if found.
     """
+    import html
     import re
 
-    text = f"{email_subject}\n{email_body}"
+    from dateutil import parser as dateparser
+    from dateutil.tz import tzoffset
 
-    # Common datetime patterns
-    # "January 15, 2026 at 2:00 PM"
-    # "Mon, Jan 15 at 2pm"
-    # "2026-01-15 14:00"
+    raw_text = html.unescape(f"{email_subject}\n{email_body}")
+    text = re.sub(r"<[^>]+>", " ", raw_text)
+    text = re.sub(r"\s+", " ", text).strip()
+    reference = reference_datetime or datetime.now(timezone.utc)
+    default = reference.replace(hour=9, minute=0, second=0, microsecond=0)
+    tzinfos = {
+        "UTC": timezone.utc,
+        "GMT": timezone.utc,
+        "ET": tzoffset("ET", -5 * 3600),
+        "EST": tzoffset("EST", -5 * 3600),
+        "EDT": tzoffset("EDT", -4 * 3600),
+        "CT": tzoffset("CT", -6 * 3600),
+        "CST": tzoffset("CST", -6 * 3600),
+        "CDT": tzoffset("CDT", -5 * 3600),
+        "MT": tzoffset("MT", -7 * 3600),
+        "MST": tzoffset("MST", -7 * 3600),
+        "MDT": tzoffset("MDT", -6 * 3600),
+        "PT": tzoffset("PT", -8 * 3600),
+        "PST": tzoffset("PST", -8 * 3600),
+        "PDT": tzoffset("PDT", -7 * 3600),
+    }
+
+    # Common datetime patterns. Require a time to avoid converting generic
+    # scheduling emails into calendar events before the user has a slot.
     datetime_patterns = [
-        r"(\w+ \d{1,2},?\s*\d{4}\s+at\s+\d{1,2}:\d{2}\s*(?:AM|PM|am|pm))",
-        r"(\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2})",
-        r"(\w+,?\s+\w+ \d{1,2}\s+at\s+\d{1,2}(?::\d{2})?\s*(?:AM|PM|am|pm)?)",
+        r"\b((?:Mon(?:day)?|Tue(?:sday)?|Wed(?:nesday)?|Thu(?:rsday)?|Fri(?:day)?|Sat(?:urday)?|Sun(?:day)?)?,?\s*(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2}(?:,\s*\d{4})?\s*(?:at|@|,|-|•)?\s*\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?)(?:\s*(?:ET|EST|EDT|CT|CST|CDT|MT|MST|MDT|PT|PST|PDT|UTC|GMT))?)\b",
+        r"\b(\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\s*(?:at|@|,|-|•)?\s*\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?)(?:\s*(?:ET|EST|EDT|CT|CST|CDT|MT|MST|MDT|PT|PST|PDT|UTC|GMT))?)\b",
+        r"\b(\d{4}-\d{2}-\d{2}[ T]\d{1,2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:?\d{2})?)\b",
     ]
 
     for pattern in datetime_patterns:
-        match = re.search(pattern, text)
+        match = re.search(pattern, text, re.IGNORECASE)
         if match:
-            # Found a date - try to parse
             date_str = match.group(1)
-            from dateutil import parser as dateparser
             try:
-                scheduled_at = dateparser.parse(date_str)
+                scheduled_at = dateparser.parse(date_str, fuzzy=True, default=default, tzinfos=tzinfos)
                 if scheduled_at:
+                    if scheduled_at.tzinfo is None and reference.tzinfo is not None:
+                        scheduled_at = scheduled_at.replace(tzinfo=reference.tzinfo)
+                    explicit_year = bool(re.search(r"\b\d{4}\b", date_str))
+                    if not explicit_year and scheduled_at.date() < reference.date():
+                        try:
+                            scheduled_at = scheduled_at.replace(year=scheduled_at.year + 1)
+                        except ValueError:
+                            scheduled_at = scheduled_at + timedelta(days=365)
                     result: dict = {"scheduled_at": scheduled_at.isoformat()}
 
-                    # Look for duration
-                    dur_match = re.search(r"(\d+)\s*(?:min|minute)", text, re.IGNORECASE)
+                    dur_match = re.search(r"(\d+)\s*[- ]?\s*(?:min|minute)s?", text, re.IGNORECASE)
                     if dur_match:
                         result["duration_minutes"] = int(dur_match.group(1))
 
-                    # Look for zoom/teams/meet link
                     link_match = re.search(r"(https?://(?:zoom\.us|teams\.microsoft\.com|meet\.google\.com)\S+)", text)
                     if link_match:
-                        result["location_or_link"] = link_match.group(1)
+                        result["location_or_link"] = link_match.group(1).rstrip(").,")
 
                     return result
             except (ValueError, TypeError):

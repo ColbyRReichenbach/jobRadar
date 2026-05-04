@@ -148,6 +148,37 @@ async def test_interview_suggestion_accept_creates_calendar_item(client, db_sess
 
 
 @pytest.mark.asyncio
+async def test_interview_suggestion_accept_requires_scheduled_time(client, db_session):
+    from backend.models import EmailEvent, Interview
+
+    email = EmailEvent(
+        sender="BankCo Scheduling",
+        sender_email="scheduling@bankco.com",
+        sender_domain="bankco.com",
+        subject="Select a timeslot for your interview at BankCo",
+        body="Please choose a timeslot for your interview. Your verification code is 113812.",
+        snippet="Select a timeslot for your interview.",
+        classification="interview_request",
+        company_name="BankCo",
+        confidence=0.91,
+        received_at=datetime(2026, 5, 3, 12, 0, tzinfo=timezone.utc),
+    )
+    db_session.add(email)
+    await db_session.commit()
+    await db_session.refresh(email)
+
+    accept_resp = await client.post(
+        f"/api/interview-suggestions/{email.id}/accept",
+        headers=AUTH_HEADER,
+        json={},
+    )
+
+    assert accept_resp.status_code == 400
+    assert "date and time" in accept_resp.json()["detail"]
+    assert (await db_session.execute(select(Interview))).scalars().all() == []
+
+
+@pytest.mark.asyncio
 async def test_interview_suggestion_dismiss_is_persistent(client, db_session):
     from backend.models import EmailEvent, InterviewSuggestionDecision
 

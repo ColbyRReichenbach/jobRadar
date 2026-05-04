@@ -34,6 +34,8 @@ REQUIRED_PRODUCTION_KEYS = (
     "GMAIL_CLIENT_SECRET",
     "DASHBOARD_URL",
     "API_URL",
+    "SOURCE_LINK_ENCRYPTION_KEY",
+    "SOURCE_LINK_HASH_KEY",
 )
 
 BACKUP_EVIDENCE_KEYS = (
@@ -101,5 +103,26 @@ def validate_production_environment(values: Mapping[str, str | None]) -> list[Re
         issues.append(ReadinessIssue("POSTGRES_BACKUPS_ENABLED", "PostgreSQL automated backups must be enabled before real-user beta."))
     if not (values.get("POSTGRES_BACKUP_PROVIDER") or "").strip():
         issues.append(ReadinessIssue("POSTGRES_BACKUP_PROVIDER", "Record the backup provider or plan, for example Neon automated backups."))
+
+    for key in (
+        "JOB_SEARCH_DIRECT_SOURCES_ENABLED",
+        "JOB_SEARCH_WORKDAY_ENABLED",
+        "JOB_SEARCH_CUSTOM_CRAWL_ENABLED",
+        "JOB_SEARCH_BROAD_PROVIDER_ENABLED",
+    ):
+        if not (values.get(key) or "").strip():
+            issues.append(ReadinessIssue(key, f"{key} must be explicitly set for source intelligence rollout."))
+
+    for key in (
+        "JOB_SEARCH_SERPAPI_MONTHLY_CAP",
+        "JOB_SEARCH_SERPAPI_USER_MONTHLY_CAP",
+        "SOURCE_VERIFICATION_MAX_SOURCES_PER_RUN",
+        "SOURCE_FETCH_MAX_BYTES",
+        "SOURCE_FETCH_TIMEOUT_SECONDS",
+    ):
+        if not (values.get(key) or "").strip():
+            issues.append(ReadinessIssue(key, f"{key} must be explicitly configured; do not rely on source-intelligence defaults."))
+        elif not _is_positive_int(values.get(key)):
+            issues.append(ReadinessIssue(key, f"{key} must be a positive integer."))
 
     return issues

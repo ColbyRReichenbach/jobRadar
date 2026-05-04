@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import type { Dispatch, MouseEvent, SetStateAction } from 'react';
 import { useId, useRef, useState } from 'react';
 import { Job } from '../types';
-import { searchJobs, createJob, checkJobDuplicates, getSearchMatchPreview } from '../lib/api';
+import { searchJobs, createJob, checkJobDuplicates, createResearchProfile, getSearchMatchPreview } from '../lib/api';
+import type { JobSearchResponse } from '../lib/api';
 import { DialogShell } from './DialogShell';
 
 interface JobSearchProps {
@@ -25,6 +26,9 @@ interface SearchResult {
   matchScore?: number | null;
   fitLabel?: 'best_fit' | 'good_fit' | 'stretch' | null;
   matchedSkills?: string[];
+  source?: string;
+  sourceLabel?: string;
+  freshness?: string;
 }
 
 function displayRole(result: SearchResult): string {
@@ -35,6 +39,37 @@ function displayCompany(result: SearchResult): string {
   return result.company || 'Company unavailable';
 }
 
+function providerLabel(source: string): string {
+  const labels: Record<string, string> = {
+    greenhouse: 'Greenhouse',
+    lever: 'Lever',
+    ashby: 'Ashby',
+    workable: 'Workable',
+    workday: 'Workday',
+    smartrecruiters: 'SmartRecruiters',
+    structured_data: 'Company source',
+    broad_search: 'Broad web',
+  };
+  return labels[source] || source.replace(/_/g, ' ');
+}
+
+function freshnessLabel(value: string): string {
+  if (value === 'seen_today') return 'Fresh today';
+  if (value === 'stale') return 'Stale';
+  return value.replace(/_/g, ' ');
+}
+
+function sourceStatusText(response: JobSearchResponse): string | null {
+  const summary = response.source_summary;
+  const mode = response.provider_status?.mode;
+  if (mode === 'provider_limited') return 'Broad search is not configured. Add a company career URL or try a known company.';
+  if (summary?.verified_source_count) return 'Searching verified company career sources.';
+  if (summary?.broad_provider_used) return 'No verified company source yet. Using broad web search.';
+  if (summary?.stale_source_count) return 'Known source needs refresh. We are checking it now.';
+  if (summary?.blocked_source_count) return 'This provider is not available through Opportunity Radar.';
+  return null;
+}
+
 export function JobSearch({ jobs, setJobs }: JobSearchProps) {
   const selectedJobTitleId = useId();
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -42,8 +77,11 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [sourceSummary, setSourceSummary] = useState<JobSearchResponse['source_summary'] | null>(null);
+  const [trackingSourceId, setTrackingSourceId] = useState<string | null>(null);
 
   const openExternal = (url?: string) => {
     if (!url) return;
@@ -53,10 +91,14 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
     setIsSearching(true);
+    setHasSearched(true);
     setErrorMessage(null);
     setStatusMessage(null);
+    setSourceSummary(null);
     try {
-      const results = await searchJobs(searchQuery);
+      const searchResponse = await searchJobs(searchQuery);
+      setSourceSummary(searchResponse.source_summary || null);
+      const results = searchResponse.results;
       const mappedResults: SearchResult[] = results.map((r: any) => ({
         id: r.id || r.url || Math.random().toString(),
         company: r.company || '',
@@ -68,6 +110,9 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
         description: r.description || '',
         logoUrl: r.logo_url || undefined,
         url: r.url,
+        source: r.source,
+        sourceLabel: r.source_label,
+        freshness: r.freshness,
       })).filter((result) => result.company || result.role || result.url);
       try {
         const preview = await getSearchMatchPreview(
@@ -100,7 +145,14 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
         setSearchResults(mappedResults);
       }
       if (results.length === 0) {
-        setStatusMessage('No matching jobs found for that search.');
+        const providerReasons = searchResponse.provider_status?.degraded_reasons || [];
+        setStatusMessage(
+          providerReasons.length
+            ? `No matching jobs found. ${providerReasons[0]}`
+            : 'No matching jobs found for that search.'
+        );
+      } else {
+        setStatusMessage(sourceStatusText(searchResponse));
       }
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'Search failed.');
@@ -171,6 +223,51 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
     }
   };
 
+  const handleTrackSource = async (e: MouseEvent, result: SearchResult) => {
+    e.stopPropagation();
+    if (!result.company || !result.role) {
+      setErrorMessage('This source is missing a company or job title, so it cannot be tracked yet.');
+      return;
+    }
+
+    setTrackingSourceId(result.id);
+    setErrorMessage(null);
+    setStatusMessage(null);
+    const sourceName = result.sourceLabel || (result.source ? providerLabel(result.source) : 'company source');
+    try {
+      await createResearchProfile({
+        name: `${result.company} ${result.role} source`,
+        objective: `Track ${result.role} opportunities at ${result.company} from ${sourceName}.`,
+        selected_domains: [],
+        selected_roles: [result.role],
+        selected_companies: [result.company],
+        keywords: [result.role],
+        excluded_keywords: [],
+        source_types: ['application'],
+        mode: 'internal',
+        frequency: 'weekly',
+        depth: 'standard',
+        notification_mode: 'in_app',
+        minimum_score: 70,
+        target_locations: result.location ? [result.location] : [],
+        remote_types: [],
+        seniority_levels: [],
+        research_source_scopes: [],
+        use_profile_context: true,
+        include_public_web_research: false,
+        max_search_queries: 8,
+        max_sources_per_run: 20,
+        active: true,
+      });
+      setStatusMessage(`Tracking ${result.company} source in Radar.`);
+      setSelectedJob(null);
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to track this source.');
+    } finally {
+      setTrackingSourceId(null);
+    }
+  };
+
   const fitBadge = (result: SearchResult) => {
     if (result.matchScore == null || !result.fitLabel) return null;
     const badgeStyles: Record<string, string> = {
@@ -187,6 +284,23 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
       <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${badgeStyles[result.fitLabel]}`}>
         {labelMap[result.fitLabel]}{typeof result.matchScore === 'number' ? ` • ${result.matchScore}` : ''}
       </span>
+    );
+  };
+
+  const sourceBadges = (result: SearchResult) => {
+    const labels = [
+      result.sourceLabel || (result.source ? providerLabel(result.source) : null),
+      result.freshness ? freshnessLabel(result.freshness) : null,
+    ].filter(Boolean);
+    if (!labels.length) return null;
+    return (
+      <div className="mt-2 flex flex-wrap gap-2">
+        {labels.map((label) => (
+          <span key={`${result.id}-${label}`} className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+            {label}
+          </span>
+        ))}
+      </div>
     );
   };
   return (
@@ -232,11 +346,26 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
           </div>
         )}
 
+        {sourceSummary && (
+          <div className="mb-6 flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600">
+            <span className="font-semibold text-slate-900">
+              {sourceSummary.broad_provider_used ? 'Broad fallback' : sourceSummary.verified_source_count > 0 ? 'Company sources' : 'Source status'}
+            </span>
+            <span>{sourceSummary.verified_source_count} verified</span>
+            <span>{sourceSummary.stale_source_count} stale</span>
+            <span>{sourceSummary.blocked_source_count} blocked</span>
+          </div>
+        )}
+
         {searchResults.length === 0 && !isSearching && (
           <div className="text-center py-16 text-slate-400">
             <Search className="w-12 h-12 mx-auto mb-4 opacity-30" />
-            <p className="text-lg font-serif">Search for jobs to get started</p>
-            <p className="text-sm mt-1">Try &quot;software engineer&quot; or &quot;product designer&quot;</p>
+            <p className="text-lg font-serif">{hasSearched ? 'No jobs returned' : 'Search for jobs to get started'}</p>
+            <p className="text-sm mt-1">
+              {hasSearched
+                ? 'Try a broader role query or check that a search provider is configured.'
+                : 'Try "software engineer" or "product designer"'}
+            </p>
           </div>
         )}
 
@@ -279,6 +408,7 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
                         {fitBadge(result)}
                       </div>
                     )}
+                    {sourceBadges(result)}
                   </div>
                 </div>
                 <button 
@@ -350,6 +480,7 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
                   <div className="min-w-0 flex-1">
                     <h2 id={selectedJobTitleId} className="text-2xl tracking-tight font-serif font-bold text-slate-900 break-words">{displayRole(selectedJob)}</h2>
                     <p className="text-lg text-slate-500 font-sans truncate">{displayCompany(selectedJob)}</p>
+                    {sourceBadges(selectedJob)}
                   </div>
                 </div>
                 <button 
@@ -413,6 +544,13 @@ export function JobSearch({ jobs, setJobs }: JobSearchProps) {
                     : jobs.some(j => j.company === selectedJob.company && j.role === selectedJob.role)
                       ? 'Saved to Pipeline'
                       : 'Save to Pipeline'}
+                </button>
+                <button
+                  onClick={(e) => handleTrackSource(e, selectedJob)}
+                  disabled={!selectedJob.company || !selectedJob.role || trackingSourceId === selectedJob.id}
+                  className="w-full sm:flex-1 py-3 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl font-medium transition-colors disabled:bg-slate-50 disabled:text-slate-400"
+                >
+                  {trackingSourceId === selectedJob.id ? 'Tracking...' : 'Track this source'}
                 </button>
                 {selectedJob?.url ? (
                   <button

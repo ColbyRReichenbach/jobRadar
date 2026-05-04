@@ -1,3 +1,5 @@
+import ssl
+
 from backend.database_url import normalize_asyncpg_database_url
 
 
@@ -10,7 +12,7 @@ def test_normalize_asyncpg_database_url_converts_neon_ssl_params_to_connect_args
     normalized_url, connect_args = normalize_asyncpg_database_url(url)
 
     assert normalized_url == "postgresql+asyncpg://user:pass@example.neon.tech/db"
-    assert connect_args == {"ssl": True}
+    assert isinstance(connect_args.get("ssl"), ssl.SSLContext)
 
 
 def test_normalize_asyncpg_database_url_converts_plain_postgres_urls_for_async_engine():
@@ -22,7 +24,7 @@ def test_normalize_asyncpg_database_url_converts_plain_postgres_urls_for_async_e
     normalized_url, connect_args = normalize_asyncpg_database_url(url)
 
     assert normalized_url == "postgresql+asyncpg://user:pass@example.neon.tech/db"
-    assert connect_args == {"ssl": True}
+    assert isinstance(connect_args.get("ssl"), ssl.SSLContext)
 
 
 def test_normalize_asyncpg_database_url_preserves_other_query_params():
@@ -34,7 +36,7 @@ def test_normalize_asyncpg_database_url_preserves_other_query_params():
     normalized_url, connect_args = normalize_asyncpg_database_url(url)
 
     assert normalized_url == "postgresql+asyncpg://user:pass@example.neon.tech/db?application_name=apptrail"
-    assert connect_args == {"ssl": True}
+    assert isinstance(connect_args.get("ssl"), ssl.SSLContext)
 
 
 def test_normalize_asyncpg_database_url_leaves_sqlite_urls_unchanged():

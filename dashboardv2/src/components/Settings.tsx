@@ -1,15 +1,18 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Bell, Mail, Save, Loader2, KeyRound, Copy, RefreshCw, Chrome, ExternalLink, Shield, Download, Trash2, Brain, Users, Globe } from 'lucide-react';
+import { Bell, Mail, Save, Loader2, KeyRound, Copy, RefreshCw, Chrome, ExternalLink, Shield, Download, Trash2, Brain, Users, Globe, Link2 } from 'lucide-react';
 import {
   ApiKeyStatus,
   ConsentStatus,
   GmailSyncAuditRow,
   NotificationPrefs,
+  deleteSourcePrivateLink,
   fetchApiKeyStatus,
   fetchConsent,
   fetchGmailSyncAudit,
   fetchNotificationPreferences,
+  fetchSourcePrivateLinks,
+  reprocessSourceIntelligence,
   generateApiKey,
   updateConsent,
   updateNotificationPreferences,
@@ -17,6 +20,7 @@ import {
   exportCsv,
   exportAccountData,
 } from '../lib/api';
+import type { SourcePrivateLink } from '../lib/api';
 import { useAuth } from '../lib/AuthContext';
 import { DEFAULT_LOCAL_NOTIFICATION_PREFS, LocalNotificationPrefs, loadLocalNotificationPrefs, saveLocalNotificationPrefs } from '../lib/localNotificationPrefs';
 
@@ -65,6 +69,10 @@ export function Settings() {
   const [exportingAccount, setExportingAccount] = useState(false);
   const [exportingCsv, setExportingCsv] = useState(false);
   const [gmailAuditRows, setGmailAuditRows] = useState<GmailSyncAuditRow[]>([]);
+  const [sourcePrivateLinks, setSourcePrivateLinks] = useState<SourcePrivateLink[]>([]);
+  const [deletingPrivateLinkId, setDeletingPrivateLinkId] = useState<string | null>(null);
+  const [reprocessingSources, setReprocessingSources] = useState(false);
+  const [showAllGmailDiagnostics, setShowAllGmailDiagnostics] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteInput, setDeleteInput] = useState('');
   const [deleting, setDeleting] = useState(false);
@@ -82,10 +90,11 @@ export function Settings() {
   const loadPrefs = async () => {
     setErrorMessage(null);
     try {
-      const [prefsData, keyStatus, consentData] = await Promise.all([
+      const [prefsData, keyStatus, consentData, privateLinks] = await Promise.all([
         fetchNotificationPreferences(),
         fetchApiKeyStatus(),
         fetchConsent(),
+        fetchSourcePrivateLinks().catch(() => []),
       ]);
       const auditRows = await fetchGmailSyncAudit(25).catch(() => []);
       setPrefs(prefsData);
@@ -93,6 +102,7 @@ export function Settings() {
       setPhone(prefsData.sms_phone || '');
       setApiKeyStatus(keyStatus);
       setConsent(consentData);
+      setSourcePrivateLinks(privateLinks);
       setGmailAuditRows(auditRows);
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : 'Failed to load settings.');
@@ -154,6 +164,35 @@ export function Settings() {
     }
   };
 
+  const handleDeletePrivateLink = async (id: string) => {
+    setDeletingPrivateLinkId(id);
+    setErrorMessage(null);
+    try {
+      await deleteSourcePrivateLink(id);
+      setSourcePrivateLinks((current) => current.filter((link) => link.id !== id));
+      setStatusMessage('Private link deleted.');
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to delete private link.');
+    } finally {
+      setDeletingPrivateLinkId(null);
+    }
+  };
+
+  const handleReprocessSourceLinks = async () => {
+    setReprocessingSources(true);
+    setErrorMessage(null);
+    try {
+      const result = await reprocessSourceIntelligence();
+      const privateLinks = await fetchSourcePrivateLinks().catch(() => sourcePrivateLinks);
+      setSourcePrivateLinks(privateLinks);
+      setStatusMessage(`Reprocessed ${result.links_stored} application links.`);
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Failed to reprocess application links.');
+    } finally {
+      setReprocessingSources(false);
+    }
+  };
+
   const togglePref = (
     key:
       | 'inbox_updates_enabled'
@@ -172,6 +211,8 @@ export function Settings() {
   ) => {
     setLocalPrefs((current) => ({ ...current, [key]: !current[key] }));
   };
+
+  const visibleGmailAuditRows = showAllGmailDiagnostics ? gmailAuditRows : gmailAuditRows.slice(0, 3);
 
   const createNewApiKey = async () => {
     setGeneratingKey(true);
@@ -398,7 +439,7 @@ export function Settings() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
-                    {gmailAuditRows.map((row) => (
+                    {visibleGmailAuditRows.map((row) => (
                       <tr key={row.id}>
                         <td className="max-w-[24rem] px-4 py-3">
                           <div className="font-medium text-slate-900 truncate">
@@ -424,6 +465,20 @@ export function Settings() {
                     ))}
                   </tbody>
                 </table>
+                {gmailAuditRows.length > 3 ? (
+                  <div className="flex flex-col gap-3 border-t border-slate-200 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-xs text-slate-500">
+                      Showing {visibleGmailAuditRows.length} of {gmailAuditRows.length} checked messages.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setShowAllGmailDiagnostics((current) => !current)}
+                      className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-100"
+                    >
+                      {showAllGmailDiagnostics ? 'Show fewer' : 'Show all checked messages'}
+                    </button>
+                  </div>
+                ) : null}
               </div>
             )}
           </motion.div>
@@ -631,6 +686,24 @@ export function Settings() {
                   </span>
                 </label>
 
+                <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={consent.consents.source_intelligence}
+                    onChange={(e) => setConsent({
+                      ...consent,
+                      consents: { ...consent.consents, source_intelligence: e.target.checked },
+                    })}
+                    className="mt-0.5 w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <span className="text-sm text-slate-700">
+                    <span className="flex items-center gap-1.5 font-medium text-slate-900">
+                      <Link2 className="w-3.5 h-3.5 text-emerald-500" /> Source Intelligence
+                    </span>
+                    Use sanitized job-source metadata from my applications to improve company job search. Private application links, scheduling links, and email contents are not shared.
+                  </span>
+                </label>
+
                 <button
                   onClick={async () => {
                     setSavingConsent(true);
@@ -641,6 +714,7 @@ export function Settings() {
                         ai_processing: consent.consents.ai_processing,
                         third_party_enrichment: consent.consents.third_party_enrichment,
                         web_research: consent.consents.web_research,
+                        source_intelligence: consent.consents.source_intelligence,
                       });
                       setConsent(updated);
                       setStatusMessage('Privacy preferences updated.');
@@ -657,6 +731,58 @@ export function Settings() {
                   {savingConsent ? <Loader2 className="w-4 h-4 animate-spin" /> : <Shield className="w-4 h-4" />}
                   Update Privacy Preferences
                 </button>
+
+                <div className="rounded-xl border border-slate-200 bg-white">
+                  <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                    <div>
+                      <h3 className="text-sm font-semibold text-slate-900">Private Application Links</h3>
+                      <p className="text-xs text-slate-500">Raw tokenized URLs stay encrypted and user-scoped.</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={handleReprocessSourceLinks}
+                        disabled={reprocessingSources}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        {reprocessingSources ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                        Reprocess
+                      </button>
+                      <button
+                        onClick={loadPrefs}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-50"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        Refresh
+                      </button>
+                    </div>
+                  </div>
+                  {sourcePrivateLinks.length > 0 ? (
+                    <div className="divide-y divide-slate-100">
+                      {sourcePrivateLinks.slice(0, 8).map((link) => (
+                        <div key={link.id} className="grid gap-3 px-4 py-3 text-xs text-slate-600 sm:grid-cols-[1fr_auto] sm:items-center">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-semibold text-slate-900">{link.provider || 'unknown'}</span>
+                              <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium">{link.link_type.replace(/_/g, ' ')}</span>
+                              <span className="rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-700">{link.sanitization_status.replace(/_/g, ' ')}</span>
+                            </div>
+                            <p className="mt-1 truncate text-slate-500">{link.company_domain || 'No company domain'} - {link.created_at ? new Date(link.created_at).toLocaleDateString() : 'Unknown date'}</p>
+                          </div>
+                          <button
+                            onClick={() => handleDeletePrivateLink(link.id)}
+                            disabled={deletingPrivateLinkId === link.id}
+                            className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-red-100 px-3 py-2 font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+                          >
+                            {deletingPrivateLinkId === link.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                            Delete
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="px-4 py-5 text-sm text-slate-500">No private application links stored.</div>
+                  )}
+                </div>
               </div>
             )}
 
