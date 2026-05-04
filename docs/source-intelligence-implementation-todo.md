@@ -519,42 +519,42 @@ Goal: safely convert user-owned Gmail/application evidence into private links an
 
 ### Gmail Sync Hook
 
-- [ ] After Gmail sync creates/updates `EmailEvent`, classify candidate URLs.
-- [ ] Write `user_application_links`.
-- [ ] Create `application_source_links` where application context exists.
-- [ ] If `source_intelligence=true`, enqueue redacted source discovery event.
+- [x] After Gmail sync creates/updates `EmailEvent`, classify candidate URLs.
+- [x] Write `user_application_links`.
+- [x] Create `application_source_links` where application context exists.
+- [x] If `source_intelligence=true`, create redacted source discovery event.
 - [ ] If parser finds safe provider metadata, enqueue source verification candidate.
-- [ ] Do not block Gmail sync on provider work.
+- [x] Do not block Gmail sync on provider work.
 
 ### Reprocessing
 
-- [ ] Add `backend/tasks/reprocess_source_intelligence.py`.
-- [ ] Reprocess existing `applications.job_url` and `email_events.action_url`.
-- [ ] Reprocess historical Gmail events with parser versioning.
-- [ ] Respect consent for shared source writes.
-- [ ] Process private user data only in user scope.
-- [ ] Make job idempotent.
+- [x] Add `backend/tasks/reprocess_source_intelligence.py`.
+- [x] Reprocess existing `applications.job_url` and `email_events.action_url`.
+- [x] Reprocess historical Gmail events with parser versioning.
+- [x] Respect consent for shared source writes.
+- [x] Process private user data only in user scope.
+- [x] Make job idempotent.
 
 ### Source Discovery
 
-- [ ] Add redacted evidence event creation.
-- [ ] Add evidence count updates without double counting duplicate task delivery.
+- [x] Add redacted evidence event creation.
+- [x] Keep duplicate task delivery from duplicating discovery events.
 - [ ] Add source poisoning controls:
-  - pending status by default
+  - [x] pending/needs_review status by default
   - conflicts to needs_review
   - recruiter agency domains cannot claim hiring company alone
   - company mapping requires employer-owned evidence
 
 ### Sprint 7 Tests
 
-- [ ] Test Gmail sync creates private link records.
-- [ ] Test source consent false blocks shared source writes.
-- [ ] Test source consent true creates redacted discovery event.
-- [ ] Test admin evidence contains no raw Gmail body, raw subject, query string, or tokens.
-- [ ] Test reprocessing is idempotent.
+- [x] Test Gmail sync creates private link records.
+- [x] Test source consent false blocks shared source writes.
+- [x] Test source consent true creates redacted discovery event.
+- [x] Test admin evidence contains no raw Gmail body, raw subject, query string, or tokens.
+- [x] Test reprocessing is idempotent.
 - [ ] Test source poisoning conflict goes to needs_review.
-- [ ] Run Gmail sync, consent, source privacy, and reprocessing tests.
-- [ ] Fix failures from logs and rerun until green.
+- [x] Run Gmail sync, consent, source privacy, and reprocessing tests.
+- [x] Fix failures from logs and rerun until green.
 
 ## Sprint 8: Admin Source Intelligence And User Settings UI
 

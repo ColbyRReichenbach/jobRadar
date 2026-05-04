@@ -76,6 +76,7 @@ async def _poll_gmail_async():
         classify_email,
     )
     from backend.services.email_parser import extract_sender_parts, parse_email_body
+    from backend.services.source_intelligence.discovery import process_stored_links_for_source_discovery
     from backend.services.source_intelligence.link_store import store_many_user_application_links
     from backend.services.source_intelligence.url_classifier import extract_urls_from_gmail_payload
     from backend.services.email_matcher import (
@@ -228,13 +229,19 @@ async def _poll_gmail_async():
                 db.add(event)
                 await db.flush()
                 if raw_candidate_urls:
-                    await store_many_user_application_links(
+                    stored_links = await store_many_user_application_links(
                         db,
                         user_id=user.id,
                         raw_urls=raw_candidate_urls,
                         application_id=application_id,
                         email_event_id=event.id,
                         created_from="gmail_poll",
+                    )
+                    await process_stored_links_for_source_discovery(
+                        db,
+                        user_id=user.id,
+                        stored_links=stored_links,
+                        discovered_from="gmail_poll",
                     )
                 await index_record(db, event)
 

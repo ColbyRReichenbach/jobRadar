@@ -29,6 +29,7 @@ celery_app = Celery(
         "backend.tasks.send_weekly_digest",
         "backend.tasks.run_research_radar",
         "backend.tasks.index_search_documents",
+        "backend.tasks.reprocess_source_intelligence",
     ],
 )
 

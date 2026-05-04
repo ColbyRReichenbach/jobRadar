@@ -104,6 +104,7 @@ from backend.services.notification_preferences import is_alert_enabled, serializ
 from backend.services.feature_flags import radar_enabled, radar_research_enabled
 from backend.services.research_radar.observability import build_trace_payload
 from backend.services.scraper import extract_job, validate_job_parse_url
+from backend.services.source_intelligence.discovery import process_stored_links_for_source_discovery
 from backend.services.source_intelligence.link_store import store_many_user_application_links, store_user_application_link
 from backend.services.source_intelligence.url_classifier import classify_url, extract_urls_from_gmail_payload, extract_urls_from_text
 from backend.services.source_intelligence.url_sanitizer import sanitize_public_job_url
@@ -1528,6 +1529,12 @@ async def create_application(payload: ApplicationCreate, auth: dict = Depends(ve
                 application_id=new_app.id,
                 created_from="application_create",
             )
+            await process_stored_links_for_source_discovery(
+                db,
+                user_id=user_id,
+                stored_links=[stored_link],
+                discovered_from="application_create",
+            )
             if stored_link.sanitized.canonical_public_url and not new_app.job_url:
                 new_app.job_url = stored_link.sanitized.canonical_public_url
         await db.commit()
@@ -1697,6 +1704,12 @@ async def update_application(
                 raw_url=payload.job_url,
                 application_id=app_row.id,
                 created_from="application_update",
+            )
+            await process_stored_links_for_source_discovery(
+                db,
+                user_id=user_id,
+                stored_links=[stored_link],
+                discovered_from="application_update",
             )
             if stored_link.sanitized.canonical_public_url:
                 app_row.job_url = stored_link.sanitized.canonical_public_url
@@ -2607,6 +2620,12 @@ async def accept_application_suggestion(
                 application_id=app_row.id,
                 created_from="application_suggestion_accept",
             )
+            await process_stored_links_for_source_discovery(
+                db,
+                user_id=user_id,
+                stored_links=[stored_link],
+                discovered_from="application_suggestion_accept",
+            )
             if stored_link.sanitized.canonical_public_url and not app_row.job_url:
                 app_row.job_url = stored_link.sanitized.canonical_public_url
 
@@ -2623,6 +2642,12 @@ async def accept_application_suggestion(
             raw_url=payload.job_url,
             application_id=app_row.id,
             created_from="application_suggestion_accept",
+        )
+        await process_stored_links_for_source_discovery(
+            db,
+            user_id=user_id,
+            stored_links=[stored_link],
+            discovered_from="application_suggestion_accept",
         )
         if stored_link.sanitized.canonical_public_url and not app_row.job_url:
             app_row.job_url = stored_link.sanitized.canonical_public_url
@@ -3505,13 +3530,19 @@ async def sync_gmail(
         db.add(email_event)
         await db.flush()
         if raw_candidate_urls:
-            await store_many_user_application_links(
+            stored_links = await store_many_user_application_links(
                 db,
                 user_id=user_id,
                 raw_urls=raw_candidate_urls,
                 application_id=app_id,
                 email_event_id=email_event.id,
                 created_from="gmail_sync",
+            )
+            await process_stored_links_for_source_discovery(
+                db,
+                user_id=user_id,
+                stored_links=stored_links,
+                discovered_from="gmail_sync",
             )
         await index_record(db, email_event)
         sync_stats["stored"] += 1
