@@ -55,6 +55,7 @@ These should be set on the backend API and any worker process unless noted other
 - `METRICS_BEARER_TOKEN` for Prometheus scraping in production
 - `READINESS_REQUIRE_CELERY=true`
 - `RADAR_ENABLED=true` for beta users, or `false` to disable all Radar API access and scheduled dispatch without a deploy
+- `RADAR_DISPATCH_INTERVAL_SECONDS=900` by default; increase for constrained environments if Radar can tolerate slower scheduled dispatch
 - `RADAR_RESEARCH_ENABLED=false` until public-web research and hybrid trackers are approved for the target environment
 - `RADAR_ALERT_MAX_PER_USER_PER_DAY=5` or lower for constrained beta cohorts
 - `COPILOT_ENABLED=false` until Copilot backend, frontend, evals, security tests, and admin telemetry are green
@@ -94,12 +95,17 @@ These should be set on the backend API and any worker process unless noted other
 - `GMAIL_CLIENT_ID`
 - `GMAIL_CLIENT_SECRET`
 - `GOOGLE_REDIRECT_URI`
+- `SCHEDULED_DB_JOBS_ENABLED=true` only when scheduled DB-backed worker jobs are required. Set `false` for idle/non-beta environments to let Neon scale to zero.
+- `GMAIL_POLLING_ENABLED=true` only when scheduled Gmail polling is required in this environment
+- `GMAIL_POLL_INTERVAL_SECONDS=900` by default; increase or disable for idle environments to reduce Neon wakeups
 
 ### Product integrations
 
 - `OPENAI_API_KEY` for classification, drafting, resume parsing, and resume tailoring
 - `HUNTER_API_KEY` if contact enrichment is enabled
 - `SERPAPI_KEY` if job search is enabled
+- `JOB_SOURCE_VERIFICATION_BEAT_ENABLED=false` until direct job-source verification is actively needed
+- `SOURCE_VERIFICATION_INTERVAL_SECONDS=900` when source verification beat is enabled
 - `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_FROM_NUMBER` if SMS alerts are enabled
 
 ### Observability And Readiness
@@ -107,6 +113,8 @@ These should be set on the backend API and any worker process unless noted other
 - `SENTRY_DSN` if Sentry is enabled
 - `SENTRY_ENVIRONMENT`
 - `PROMETHEUS_MULTIPROC_DIR` if you are exporting metrics from multi-process workers
+- `HEALTH_CHECK_DATABASE=false` for uptime monitors and platform liveness probes. Enable only when `/api/health` is intentionally used as a deep dependency check.
+- `HEALTH_CHECK_REDIS=false` for uptime monitors and platform liveness probes. Enable only when `/api/health` is intentionally used as a deep dependency check.
 - `CELERY_BEAT_MAX_AGE_SECONDS` if the default 180 second beat freshness threshold is not appropriate
 - `CELERY_READINESS_TIMEOUT_SECONDS` if worker ping needs a longer timeout
 
@@ -169,7 +177,8 @@ Production promotion requires:
 - required Railway, Vercel, API URL, and dashboard URL deployment configuration is present
 - migrations run successfully before worker and beat deployment
 - post-deploy smoke checks pass through `scripts/ci/run_post_deploy_smoke.sh`
-- `/api/health` and `/api/ready` return success
+- `/api/health` returns success without touching external dependencies
+- `/api/ready` returns success when a deliberate database, Redis, worker, and beat readiness check is needed
 - admin-only operational endpoints deny unauthenticated requests
 - feature flags are set deliberately for Radar, Copilot, experiments, search backend, and trace access
 
@@ -186,6 +195,7 @@ Production promotion requires:
 - refresh-token flow works
 - Gmail connect and manual sync work
 - a worker can pick up scheduled jobs
+- platform health checks and uptime monitors are pointed at `/api/live` or `/api/health`, not `/api/ready`
 - `/api/ready` returns 200 with database, Redis, worker, and beat checks healthy
 - `/metrics` is reachable from your monitoring system with `METRICS_BEARER_TOKEN`
 - `GET /api/ai/metrics` is admin-only
@@ -204,6 +214,7 @@ Production promotion requires:
 - confirm logs, Sentry, and metrics are visible
 - confirm AI safety, budget, and rate-limit alerts appear for admin users
 - confirm Celery beat heartbeat freshness stays within threshold
+- confirm the active Celery beat schedule matches the intended cost posture: `SCHEDULED_DB_JOBS_ENABLED`, Gmail polling, Radar dispatch, and source verification should be disabled or slowed when idle
 - confirm non-admin users receive 403 from audit, metrics, and extraction admin endpoints
 - confirm flipping `RADAR_ENABLED=false` blocks `/api/research/*` and stops scheduled Radar dispatch in the target environment
 - confirm flipping `COPILOT_ENABLED=false` blocks Copilot access after Copilot is implemented

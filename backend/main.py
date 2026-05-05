@@ -1399,21 +1399,28 @@ async def _check_celery_readiness(component_status: dict) -> bool:
 
 
 @app.get("/api/health")
-async def health(db: AsyncSession = Depends(get_db)):
+async def health():
     component_status = {
         "api": {"status": "ok"},
-        "database": {"status": "ok"},
     }
     overall_status = "ok"
 
-    try:
-        await db.execute(text("SELECT 1"))
-    except Exception as exc:
-        component_status["database"] = {"status": "error", "detail": str(exc)}
-        overall_status = "degraded"
+    if _env_flag("HEALTH_CHECK_DATABASE"):
+        component_status["database"] = {"status": "ok"}
+        try:
+            async with async_session_factory() as db:
+                await db.execute(text("SELECT 1"))
+        except Exception as exc:
+            component_status["database"] = {"status": "error", "detail": str(exc)}
+            overall_status = "degraded"
+    else:
+        component_status["database"] = {"status": "skipped", "detail": "Use /api/ready for database readiness."}
 
-    if not await _check_redis(component_status, require_configured=False):
-        overall_status = "degraded"
+    if _env_flag("HEALTH_CHECK_REDIS"):
+        if not await _check_redis(component_status, require_configured=True):
+            overall_status = "degraded"
+    else:
+        component_status["redis"] = {"status": "skipped", "detail": "Use /api/ready for Redis readiness."}
 
     payload = {
         "status": overall_status,

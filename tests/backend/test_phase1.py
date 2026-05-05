@@ -11,8 +11,8 @@ async def test_health_endpoint(client):
     assert "timestamp" in data
     assert "x-request-id" in resp.headers
     assert data["checks"]["api"]["status"] == "ok"
-    assert data["checks"]["database"]["status"] == "ok"
-    assert data["checks"]["redis"]["status"] == "not_configured"
+    assert data["checks"]["database"]["status"] == "skipped"
+    assert data["checks"]["redis"]["status"] == "skipped"
 
 
 @pytest.mark.asyncio
