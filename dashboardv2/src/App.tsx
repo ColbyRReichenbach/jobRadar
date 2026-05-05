@@ -307,9 +307,7 @@ function AppContent() {
       {/* Mobile Header */}
       <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-[#F5F5F0] border-b border-slate-200/60 z-40 flex items-center justify-between px-4">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 flex items-center justify-center bg-[#172033] rounded-xl shadow-sm">
-            <Logo className="w-6 h-6 text-white" />
-          </div>
+          <Logo className="h-10 w-10 shrink-0" />
           <span className="text-lg tracking-tight font-serif font-bold text-slate-900">
             Opportunity Radar
           </span>

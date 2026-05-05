@@ -90,9 +90,7 @@ export function Sidebar({ activeTab, setActiveTab, onGmailSync, collapsed = fals
         onClick={() => setActiveTab('dashboard')}
         title={collapsed ? 'Opportunity Radar' : undefined}
       >
-        <div className="w-8 h-8 flex items-center justify-center bg-[#172033] rounded-xl shadow-sm">
-          <Logo className="w-6 h-6 text-white" />
-        </div>
+        <Logo className={cn('shrink-0', collapsed ? 'h-10 w-10' : 'h-9 w-9')} />
         <span className={cn('text-lg tracking-tight font-serif font-bold text-slate-900', collapsed && 'sr-only')}>
           Opportunity Radar
         </span>
