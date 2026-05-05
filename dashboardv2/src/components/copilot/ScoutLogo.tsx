@@ -2,124 +2,6 @@ interface ScoutLogoProps {
   className?: string;
 }
 
-const scoutStyles = `
-  @keyframes scout-float {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-8px); }
-  }
-
-  @keyframes scout-thruster {
-    0%, 100% { opacity: 0.8; transform: scale(1); }
-    50% { opacity: 1; transform: scale(1.2); }
-  }
-
-  .scout-logo {
-    transition: transform 0.3s ease;
-  }
-
-  .scout-logo:hover {
-    transform: scale(1.05);
-  }
-
-  .scout-logo .scout-float {
-    animation: scout-float 4s ease-in-out infinite;
-  }
-
-  .scout-logo .scout-thruster {
-    animation: scout-thruster 2s ease-in-out infinite;
-    transform-origin: 200px 300px;
-  }
-
-  .scout-logo .scout-eye {
-    transition: transform 0.28s ease, fill 0.28s ease;
-    transform-origin: center;
-  }
-
-  .scout-logo:hover .scout-eye {
-    transform: translateY(-3px) scale(1.12);
-    fill: #A5D6A7;
-  }
-
-  .scout-logo .scout-cheek {
-    transform: scale(0);
-    transform-origin: center;
-    transition: transform 0.2s ease;
-  }
-
-  .scout-logo:hover .scout-cheek {
-    transform: scale(1);
-  }
-
-  .scout-logo .scout-left-arm,
-  .scout-logo .scout-left-hand,
-  .scout-logo .scout-right-arm,
-  .scout-logo .scout-right-hand {
-    transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
-  }
-
-  .scout-logo:hover .scout-left-arm,
-  .scout-logo:hover .scout-left-hand {
-    transform: translateX(-44px);
-  }
-
-  .scout-logo:hover .scout-right-arm,
-  .scout-logo:hover .scout-right-hand {
-    transform: translateX(44px);
-  }
-
-  .scout-logo .scout-particles {
-    opacity: 0;
-    transform: translateY(90px) scale(0.5);
-    transform-origin: 200px 180px;
-    transition: opacity 0.24s ease, transform 0.42s cubic-bezier(0.22, 1, 0.36, 1);
-  }
-
-  .scout-logo:hover .scout-particles {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-
-  .scout-logo .scout-spine,
-  .scout-logo .scout-front-spine {
-    opacity: 0;
-    transition: opacity 0.2s ease;
-  }
-
-  .scout-logo:hover .scout-spine,
-  .scout-logo:hover .scout-front-spine {
-    opacity: 1;
-  }
-
-  .scout-logo .scout-page {
-    transform: scaleX(0);
-    transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
-  }
-
-  .scout-logo .scout-left-page {
-    transform-origin: 195px 240px;
-  }
-
-  .scout-logo .scout-right-page {
-    transform-origin: 205px 240px;
-  }
-
-  .scout-logo:hover .scout-page {
-    transform: scaleX(1);
-  }
-
-  .scout-logo .scout-cover {
-    opacity: 1;
-    transform: scaleX(1);
-    transform-origin: 200px 240px;
-    transition: opacity 0.22s ease, transform 0.34s cubic-bezier(0.22, 1, 0.36, 1);
-  }
-
-  .scout-logo:hover .scout-cover {
-    opacity: 0;
-    transform: scaleX(0);
-  }
-`;
-
 export function ScoutLogo({ className = '' }: ScoutLogoProps) {
   return (
     <svg
@@ -129,7 +11,6 @@ export function ScoutLogo({ className = '' }: ScoutLogoProps) {
       aria-hidden="true"
       focusable="false"
     >
-      <style>{scoutStyles}</style>
       <g stroke="#EFEBE9" fill="none" strokeWidth="4" strokeDasharray="10 15" strokeLinecap="round">
         <circle cx="200" cy="200" r="180" />
         <circle cx="200" cy="200" r="130" />

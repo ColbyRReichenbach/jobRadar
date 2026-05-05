@@ -5,52 +5,6 @@ interface LogoProps {
   variant?: 'mark' | 'copilot';
 }
 
-const logoHoverStyles = `
-  @keyframes radar-spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-  }
-
-  @keyframes blip-pulse {
-    0% { opacity: 0.2; transform: scale(1); filter: drop-shadow(0 0 0px currentColor); }
-    1% { opacity: 1; transform: scale(1.15); filter: drop-shadow(0 0 12px currentColor); }
-    3% { opacity: 0.6; transform: scale(1.05); filter: drop-shadow(0 0 4px currentColor); }
-    5% { opacity: 1; transform: scale(1.1); filter: drop-shadow(0 0 8px currentColor); }
-    10% { opacity: 0.8; transform: scale(1.02); filter: drop-shadow(0 0 4px currentColor); }
-    25% { opacity: 0.2; transform: scale(1); filter: drop-shadow(0 0 0px currentColor); }
-    100% { opacity: 0.2; transform: scale(1); filter: drop-shadow(0 0 0px currentColor); }
-  }
-
-  .opportunity-radar-logo .radar-sweep-group {
-    transform-origin: 200px 200px;
-  }
-
-  .opportunity-radar-logo .blip {
-    opacity: 0.7;
-    transition: opacity 0.4s ease;
-    filter: drop-shadow(0 0 2px currentColor);
-  }
-
-  .opportunity-radar-logo:hover .radar-sweep-group {
-    animation: radar-spin 4s linear infinite;
-  }
-
-  .opportunity-radar-logo:hover .blip {
-    opacity: 0.2;
-    filter: drop-shadow(0 0 0px currentColor);
-  }
-
-  .opportunity-radar-logo:hover .blip-1 { animation: blip-pulse 4s linear infinite; animation-delay: 3.5s; }
-  .opportunity-radar-logo:hover .blip-2 { animation: blip-pulse 4s linear infinite; animation-delay: 0.5s; }
-  .opportunity-radar-logo:hover .blip-3 { animation: blip-pulse 4s linear infinite; animation-delay: 1.5s; }
-  .opportunity-radar-logo:hover .blip-4 { animation: blip-pulse 4s linear infinite; animation-delay: 2.5s; }
-
-  .opportunity-radar-logo .blip-1 { transform-origin: 280px 130px; color: #D97706; }
-  .opportunity-radar-logo .blip-2 { transform-origin: 270px 270px; color: #65A30D; }
-  .opportunity-radar-logo .blip-3 { transform-origin: 130px 270px; color: #B45309; }
-  .opportunity-radar-logo .blip-4 { transform-origin: 120px 130px; color: #78350F; }
-`;
-
 export function Logo({ className }: LogoProps) {
   return (
     <motion.svg
@@ -63,7 +17,6 @@ export function Logo({ className }: LogoProps) {
       whileHover={{ scale: 1.04 }}
       transition={{ type: 'spring', stiffness: 260, damping: 18 }}
     >
-      <style>{logoHoverStyles}</style>
       <path d="M120,330 l-15,40 h190 l-15,-40 z" fill="#5C4033" stroke="#2C1E16" strokeWidth="8" strokeLinejoin="round" />
       <path d="M105,370 h190 v12 a12,12 0 0,1 -12,12 h-166 a12,12 0 0,1 -12,-12 z" fill="#2C1E16" />
       <circle cx="200" cy="200" r="160" fill="#BCA37F" stroke="#2C1E16" strokeWidth="10" />
