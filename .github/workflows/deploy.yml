@@ -16,15 +16,12 @@ jobs:
     timeout-minutes: 5
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     env:
-      RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
       RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
       RAILWAY_ENVIRONMENT: ${{ secrets.RAILWAY_ENVIRONMENT }}
       RAILWAY_SERVICE: ${{ secrets.RAILWAY_SERVICE }}
       RAILWAY_WORKER_SERVICE: ${{ secrets.RAILWAY_WORKER_SERVICE }}
       RAILWAY_BEAT_SERVICE: ${{ secrets.RAILWAY_BEAT_SERVICE }}
-      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
       PRODUCTION_API_URL: ${{ vars.PRODUCTION_API_URL }}
       PRODUCTION_DASHBOARD_URL: ${{ vars.PRODUCTION_DASHBOARD_URL }}
     steps:
@@ -33,15 +30,12 @@ jobs:
           set -euo pipefail
           missing=0
           for name in \
-            RAILWAY_API_TOKEN \
+            RAILWAY_TOKEN \
             RAILWAY_PROJECT_ID \
             RAILWAY_ENVIRONMENT \
             RAILWAY_SERVICE \
             RAILWAY_WORKER_SERVICE \
             RAILWAY_BEAT_SERVICE \
-            VERCEL_TOKEN \
-            VERCEL_ORG_ID \
-            VERCEL_PROJECT_ID \
             PRODUCTION_API_URL \
             PRODUCTION_DASHBOARD_URL
           do
@@ -74,7 +68,7 @@ jobs:
 
       - name: Deploy backend to Railway
         env:
-          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: railway up --ci --service "${{ secrets.RAILWAY_SERVICE }}" --project "${{ secrets.RAILWAY_PROJECT_ID }}" --environment "${{ secrets.RAILWAY_ENVIRONMENT }}"
 
   run-migrations:
@@ -106,7 +100,7 @@ jobs:
 
       - name: Run database migrations
         env:
-          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: railway run --service "${{ secrets.RAILWAY_SERVICE }}" --project "${{ secrets.RAILWAY_PROJECT_ID }}" --environment "${{ secrets.RAILWAY_ENVIRONMENT }}" alembic upgrade head
 
   deploy-worker:
@@ -129,7 +123,7 @@ jobs:
 
       - name: Deploy worker to Railway
         env:
-          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: railway up --ci --service "${{ secrets.RAILWAY_WORKER_SERVICE }}" --project "${{ secrets.RAILWAY_PROJECT_ID }}" --environment "${{ secrets.RAILWAY_ENVIRONMENT }}"
 
   deploy-beat:
@@ -152,7 +146,7 @@ jobs:
 
       - name: Deploy beat to Railway
         env:
-          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: railway up --ci --service "${{ secrets.RAILWAY_BEAT_SERVICE }}" --project "${{ secrets.RAILWAY_PROJECT_ID }}" --environment "${{ secrets.RAILWAY_ENVIRONMENT }}"
 
   deploy-dashboard:
@@ -160,15 +154,28 @@ jobs:
     needs: validate-deployment-config
     if: ${{ needs.validate-deployment-config.result == 'success' && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success') }}
     env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
     steps:
+      - name: Check Vercel CLI deploy configuration
+        id: vercel_config
+        run: |
+          if [ -n "${VERCEL_TOKEN:-}" ] && [ -n "${VERCEL_ORG_ID:-}" ] && [ -n "${VERCEL_PROJECT_ID:-}" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Skipping Vercel CLI deploy because Vercel secrets are not fully configured. Vercel Git integration may still deploy the dashboard."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Check out repository
+        if: ${{ steps.vercel_config.outputs.configured == 'true' }}
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
       - name: Set up Node.js
+        if: ${{ steps.vercel_config.outputs.configured == 'true' }}
         uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -176,20 +183,25 @@ jobs:
           cache-dependency-path: dashboardv2/package-lock.json
 
       - name: Install dashboard dependencies
+        if: ${{ steps.vercel_config.outputs.configured == 'true' }}
         working-directory: dashboardv2
         run: npm ci --include=optional
 
       - name: Install Vercel CLI
+        if: ${{ steps.vercel_config.outputs.configured == 'true' }}
         run: npm install --global vercel@latest
 
       - name: Pull Vercel environment information
-        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+        if: ${{ steps.vercel_config.outputs.configured == 'true' }}
+        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
 
       - name: Build Vercel production artifacts
-        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+        if: ${{ steps.vercel_config.outputs.configured == 'true' }}
+        run: vercel build --prod --token="$VERCEL_TOKEN"
 
       - name: Deploy dashboard to Vercel
-        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+        if: ${{ steps.vercel_config.outputs.configured == 'true' }}
+        run: vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
 
   post-deploy-smoke:
     runs-on: ubuntu-latest
