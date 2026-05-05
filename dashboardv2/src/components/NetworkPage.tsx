@@ -938,9 +938,9 @@ export function NetworkPage({ onOpenEmail, onRefreshData, focusRequest }: Networ
             initialFocusRef={contactNameInputRef}
             wrapperClassName="fixed inset-0 z-50 flex items-end justify-center p-0 md:items-center md:p-4"
             overlayClassName="absolute inset-0 bg-slate-900/20 backdrop-blur-sm"
-            panelClassName="bg-white w-full max-w-xl rounded-t-[2rem] md:rounded-3xl shadow-2xl overflow-hidden"
+            panelClassName="bg-white w-full max-w-xl max-h-[92dvh] md:max-h-[min(760px,calc(100dvh-2rem))] rounded-t-[2rem] md:rounded-3xl shadow-2xl overflow-hidden flex flex-col"
           >
-            <div className="p-4 md:p-6 border-b border-slate-100 flex items-center justify-between">
+            <div className="shrink-0 p-4 md:p-6 border-b border-slate-100 flex items-center justify-between">
               <h2 id={contactFormTitleId} className="text-xl font-serif font-bold text-slate-900">
                 {contactFormMode === 'edit' ? 'Edit Contact' : 'Add Contact'}
               </h2>
@@ -952,7 +952,7 @@ export function NetworkPage({ onOpenEmail, onRefreshData, focusRequest }: Networ
                 <X className="w-5 h-5 text-slate-500" />
               </button>
             </div>
-            <div className="p-4 md:p-6 grid gap-4 sm:grid-cols-2">
+            <div className="min-h-0 flex-1 overflow-y-auto p-4 md:p-6 grid gap-4 sm:grid-cols-2">
               {contactDuplicateWarning && (
                 <div className={`sm:col-span-2 rounded-xl border px-3 py-3 text-sm ${
                   contactDuplicateWarning.type === 'hard'
@@ -1065,7 +1065,7 @@ export function NetworkPage({ onOpenEmail, onRefreshData, focusRequest }: Networ
                 />
               </div>
             </div>
-            <div className="px-4 pb-4 md:px-6 md:pb-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <div className="shrink-0 border-t border-slate-100 bg-white px-4 py-4 md:px-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <button
                 onClick={() => setShowContactForm(false)}
                 className="px-4 py-2 bg-white border border-slate-200 text-slate-700 text-sm font-medium rounded-xl"
