@@ -886,9 +886,9 @@ function AddInterviewModal({
       initialFocusRef={closeButtonRef}
       wrapperClassName="fixed inset-0 z-50 flex items-center justify-center p-4"
       overlayClassName="absolute inset-0 bg-slate-900/20 backdrop-blur-sm"
-      panelClassName="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden"
+      panelClassName="bg-white w-full max-w-md max-h-[calc(100dvh-2rem)] rounded-3xl shadow-2xl overflow-hidden flex flex-col"
     >
-        <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+        <div className="shrink-0 p-6 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
           <h2 id={titleId} className="text-xl font-serif font-bold text-slate-900">
             {isEditing ? 'Edit Interview' : 'Add Interview'}
           </h2>
@@ -901,63 +901,67 @@ function AddInterviewModal({
             <X className="w-5 h-5 text-slate-500" />
           </button>
         </div>
-        <form onSubmit={handleSubmit} noValidate className="p-6 space-y-4">
-          {formError ? (
-            <div id={formErrorId} className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-              {formError}
-            </div>
-          ) : null}
-          <div>
-            <label className="text-xs font-medium text-slate-500 mb-1 block">Type</label>
-            <select value={type} onChange={e => setType(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm">
-              <option value="phone">Phone Screen</option>
-              <option value="technical">Technical</option>
-              <option value="onsite">Onsite</option>
-              <option value="panel">Panel</option>
-              <option value="virtual">Virtual</option>
-            </select>
-          </div>
-          <div>
-            <label htmlFor={dateTimeInputId} className="text-xs font-medium text-slate-500 mb-1 block">Date & Time</label>
-            <input
-              id={dateTimeInputId}
-              type="datetime-local"
-              value={scheduledAt}
-              onChange={e => {
-                setScheduledAt(e.target.value);
-                if (e.target.value) setFormError(null);
-              }}
-              required
-              aria-invalid={Boolean(formError)}
-              aria-describedby={formError ? formErrorId : undefined}
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm"
-            />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
+        <form onSubmit={handleSubmit} noValidate className="min-h-0 flex flex-1 flex-col">
+          <div className="min-h-0 flex-1 overflow-y-auto p-6 space-y-4">
+            {formError ? (
+              <div id={formErrorId} className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                {formError}
+              </div>
+            ) : null}
             <div>
-              <label className="text-xs font-medium text-slate-500 mb-1 block">Duration (min)</label>
-              <input type="number" value={duration} onChange={e => setDuration(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm" />
+              <label className="text-xs font-medium text-slate-500 mb-1 block">Type</label>
+              <select value={type} onChange={e => setType(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm">
+                <option value="phone">Phone Screen</option>
+                <option value="technical">Technical</option>
+                <option value="onsite">Onsite</option>
+                <option value="panel">Panel</option>
+                <option value="virtual">Virtual</option>
+              </select>
             </div>
             <div>
-              <label className="text-xs font-medium text-slate-500 mb-1 block">Interviewer</label>
-              <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Name" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm" />
+              <label htmlFor={dateTimeInputId} className="text-xs font-medium text-slate-500 mb-1 block">Date & Time</label>
+              <input
+                id={dateTimeInputId}
+                type="datetime-local"
+                value={scheduledAt}
+                onChange={e => {
+                  setScheduledAt(e.target.value);
+                  if (e.target.value) setFormError(null);
+                }}
+                required
+                aria-invalid={Boolean(formError)}
+                aria-describedby={formError ? formErrorId : undefined}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+              />
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <label className="text-xs font-medium text-slate-500 mb-1 block">Duration (min)</label>
+                <input type="number" value={duration} onChange={e => setDuration(e.target.value)} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-500 mb-1 block">Interviewer</label>
+                <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Name" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm" />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-500 mb-1 block">Contact Email</label>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="recruiter@company.com" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-500 mb-1 block">Location / Link</label>
+              <input type="text" value={location} onChange={e => setLocation(e.target.value)} placeholder="Zoom link or address" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-500 mb-1 block">Notes</label>
+              <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm resize-none" />
             </div>
           </div>
-          <div>
-            <label className="text-xs font-medium text-slate-500 mb-1 block">Contact Email</label>
-            <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="recruiter@company.com" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm" />
+          <div className="shrink-0 border-t border-slate-100 bg-white p-4 sm:p-6">
+            <button type="submit" className="w-full px-4 py-2.5 text-sm bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-medium shadow-sm">
+              {isEditing ? 'Save Interview' : 'Add Interview'}
+            </button>
           </div>
-          <div>
-            <label className="text-xs font-medium text-slate-500 mb-1 block">Location / Link</label>
-            <input type="text" value={location} onChange={e => setLocation(e.target.value)} placeholder="Zoom link or address" className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm" />
-          </div>
-          <div>
-            <label className="text-xs font-medium text-slate-500 mb-1 block">Notes</label>
-            <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm resize-none" />
-          </div>
-          <button type="submit" className="w-full px-4 py-2.5 text-sm bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-medium shadow-sm">
-            {isEditing ? 'Save Interview' : 'Add Interview'}
-          </button>
         </form>
     </DialogShell>
   );

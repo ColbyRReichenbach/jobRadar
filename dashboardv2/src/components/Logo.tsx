@@ -5,125 +5,63 @@ interface LogoProps {
   variant?: 'mark' | 'copilot';
 }
 
-const drawTransition = { duration: 1.05, ease: 'easeInOut' } as const;
-const nodeSpring = { type: 'spring', stiffness: 320, damping: 18 } as const;
-const sage = '#95AA98';
-const brass = '#C89B52';
-const cream = '#F7F1E7';
-
-export function Logo({ className, variant = 'mark' }: LogoProps) {
-  const showCopilotSpark = variant === 'copilot';
-
+export function Logo({ className }: LogoProps) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
-      <motion.path
-        d="M19.55 11.8C19.8 16.45 16.35 19.6 12.1 19.75C7.55 19.9 4.25 16.55 4.3 12.25C4.35 7.85 7.65 4.55 11.95 4.35C14.85 4.2 17.25 5.45 18.75 7.55"
-        stroke="currentColor"
-        strokeWidth="1.65"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        variants={{
-          initial: { pathLength: 0, opacity: 0 },
-          animate: { pathLength: 1, opacity: 1, transition: drawTransition },
-          hover: { pathLength: [1, 0.18, 1], transition: { duration: 1.45, ease: 'easeInOut' } },
-        }}
-      />
-      <motion.path
-        d="M7.7 14.65C6.85 12.25 7.7 9.55 9.95 8.1C12.15 6.7 15.25 7.35 16.45 9.9"
-        stroke="currentColor"
-        strokeWidth="1"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        opacity="0.32"
-        variants={{
-          initial: { pathLength: 0, opacity: 0 },
-          animate: { pathLength: 1, opacity: 0.34, transition: { duration: 0.7, delay: 0.3, ease: 'easeOut' } },
-          hover: { opacity: [0.34, 0.58, 0.34], transition: { duration: 0.9 } },
-        }}
-      />
-      <motion.path
-        d="M11.75 12.15C14.35 10.45 16.55 8.45 18.75 5.7"
-        stroke={sage}
-        strokeWidth="2"
-        strokeLinecap="round"
-        variants={{
-          initial: { pathLength: 0, opacity: 0 },
-          animate: { pathLength: 1, opacity: 1, transition: { ...drawTransition, delay: 0.22 } },
-          hover: { pathLength: [1, 0, 1], opacity: [1, 0.45, 1], transition: { duration: 1.1, ease: 'easeInOut' } },
-        }}
-      />
-      <motion.path
-        d="M6.55 15.55C8 13.55 9.45 12.25 11.35 12.05C13.05 11.85 14.15 12.8 15.45 12.25C16.6 11.8 17.35 10.35 18.45 8.25"
-        stroke="currentColor"
-        strokeWidth="1.45"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        variants={{
-          initial: { pathLength: 0, opacity: 0 },
-          animate: { pathLength: 1, opacity: 1, transition: { duration: 0.95, delay: 0.58, ease: 'easeOut' } },
-          hover: { pathLength: [1, 0.2, 1], transition: { duration: 1.2, ease: 'easeInOut' } },
-        }}
-      />
-      <motion.circle
-        cx="6.55"
-        cy="15.55"
-        r="0.95"
-        fill={cream}
-        variants={{
-          initial: { scale: 0 },
-          animate: { scale: 1, transition: { ...nodeSpring, delay: 0.74 } },
-          hover: { scale: [1, 1.25, 1], transition: { duration: 0.45 } },
-        }}
-        style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
-      />
-      <motion.circle
-        cx="11.35"
-        cy="12.05"
-        r="0.95"
-        fill={cream}
-        variants={{
-          initial: { scale: 0 },
-          animate: { scale: 1, transition: { ...nodeSpring, delay: 0.88 } },
-          hover: { scale: [1, 1.25, 1], transition: { duration: 0.45, delay: 0.08 } },
-        }}
-        style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
-      />
-      <motion.circle
-        cx="15.45"
-        cy="12.25"
-        r="0.95"
-        fill={cream}
-        variants={{
-          initial: { scale: 0 },
-          animate: { scale: 1, transition: { ...nodeSpring, delay: 1.02 } },
-          hover: { scale: [1, 1.25, 1], transition: { duration: 0.45, delay: 0.16 } },
-        }}
-        style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
-      />
-      <motion.circle
-        cx="18.45"
-        cy="8.25"
-        r="1.45"
-        fill={brass}
-        variants={{
-          initial: { scale: 0 },
-          animate: { scale: 1, transition: { ...nodeSpring, delay: 1.18 } },
-          hover: { scale: [1, 1.34, 1], transition: { duration: 0.48, delay: 0.24 } },
-        }}
-        style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
-      />
-      {showCopilotSpark ? (
-        <motion.path
-          d="M18.6 2.75L19.2 4.5L20.95 5.1L19.2 5.7L18.6 7.45L18 5.7L16.25 5.1L18 4.5Z"
-          fill={brass}
-          variants={{
-            initial: { scale: 0, rotate: -20 },
-            animate: { scale: 1, rotate: 0, transition: { delay: 1.35, duration: 0.28 } },
-            hover: { scale: [1, 1.18, 1], rotate: [0, 12, 0], transition: { duration: 0.7 } },
-          }}
-          style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
-        />
-      ) : null}
-    </svg>
+    <motion.svg
+      className={`opportunity-radar-logo block overflow-visible ${className || ''}`}
+      viewBox="0 0 400 400"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      role="img"
+      aria-label="Opportunity Radar logo"
+      whileHover={{ scale: 1.04 }}
+      transition={{ type: 'spring', stiffness: 260, damping: 18 }}
+    >
+      <path d="M120,330 l-15,40 h190 l-15,-40 z" fill="#5C4033" stroke="#2C1E16" strokeWidth="8" strokeLinejoin="round" />
+      <path d="M105,370 h190 v12 a12,12 0 0,1 -12,12 h-166 a12,12 0 0,1 -12,-12 z" fill="#2C1E16" />
+      <circle cx="200" cy="200" r="160" fill="#BCA37F" stroke="#2C1E16" strokeWidth="10" />
+      <circle cx="200" cy="200" r="140" fill="#3E2723" stroke="#2C1E16" strokeWidth="10" />
+      <circle cx="200" cy="200" r="95" fill="none" stroke="#D7CCC8" strokeWidth="2" strokeDasharray="8 8" opacity="0.3" />
+      <circle cx="200" cy="200" r="50" fill="none" stroke="#D7CCC8" strokeWidth="2" strokeDasharray="4 4" opacity="0.3" />
+      <path d="M60,200 h280 M200,60 v280" stroke="#D7CCC8" strokeWidth="2" opacity="0.2" />
+      <g className="radar-sweep-group">
+        <path d="M200,200 L200,60 A140,140 0 0,1 340,200 Z" fill="#D7CCC8" opacity="0.25" />
+        <line x1="200" y1="200" x2="340" y2="200" stroke="#D7CCC8" strokeWidth="5" strokeLinecap="round" />
+      </g>
+      <g className="blip blip-1">
+        <circle cx="280" cy="130" r="22" fill="currentColor" stroke="#2C1E16" strokeWidth="4" />
+        <circle cx="277" cy="127" r="6" fill="none" stroke="#FFFFFF" strokeWidth="2.5" />
+        <line x1="281.5" y1="131.5" x2="288" y2="138" stroke="#FFFFFF" strokeWidth="3" strokeLinecap="round" />
+        <path d="M270,120 Q270,116 266,116 Q270,116 270,112 Q270,116 274,116 Q270,116 270,120 Z" fill="#FFFFFF" />
+      </g>
+      <g className="blip blip-2">
+        <circle cx="270" cy="270" r="22" fill="currentColor" stroke="#2C1E16" strokeWidth="4" />
+        <line x1="264" y1="264" x2="276" y2="276" stroke="#FFFFFF" strokeWidth="2.5" />
+        <line x1="276" y1="264" x2="264" y2="276" stroke="#FFFFFF" strokeWidth="2.5" />
+        <circle cx="264" cy="264" r="3.5" fill="#FFFFFF" />
+        <circle cx="276" cy="264" r="3.5" fill="#FFFFFF" />
+        <circle cx="276" cy="276" r="3.5" fill="#FFFFFF" />
+        <circle cx="264" cy="276" r="3.5" fill="#FFFFFF" />
+      </g>
+      <g className="blip blip-3">
+        <circle cx="130" cy="270" r="22" fill="currentColor" stroke="#2C1E16" strokeWidth="4" />
+        <rect x="120" y="261" width="20" height="18" rx="2" fill="none" stroke="#FFFFFF" strokeWidth="2.5" />
+        <line x1="120" y1="267" x2="140" y2="267" stroke="#FFFFFF" strokeWidth="2" />
+        <circle cx="125" cy="273" r="1.5" fill="#FFFFFF" />
+        <circle cx="131" cy="273" r="1.5" fill="#FFFFFF" />
+      </g>
+      <g className="blip blip-4">
+        <circle cx="120" cy="130" r="22" fill="currentColor" stroke="#2C1E16" strokeWidth="4" />
+        <path d="M109,124 h22 v14 h-22 z" fill="none" stroke="#FFFFFF" strokeWidth="2.5" strokeLinejoin="round" />
+        <path d="M109,124 l11,8 l11,-8" fill="none" stroke="#FFFFFF" strokeWidth="2.5" strokeLinejoin="round" />
+        <path d="M125,135 l5,-5 m 3,-3 l2,-2" fill="none" stroke="#FFFFFF" strokeWidth="2.5" strokeLinecap="round" />
+        <circle cx="135" cy="120" r="4" fill="#D97706" stroke="#FFFFFF" strokeWidth="1.5" />
+      </g>
+      <path d="M 60 200 A 140 140 0 0 1 340 200 Q 200 130 60 200 Z" fill="#FFFFFF" opacity="0.06" />
+      <g className="center-hub">
+        <circle cx="200" cy="200" r="12" fill="#2C1E16" stroke="#D7CCC8" strokeWidth="4" />
+        <circle cx="200" cy="200" r="4" fill="#FFFFFF" />
+      </g>
+    </motion.svg>
   );
 }

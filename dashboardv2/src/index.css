@@ -10,6 +10,196 @@ body {
   font-family: var(--font-sans);
 }
 
+.opportunity-radar-logo .radar-sweep-group {
+  transform-origin: 200px 200px;
+}
+
+.opportunity-radar-logo .blip {
+  opacity: 0.7;
+  transition: opacity 0.4s ease;
+  filter: drop-shadow(0 0 2px currentColor);
+}
+
+.opportunity-radar-logo:hover .radar-sweep-group {
+  animation: radar-spin 4s linear infinite;
+}
+
+.opportunity-radar-logo:hover .blip {
+  opacity: 0.2;
+  filter: drop-shadow(0 0 0px currentColor);
+}
+
+.opportunity-radar-logo:hover .blip-1 {
+  animation: blip-pulse 4s linear infinite;
+  animation-delay: 3.5s;
+}
+
+.opportunity-radar-logo:hover .blip-2 {
+  animation: blip-pulse 4s linear infinite;
+  animation-delay: 0.5s;
+}
+
+.opportunity-radar-logo:hover .blip-3 {
+  animation: blip-pulse 4s linear infinite;
+  animation-delay: 1.5s;
+}
+
+.opportunity-radar-logo:hover .blip-4 {
+  animation: blip-pulse 4s linear infinite;
+  animation-delay: 2.5s;
+}
+
+.opportunity-radar-logo .blip-1 {
+  transform-origin: 280px 130px;
+  color: #D97706;
+}
+
+.opportunity-radar-logo .blip-2 {
+  transform-origin: 270px 270px;
+  color: #65A30D;
+}
+
+.opportunity-radar-logo .blip-3 {
+  transform-origin: 130px 270px;
+  color: #B45309;
+}
+
+.opportunity-radar-logo .blip-4 {
+  transform-origin: 120px 130px;
+  color: #78350F;
+}
+
+.scout-logo {
+  transition: transform 0.3s ease;
+}
+
+.scout-logo:hover {
+  transform: scale(1.05);
+}
+
+.scout-logo .scout-float {
+  animation: scout-float 4s ease-in-out infinite;
+}
+
+.scout-logo .scout-thruster {
+  animation: scout-thruster 2s ease-in-out infinite;
+  transform-origin: 200px 300px;
+}
+
+.scout-logo .scout-eye {
+  transition: transform 0.28s ease, fill 0.28s ease;
+  transform-origin: center;
+}
+
+.scout-logo:hover .scout-eye {
+  transform: translateY(-3px) scale(1.12);
+  fill: #A5D6A7;
+}
+
+.scout-logo .scout-cheek {
+  transform: scale(0);
+  transform-origin: center;
+  transition: transform 0.2s ease;
+}
+
+.scout-logo:hover .scout-cheek {
+  transform: scale(1);
+}
+
+.scout-logo .scout-left-arm,
+.scout-logo .scout-left-hand,
+.scout-logo .scout-right-arm,
+.scout-logo .scout-right-hand {
+  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.scout-logo:hover .scout-left-arm,
+.scout-logo:hover .scout-left-hand {
+  transform: translateX(-44px);
+}
+
+.scout-logo:hover .scout-right-arm,
+.scout-logo:hover .scout-right-hand {
+  transform: translateX(44px);
+}
+
+.scout-logo .scout-particles {
+  opacity: 0;
+  transform: translateY(90px) scale(0.5);
+  transform-origin: 200px 180px;
+  transition: opacity 0.24s ease, transform 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.scout-logo:hover .scout-particles {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.scout-logo .scout-spine,
+.scout-logo .scout-front-spine {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.scout-logo:hover .scout-spine,
+.scout-logo:hover .scout-front-spine {
+  opacity: 1;
+}
+
+.scout-logo .scout-page {
+  transform: scaleX(0);
+  transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.scout-logo .scout-left-page {
+  transform-origin: 195px 240px;
+}
+
+.scout-logo .scout-right-page {
+  transform-origin: 205px 240px;
+}
+
+.scout-logo:hover .scout-page {
+  transform: scaleX(1);
+}
+
+.scout-logo .scout-cover {
+  opacity: 1;
+  transform: scaleX(1);
+  transform-origin: 200px 240px;
+  transition: opacity 0.22s ease, transform 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.scout-logo:hover .scout-cover {
+  opacity: 0;
+  transform: scaleX(0);
+}
+
+@keyframes radar-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes blip-pulse {
+  0% { opacity: 0.2; transform: scale(1); filter: drop-shadow(0 0 0px currentColor); }
+  1% { opacity: 1; transform: scale(1.15); filter: drop-shadow(0 0 12px currentColor); }
+  3% { opacity: 0.6; transform: scale(1.05); filter: drop-shadow(0 0 4px currentColor); }
+  5% { opacity: 1; transform: scale(1.1); filter: drop-shadow(0 0 8px currentColor); }
+  10% { opacity: 0.8; transform: scale(1.02); filter: drop-shadow(0 0 4px currentColor); }
+  25% { opacity: 0.2; transform: scale(1); filter: drop-shadow(0 0 0px currentColor); }
+  100% { opacity: 0.2; transform: scale(1); filter: drop-shadow(0 0 0px currentColor); }
+}
+
+@keyframes scout-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+@keyframes scout-thruster {
+  0%, 100% { opacity: 0.8; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+
 html {
   -webkit-text-size-adjust: 100%;
 }

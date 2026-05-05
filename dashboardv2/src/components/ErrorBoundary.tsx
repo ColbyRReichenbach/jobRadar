@@ -43,9 +43,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
       <div className="min-h-screen flex items-center justify-center bg-[#F5F5F0] p-4">
         <div className="w-full max-w-lg">
           <div className="text-center mb-8">
-            <div className="w-14 h-14 flex items-center justify-center bg-[#172033] rounded-2xl shadow-sm mx-auto mb-4">
-              <Logo className="w-9 h-9 text-white" />
-            </div>
+            <Logo className="mx-auto mb-4 h-20 w-20" />
             <h1 className="text-3xl tracking-tight font-serif font-bold text-slate-900">
               Opportunity Radar hit an unexpected error
             </h1>
