@@ -5,6 +5,8 @@ import pytest
 async def test_email_classifier_invalid_model_category_uses_rules(monkeypatch):
     from backend.services import email_classifier
 
+    monkeypatch.setenv("GMAIL_CLASSIFIER_MODE", "legacy")
+
     async def _invalid_category(*args, **kwargs):
         return {
             "classification": "promotion",
@@ -29,6 +31,8 @@ async def test_email_classifier_invalid_model_category_uses_rules(monkeypatch):
 @pytest.mark.asyncio
 async def test_email_classifier_normalizes_model_payload(monkeypatch):
     from backend.services import email_classifier
+
+    monkeypatch.setenv("GMAIL_CLASSIFIER_MODE", "legacy")
 
     async def _messy_valid_payload(*args, **kwargs):
         return {
@@ -64,6 +68,8 @@ async def test_email_classifier_normalizes_model_payload(monkeypatch):
 @pytest.mark.asyncio
 async def test_email_classifier_quarantines_prompt_injection_before_model_call(monkeypatch):
     from backend.services import email_classifier
+
+    monkeypatch.setenv("GMAIL_CLASSIFIER_MODE", "legacy")
 
     async def _unexpected_model_call(*args, **kwargs):
         raise AssertionError("model should not receive quarantined email content")

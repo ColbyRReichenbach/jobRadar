@@ -2,6 +2,26 @@
 
 This index is generated from immutable report folders under `docs/interview-artifacts/generated`.
 
+## Reading Order
+
+Static architecture and governance artifacts:
+
+- [Cost Scaling Memo](cost-scaling-memo.md)
+- [AI Governance Artifact](ai-governance-artifact.md)
+- [Risk Control Artifact](risk-control-artifact.md)
+- [Model Risk Management](model-risk-management.md)
+- [Architecture Walkthrough](architecture-walkthrough.md)
+- [Demo Script](demo-script.md)
+- [Known AI Limitations and Deferred Controls](known-ai-limitations-and-deferred-controls.md)
+
+Projection snapshots:
+
+- [Cost Scaling Projection](generated/2026-05-02-cost-scaling-projection.md)
+- [Governance Snapshot](generated/2026-05-02-governance-snapshot.md)
+- [Risk Controls Snapshot](generated/2026-05-02-risk-controls-snapshot.md)
+
+Projection artifacts are planning tools and must not claim live enterprise traffic.
+
 | Date | Report | Type | Dataset | Model | Prompt | Decision |
 | --- | --- | --- | --- | --- | --- | --- |
 | 2026-05-02 | [Radar Lineage Report - Banking AI Assistant Hiring Radar](generated/2026-05-02_radar-lineage_radar-lineage-v1-22222222_gpt-5-4_deterministic-lineage-v1/report.md) | radar_lineage | radar-lineage-v1-22222222 | gpt-5.4 | deterministic-lineage-v1 | pending_admin_review |
