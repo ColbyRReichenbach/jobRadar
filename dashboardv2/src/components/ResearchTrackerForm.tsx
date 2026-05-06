@@ -104,6 +104,12 @@ function buildFormState(profile?: ResearchProfile | null): ResearchTrackerFormVa
   };
 }
 
+function deriveTrackerName(objective: string): string {
+  const cleaned = objective.replace(/\s+/g, ' ').trim();
+  if (!cleaned) return 'New Radar tracker';
+  return cleaned.length > 72 ? `${cleaned.slice(0, 69).trim()}...` : cleaned;
+}
+
 function SectionLabel({ title, body }: { title: string; body: string }) {
   return (
     <div>
@@ -175,6 +181,7 @@ export function ResearchTrackerForm({
   const [keywordsText, setKeywordsText] = useState(joinList(profile?.keywords));
   const [excludedKeywordsText, setExcludedKeywordsText] = useState(joinList(profile?.excluded_keywords));
   const [locationsText, setLocationsText] = useState(joinList(profile?.target_locations));
+  const [submitMessage, setSubmitMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const next = buildFormState(profile);
@@ -185,19 +192,26 @@ export function ResearchTrackerForm({
     setKeywordsText(joinList(next.keywords));
     setExcludedKeywordsText(joinList(next.excluded_keywords));
     setLocationsText(joinList(next.target_locations));
+    setSubmitMessage(null);
   }, [profile, mode]);
 
   const supportsReports = form.mode === 'research' || form.mode === 'hybrid';
   const supportsSignals = form.mode === 'internal' || form.mode === 'hybrid';
   const canUseResearchMode = researchConsentEnabled;
 
-  const canSubmit = useMemo(() => {
-    if (!form.name.trim()) return false;
-    if (!form.objective.trim()) return false;
-    if (supportsReports && !researchConsentEnabled) return false;
-    if (!supportsReports) return form.source_types.length > 0;
-    return true;
+  const validationError = useMemo(() => {
+    if (!form.name.trim() && !form.objective.trim()) {
+      return 'Add a tracker name or describe what Radar should watch.';
+    }
+    if (supportsReports && !researchConsentEnabled) {
+      return 'Research and hybrid trackers need core, AI processing, and web research consent first.';
+    }
+    if (!supportsReports && form.source_types.length === 0) {
+      return 'Choose at least one activity source, or switch this tracker to research mode.';
+    }
+    return null;
   }, [form.name, form.objective, form.source_types.length, researchConsentEnabled, supportsReports]);
+  const canSubmit = !validationError;
 
   useEffect(() => {
     setForm((current) => {
@@ -220,15 +234,23 @@ export function ResearchTrackerForm({
     setKeywordsText('');
     setExcludedKeywordsText('');
     setLocationsText('');
+    setSubmitMessage(null);
   };
 
   const submit = async () => {
-    if (!canSubmit) return;
+    if (validationError) {
+      setSubmitMessage(validationError);
+      return;
+    }
+
+    const trimmedName = form.name.trim();
+    const trimmedObjective = form.objective.trim();
+    const fallbackName = trimmedName || deriveTrackerName(trimmedObjective);
 
     const payload: ResearchTrackerFormValues = {
       ...form,
-      name: form.name.trim(),
-      objective: form.objective.trim(),
+      name: fallbackName,
+      objective: trimmedObjective || fallbackName,
       selected_domains: parseList(domainsText),
       selected_roles: parseList(rolesText),
       selected_companies: parseList(companiesText),
@@ -240,14 +262,19 @@ export function ResearchTrackerForm({
       research_source_scopes: supportsReports ? form.research_source_scopes : [],
     };
 
-    if (mode === 'create') {
-      await onCreate(payload);
-      resetCreateState();
-      return;
-    }
+    setSubmitMessage(null);
+    try {
+      if (mode === 'create') {
+        await onCreate(payload);
+        resetCreateState();
+        return;
+      }
 
-    if (profile) {
-      await onUpdate(profile.id, payload);
+      if (profile) {
+        await onUpdate(profile.id, payload);
+      }
+    } catch (error) {
+      setSubmitMessage(error instanceof Error ? error.message : 'Failed to save tracker.');
     }
   };
 
@@ -274,7 +301,7 @@ export function ResearchTrackerForm({
         <div>
           <h2 className="font-semibold text-slate-800">{mode === 'create' ? 'Create Radar' : 'Tracker settings'}</h2>
           <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500">
-            Describe what you want Radar to watch. Optional details and production-style controls stay tucked away until you need them.
+            Start with a tracker name or a plain-language description. Optional details and production-style controls stay tucked away until you need them.
           </p>
         </div>
         {mode === 'edit' && profile?.last_run_at ? (
@@ -296,7 +323,7 @@ export function ResearchTrackerForm({
           <div>
             <div className="text-sm font-semibold text-slate-900">Start with plain language</div>
             <p className="mt-1 text-xs leading-5 text-slate-500">
-              Radar can infer roles, companies, domains, and keywords from this description.
+              Only one field is required to start. Radar can infer roles, companies, domains, and keywords from your description.
             </p>
           </div>
           {COPILOT_ENABLED ? (
@@ -722,7 +749,17 @@ export function ResearchTrackerForm({
           </span>
         </label>
 
-        <div className="flex flex-wrap justify-end gap-2">
+        <div className="flex flex-col items-stretch gap-2 sm:items-end">
+          {submitMessage ? (
+            <div className={`max-w-md rounded-lg border px-3 py-2 text-xs leading-5 ${
+              canSubmit ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-amber-200 bg-amber-50 text-amber-800'
+            }`}>
+              {submitMessage}
+            </div>
+          ) : !canSubmit ? (
+            <div className="max-w-md text-xs leading-5 text-slate-500">{validationError}</div>
+          ) : null}
+          <div className="flex flex-wrap justify-end gap-2">
           {mode === 'create' && onCancelCreate ? (
             <button
               type="button"
@@ -744,12 +781,13 @@ export function ResearchTrackerForm({
           ) : null}
           <button
             type="button"
-            disabled={busy || !canSubmit}
+            disabled={busy}
             onClick={submit}
             className="rounded-lg bg-slate-900 px-3 py-2 text-sm text-white disabled:opacity-50"
           >
             {busy ? 'Saving...' : mode === 'create' ? 'Create tracker' : 'Save changes'}
           </button>
+          </div>
         </div>
       </div>
     </div>

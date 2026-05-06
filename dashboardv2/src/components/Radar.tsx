@@ -169,7 +169,7 @@ export function Radar({ focusRequest }: RadarProps) {
   const startCreateTracker = () => {
     setEditingMode('create');
     setCreateDraftKey((current) => current + 1);
-    setCreateDraftNotice('New tracker draft started. Fill in the details below.');
+    setCreateDraftNotice('New tracker draft is open below. Add a name or describe what Radar should watch, then create it.');
     if (createDraftNoticeTimeoutRef.current) {
       window.clearTimeout(createDraftNoticeTimeoutRef.current);
     }
@@ -365,6 +365,10 @@ export function Radar({ focusRequest }: RadarProps) {
       const created = await createResearchProfile(payload);
       setEditingMode('edit');
       await load(created.id, undefined, undefined, created.mode === 'research' ? 'reports' : 'signals');
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to create tracker');
+      throw error;
     } finally {
       setCreating(false);
     }
@@ -562,6 +566,12 @@ export function Radar({ focusRequest }: RadarProps) {
           {errorMessage ? (
             <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
               {errorMessage}
+            </div>
+          ) : null}
+
+          {createDraftNotice ? (
+            <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800" role="status" aria-live="polite">
+              {createDraftNotice}
             </div>
           ) : null}
         </div>
