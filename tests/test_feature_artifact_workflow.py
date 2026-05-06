@@ -104,4 +104,3 @@ def test_source_retrieval_payload_contains_recommended_strategy_and_cases():
     assert payload["metrics"]["recommended_strategy"]
     assert payload["case_results"]
     assert "failure_type_counts" in payload["failure_summary"]
-

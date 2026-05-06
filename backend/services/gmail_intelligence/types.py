@@ -125,4 +125,3 @@ class HybridClassificationResult:
     model: str | None = None
     cost_estimate_cents: float = 0.0
     fallback_reason: str | None = None
-

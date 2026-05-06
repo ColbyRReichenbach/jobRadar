@@ -98,4 +98,3 @@ def test_lane_comparison_payload_writes_feature_bundle(tmp_path: Path):
     assert (output_dir / "report.md").exists()
     assert (output_dir / "case_results.jsonl").exists()
     assert json.loads((output_dir / "metrics.json").read_text(encoding="utf-8"))["failures_resolved_by_live"] == 1
-

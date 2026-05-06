@@ -84,4 +84,3 @@ def test_synthetic_datasets_run_through_current_evals(tmp_path: Path):
     red_team_result = run_red_team_eval([tmp_path / "evals/red_team/synthetic_safety_v1.jsonl"])
     assert red_team_result.case_count >= 50
     assert red_team_result.fail_closed_gate is True
-

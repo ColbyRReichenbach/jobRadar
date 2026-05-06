@@ -224,4 +224,3 @@ def run_copilot_router_eval(dataset_path: Path | str = DEFAULT_ROUTER_DATASET) -
         },
         "decision_note": "Router eval is fixture-based and intended to expose missing product routes before live routing is enabled.",
     }
-
