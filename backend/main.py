@@ -3252,6 +3252,7 @@ async def sync_gmail(
     from backend.dependencies import check_ai_consent
 
     # Get Gmail credentials
+    sync_started_perf = time.perf_counter()
     user_id = current_user.id
     user_email = current_user.email or ""
     stmt = select(GmailToken).where(GmailToken.user_id == user_id)
@@ -3318,6 +3319,21 @@ async def sync_gmail(
     sync_days = max(1, min(sync_days, 365))
     sync_limit = max(1, min(sync_limit, 500))
     sync_query = f"newer_than:{sync_days}d"
+    sync_query_mode = "lookback"
+    sync_cursor_after = None
+    if days is None:
+        last_sync_result = await db.execute(
+            select(func.max(EmailSyncAudit.created_at)).where(EmailSyncAudit.user_id == user_id)
+        )
+        last_sync_at = last_sync_result.scalar_one_or_none()
+        if last_sync_at:
+            if last_sync_at.tzinfo is None:
+                last_sync_at = last_sync_at.replace(tzinfo=timezone.utc)
+            lookback_floor = datetime.now(timezone.utc) - timedelta(days=sync_days)
+            cutoff = max(lookback_floor, last_sync_at - timedelta(days=1))
+            sync_query = f"after:{cutoff.strftime('%Y/%m/%d')}"
+            sync_query_mode = "incremental"
+            sync_cursor_after = cutoff.isoformat()
 
     messages: list[dict] = []
     next_page_token = None
@@ -3345,6 +3361,10 @@ async def sync_gmail(
         "skipped_noise": 0,
         "skipped_not_relevant": 0,
         "quarantined": 0,
+        "source_link_errors": 0,
+        "index_errors": 0,
+        "query_mode": sync_query_mode,
+        "cursor_after": sync_cursor_after,
     }
     new_count = 0
     emails_synced = []
@@ -3515,7 +3535,7 @@ async def sync_gmail(
             continue
 
         # Company identity
-        company_info = get_company_info(sender_email_addr, include_logo=enrichment_enabled)
+        company_info = get_company_info(sender_email_addr, include_logo=False)
         email_company_name = classification.get("company_name") or company_info.get("company_name")
 
         # Match to application
@@ -3576,21 +3596,37 @@ async def sync_gmail(
         db.add(email_event)
         await db.flush()
         if raw_candidate_urls:
-            stored_links = await store_many_user_application_links(
-                db,
-                user_id=user_id,
-                raw_urls=raw_candidate_urls,
-                application_id=app_id,
-                email_event_id=email_event.id,
-                created_from="gmail_sync",
+            try:
+                async with db.begin_nested():
+                    stored_links = await store_many_user_application_links(
+                        db,
+                        user_id=user_id,
+                        raw_urls=raw_candidate_urls,
+                        application_id=app_id,
+                        email_event_id=email_event.id,
+                        created_from="gmail_sync",
+                    )
+                    await process_stored_links_for_source_discovery(
+                        db,
+                        user_id=user_id,
+                        stored_links=stored_links,
+                        discovered_from="gmail_sync",
+                    )
+            except Exception as exc:
+                sync_stats["source_link_errors"] += 1
+                request_logger.warning(
+                    "gmail_source_link_processing_skipped",
+                    error_type=type(exc).__name__.replace("\r", " ").replace("\n", " "),
+                    candidate_url_count=len(raw_candidate_urls),
+                )
+        try:
+            await index_record(db, email_event)
+        except Exception as exc:
+            sync_stats["index_errors"] += 1
+            request_logger.warning(
+                "gmail_search_indexing_skipped",
+                error_type=type(exc).__name__.replace("\r", " ").replace("\n", " "),
             )
-            await process_stored_links_for_source_discovery(
-                db,
-                user_id=user_id,
-                stored_links=stored_links,
-                discovered_from="gmail_sync",
-            )
-        await index_record(db, email_event)
         sync_stats["stored"] += 1
         record_sync_audit(
             gmail_message_id=msg_id,
@@ -3649,6 +3685,9 @@ async def sync_gmail(
     if messages or new_count > 0 or current_user.notifications_started_at is not None:
         await db.commit()
 
+    duration_ms = round((time.perf_counter() - sync_started_perf) * 1000, 2)
+    sync_stats["duration_ms"] = duration_ms
+
     return {
         "status": "ok",
         "sync_run_id": str(sync_run_id),
@@ -3656,6 +3695,9 @@ async def sync_gmail(
         "total_found": len(messages),
         "sync_days": sync_days,
         "max_messages": sync_limit,
+        "query_mode": sync_query_mode,
+        "cursor_after": sync_cursor_after,
+        "duration_ms": duration_ms,
         "stats": sync_stats,
         "emails": emails_synced[:10],
     }

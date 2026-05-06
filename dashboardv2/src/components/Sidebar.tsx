@@ -48,10 +48,13 @@ export function Sidebar({ activeTab, setActiveTab, onGmailSync, collapsed = fals
       const result = await syncGmail();
       onGmailSync?.();
       const checkedCount = result.stats?.fetched ?? result.total_found;
+      const durationMs = result.duration_ms ?? result.stats?.duration_ms;
+      const durationText = durationMs ? ` in ${(durationMs / 1000).toFixed(1)}s` : '';
+      const modeText = result.query_mode === 'incremental' ? ' incrementally' : '';
       setSyncMessage(
         result.new_emails > 0
-          ? `Synced ${result.new_emails} new emails from ${checkedCount} checked.`
-          : `Gmail sync checked ${checkedCount} emails with no new matches.`
+          ? `Synced${modeText} ${result.new_emails} new emails from ${checkedCount} checked${durationText}.`
+          : `Gmail sync checked${modeText} ${checkedCount} emails with no new matches${durationText}.`
       );
     } catch (err) {
       setSyncError(err instanceof Error ? err.message : 'Gmail sync failed.');
@@ -133,7 +136,7 @@ export function Sidebar({ activeTab, setActiveTab, onGmailSync, collapsed = fals
         {!user ? (
           /* Sign in button when not authenticated */
           <button
-            onClick={signIn}
+            onClick={() => signIn()}
             title={collapsed ? 'Sign in with Google' : undefined}
             className={cn(
               'w-full flex items-center justify-center bg-white border border-slate-200 rounded-xl font-medium text-sm text-slate-700 hover:bg-slate-50 transition-colors shadow-sm',

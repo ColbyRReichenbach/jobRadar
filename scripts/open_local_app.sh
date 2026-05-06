@@ -44,6 +44,26 @@ wait_for_url() {
   return 1
 }
 
+verify_backend_identity() {
+  local openapi
+  if ! openapi="$(curl -fsS "$BACKEND_URL/openapi.json" 2>/dev/null)"; then
+    log "Backend health responded, but OpenAPI metadata was unavailable at $BACKEND_URL."
+    log "Check that AppTrail is the process listening on port 8000."
+    return 1
+  fi
+
+  if ! python3 -c 'import json,sys; data=json.load(sys.stdin); paths=data.get("paths",{}); raise SystemExit(0 if "/api/gmail/sync" in paths and "/api/auth/local-login" in paths else 1)' <<<"$openapi"; then
+    log "Port 8000 is responding, but it is not the AppTrail backend expected by the dashboard."
+    log "Stop the process currently using port 8000, then rerun this script."
+    if have_command lsof; then
+      lsof -nP -iTCP:8000 -sTCP:LISTEN || true
+    fi
+    return 1
+  fi
+
+  log "Backend route check passed."
+}
+
 ensure_env_file() {
   if [[ -f "$ENV_FILE" ]]; then
     return
@@ -171,6 +191,7 @@ main() {
   docker compose up --build -d
 
   wait_for_url "$BACKEND_URL/api/health" "Backend API"
+  verify_backend_identity
   wait_for_url "$DASHBOARD_URL" "Dashboard"
 
   open_url "$DASHBOARD_URL"

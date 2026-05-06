@@ -1,3 +1,5 @@
+import base64
+import uuid
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -6,6 +8,207 @@ from sqlalchemy import select
 
 from backend.gmail_token_crypto import encrypt_gmail_token
 from tests.conftest import AUTH_HEADER, TEST_USER_ID
+
+
+@pytest.mark.asyncio
+async def test_gmail_sync_uses_incremental_query_after_previous_sync(client, db_session):
+    from backend.models import EmailSyncAudit, GmailToken
+
+    token = GmailToken(
+        user_id=TEST_USER_ID,
+        access_token=encrypt_gmail_token("access-token"),
+        refresh_token=encrypt_gmail_token("refresh-token"),
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+    )
+    previous_sync_at = datetime.now(timezone.utc) - timedelta(days=2)
+    db_session.add_all([
+        token,
+        EmailSyncAudit(
+            sync_run_id=uuid.uuid4(),
+            user_id=TEST_USER_ID,
+            gmail_message_id="previous-msg",
+            decision="stored",
+            reason="job_related",
+            created_at=previous_sync_at,
+        ),
+    ])
+    await db_session.commit()
+
+    gmail_service = Mock()
+    gmail_service.users.return_value.messages.return_value.list.return_value.execute.return_value = {"messages": []}
+
+    with patch("googleapiclient.discovery.build", return_value=gmail_service):
+        resp = await client.post("/api/gmail/sync", headers=AUTH_HEADER)
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["query_mode"] == "incremental"
+    expected_cutoff = (previous_sync_at - timedelta(days=1)).strftime("%Y/%m/%d")
+    gmail_service.users.return_value.messages.return_value.list.assert_called_once()
+    assert gmail_service.users.return_value.messages.return_value.list.call_args.kwargs["q"] == f"after:{expected_cutoff}"
+
+
+@pytest.mark.asyncio
+async def test_gmail_sync_explicit_days_uses_lookback_query(client, db_session):
+    from backend.models import EmailSyncAudit, GmailToken
+
+    token = GmailToken(
+        user_id=TEST_USER_ID,
+        access_token=encrypt_gmail_token("access-token"),
+        refresh_token=encrypt_gmail_token("refresh-token"),
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+    )
+    db_session.add_all([
+        token,
+        EmailSyncAudit(
+            sync_run_id=uuid.uuid4(),
+            user_id=TEST_USER_ID,
+            gmail_message_id="previous-msg",
+            decision="stored",
+            reason="job_related",
+            created_at=datetime.now(timezone.utc) - timedelta(days=2),
+        ),
+    ])
+    await db_session.commit()
+
+    gmail_service = Mock()
+    gmail_service.users.return_value.messages.return_value.list.return_value.execute.return_value = {"messages": []}
+
+    with patch("googleapiclient.discovery.build", return_value=gmail_service):
+        resp = await client.post("/api/gmail/sync?days=30", headers=AUTH_HEADER)
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["query_mode"] == "lookback"
+    gmail_service.users.return_value.messages.return_value.list.assert_called_once()
+    assert gmail_service.users.return_value.messages.return_value.list.call_args.kwargs["q"] == "newer_than:30d"
+
+
+@pytest.mark.asyncio
+async def test_gmail_sync_keeps_email_when_source_link_crypto_missing(client, db_session):
+    from backend.models import EmailEvent, GmailToken, UserApplicationLink
+
+    token = GmailToken(
+        user_id=TEST_USER_ID,
+        access_token=encrypt_gmail_token("access-token"),
+        refresh_token=encrypt_gmail_token("refresh-token"),
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+    )
+    db_session.add(token)
+    await db_session.commit()
+
+    html = '<a href="https://boards.greenhouse.io/acme/jobs/123?utm_source=email">View job</a>'
+    gmail_service = Mock()
+    gmail_service.users.return_value.messages.return_value.list.return_value.execute.return_value = {
+        "messages": [{"id": "sync-msg-missing-source-crypto"}]
+    }
+    gmail_service.users.return_value.messages.return_value.get.return_value.execute.return_value = {
+        "threadId": "thread-missing-source-crypto",
+        "snippet": "Application update",
+        "payload": {
+            "mimeType": "text/html",
+            "headers": [
+                {"name": "From", "value": "Recruiting Team <jobs@acme.com>"},
+                {"name": "Subject", "value": "Application update"},
+                {"name": "Date", "value": "Wed, 11 Mar 2026 10:00:00 +0000"},
+            ],
+            "body": {"data": base64.urlsafe_b64encode(html.encode("utf-8")).decode("ascii")},
+        },
+    }
+
+    with patch("googleapiclient.discovery.build", return_value=gmail_service):
+        with patch(
+            "backend.services.email_parser.parse_email_body",
+            return_value="We received your application.",
+        ):
+            with patch(
+                "backend.services.email_classifier.classify_email",
+                new=AsyncMock(return_value={
+                    "classification": "job_update",
+                    "action_needed": False,
+                    "summary": "Application update",
+                    "confidence": 0.85,
+                }),
+            ):
+                with patch(
+                    "backend.services.source_intelligence.link_store.hash_source_link",
+                    side_effect=RuntimeError("SOURCE_LINK_HASH_KEY is required for source-link hashing"),
+                ):
+                    resp = await client.post("/api/gmail/sync", headers=AUTH_HEADER)
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["new_emails"] == 1
+    assert body["stats"]["source_link_errors"] == 1
+
+    event_result = await db_session.execute(
+        select(EmailEvent).where(EmailEvent.gmail_message_id == "sync-msg-missing-source-crypto")
+    )
+    assert event_result.scalar_one_or_none() is not None
+
+    link_result = await db_session.execute(select(UserApplicationLink))
+    assert link_result.scalars().all() == []
+
+
+@pytest.mark.asyncio
+async def test_gmail_sync_keeps_email_when_search_indexing_fails(client, db_session):
+    from backend.models import EmailEvent, GmailToken
+
+    token = GmailToken(
+        user_id=TEST_USER_ID,
+        access_token=encrypt_gmail_token("access-token"),
+        refresh_token=encrypt_gmail_token("refresh-token"),
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+    )
+    db_session.add(token)
+    await db_session.commit()
+
+    gmail_service = Mock()
+    gmail_service.users.return_value.messages.return_value.list.return_value.execute.return_value = {
+        "messages": [{"id": "sync-msg-index-fail"}]
+    }
+    gmail_service.users.return_value.messages.return_value.get.return_value.execute.return_value = {
+        "threadId": "thread-index-fail",
+        "snippet": "Application update",
+        "payload": {
+            "headers": [
+                {"name": "From", "value": "Recruiting Team <jobs@acme.com>"},
+                {"name": "Subject", "value": "Application update"},
+                {"name": "Date", "value": "Wed, 11 Mar 2026 10:00:00 +0000"},
+            ],
+            "body": {"data": ""},
+        },
+    }
+
+    with patch("googleapiclient.discovery.build", return_value=gmail_service):
+        with patch(
+            "backend.services.email_parser.parse_email_body",
+            return_value="We received your application.",
+        ):
+            with patch(
+                "backend.services.email_classifier.classify_email",
+                new=AsyncMock(return_value={
+                    "classification": "job_update",
+                    "action_needed": False,
+                    "summary": "Application update",
+                    "confidence": 0.85,
+                }),
+            ):
+                with patch(
+                    "backend.services.search.indexer.index_record",
+                    new=AsyncMock(side_effect=RuntimeError("index down")),
+                ):
+                    resp = await client.post("/api/gmail/sync", headers=AUTH_HEADER)
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["new_emails"] == 1
+    assert body["stats"]["index_errors"] == 1
+
+    event_result = await db_session.execute(
+        select(EmailEvent).where(EmailEvent.gmail_message_id == "sync-msg-index-fail")
+    )
+    assert event_result.scalar_one_or_none() is not None
 
 
 @pytest.mark.asyncio

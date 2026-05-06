@@ -1,11 +1,12 @@
 import { createContext, useContext, useEffect, useState, useCallback, useRef, ReactNode } from 'react';
-import { UserProfile, fetchMe, clearAuthToken, buildGoogleAuthStartUrl, LOCAL_DEV_AUTH_ENABLED, setAuthToken, setUnauthorizedHandler, exchangeAuthCode, signInLocalDev } from './api';
+import { UserProfile, fetchMe, clearAuthToken, buildGoogleAuthStartUrl, LOCAL_DEV_AUTH_ENABLED, LocalAuthOptions, setAuthToken, setUnauthorizedHandler, exchangeAuthCode, signInLocalDev } from './api';
 
 interface AuthContextType {
   user: UserProfile | null;
   loading: boolean;
   needsConsent: boolean;
-  signIn: () => Promise<void>;
+  signIn: (options?: LocalAuthOptions) => Promise<void>;
+  signInGoogle: () => void;
   signOut: () => void;
   connectGmail: () => Promise<void>;
   connectCalendar: () => Promise<void>;
@@ -17,6 +18,7 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   needsConsent: false,
   signIn: async () => {},
+  signInGoogle: () => {},
   signOut: () => {},
   connectGmail: async () => {},
   connectCalendar: async () => {},
@@ -76,14 +78,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => setUnauthorizedHandler(null);
   }, []);
 
-  const signIn = useCallback(async () => {
+  const signIn = useCallback(async (options: LocalAuthOptions = {}) => {
     if (LOCAL_DEV_AUTH_ENABLED) {
-      await signInLocalDev();
+      await signInLocalDev(options);
       await refreshUser();
       return;
     }
     window.location.href = buildGoogleAuthStartUrl();
   }, [refreshUser]);
+
+  const signInGoogle = useCallback(() => {
+    window.location.href = buildGoogleAuthStartUrl();
+  }, []);
 
   const signOut = useCallback(() => {
     clearAuthToken();
@@ -108,7 +114,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const needsConsent = !!user && !user.data_consent_accepted_at;
 
   return (
-    <AuthContext.Provider value={{ user, loading, needsConsent, signIn, signOut, connectGmail, connectCalendar, refreshUser }}>
+    <AuthContext.Provider value={{ user, loading, needsConsent, signIn, signInGoogle, signOut, connectGmail, connectCalendar, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

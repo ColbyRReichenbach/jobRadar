@@ -53,6 +53,27 @@ function resolveUrl(pathOrUrl: string): string {
   return `${API_BASE}${pathOrUrl}`;
 }
 
+function apiUnavailableError(error: unknown): Error {
+  const message = error instanceof Error ? error.message : String(error || '');
+  return new Error(
+    `Could not reach the AppTrail API at ${API_BASE}. Make sure the AppTrail backend is running on that URL and that no other local service is using the same port.${message ? ` (${message})` : ''}`
+  );
+}
+
+function safeLogoUrl(rawUrl?: string | null): string | undefined {
+  const value = (rawUrl || '').trim();
+  if (!value) return undefined;
+  try {
+    const url = new URL(value);
+    if (url.hostname.toLowerCase() === 'logo.clearbit.com') {
+      return undefined;
+    }
+  } catch {
+    return undefined;
+  }
+  return value;
+}
+
 function readSessionHint(): boolean {
   if (typeof window === 'undefined') return false;
   try {
@@ -123,7 +144,12 @@ function notifyUnauthorized() {
  */
 export async function apiFetch(pathOrUrl: string, options: RequestInit = {}): Promise<Response> {
   const url = resolveUrl(pathOrUrl);
-  let res = await fetch(url, { ...options, credentials: 'include' });
+  let res: Response;
+  try {
+    res = await fetch(url, { ...options, credentials: 'include' });
+  } catch (error) {
+    throw apiUnavailableError(error);
+  }
 
   if (res.status === 401 && readSessionHint()) {
     // Try to refresh
@@ -132,7 +158,11 @@ export async function apiFetch(pathOrUrl: string, options: RequestInit = {}): Pr
       // Retry with new token
       const retryHeaders = { ...options.headers as Record<string, string> };
       retryHeaders['Authorization'] = `Bearer ${_accessToken}`;
-      res = await fetch(url, { ...options, headers: retryHeaders, credentials: 'include' });
+      try {
+        res = await fetch(url, { ...options, headers: retryHeaders, credentials: 'include' });
+      } catch (error) {
+        throw apiUnavailableError(error);
+      }
     }
 
     if (res.status === 401) {
@@ -235,6 +265,12 @@ export interface GmailSyncStats {
   skipped_blocked: number;
   skipped_noise: number;
   skipped_not_relevant: number;
+  quarantined?: number;
+  source_link_errors?: number;
+  index_errors?: number;
+  query_mode?: 'lookback' | 'incremental';
+  cursor_after?: string | null;
+  duration_ms?: number;
 }
 
 export interface GmailSyncResult {
@@ -243,6 +279,9 @@ export interface GmailSyncResult {
   total_found: number;
   sync_days?: number;
   max_messages?: number;
+  query_mode?: 'lookback' | 'incremental';
+  cursor_after?: string | null;
+  duration_ms?: number;
   stats?: GmailSyncStats;
 }
 
@@ -385,6 +424,9 @@ export async function syncGmail(): Promise<GmailSyncResult> {
     headers: authHeaders(),
   });
   if (!res.ok) {
+    if (res.status === 404) {
+      throw new Error(`Gmail sync endpoint was not found at ${API_BASE}. Check that the AppTrail backend, not another local service, is running on this port.`);
+    }
     const err = await res.json().catch(() => ({ detail: 'Sync failed' }));
     throw new Error(err.detail || 'Gmail sync failed');
   }
@@ -504,7 +546,7 @@ function mapJob(raw: any): Job {
     salary: raw.salary || undefined,
     status: raw.status,
     dateAdded: raw.applied_at || new Date().toISOString(),
-    logoUrl: raw.logo_url || undefined,
+    logoUrl: safeLogoUrl(raw.logo_url),
     source: raw.source || undefined,
     contacts: raw.contacts?.map(mapContact) || [],
     description: raw.description_text || undefined,
@@ -564,7 +606,7 @@ function mapEmail(raw: any): Email {
     lastResponseAt: raw.received_at || undefined,
     isFromUser: raw.is_from_user || false,
     companyName: raw.company_name || undefined,
-    companyLogoUrl: raw.company_logo_url || undefined,
+    companyLogoUrl: safeLogoUrl(raw.company_logo_url),
     senderDomain: raw.sender_domain || undefined,
     confidence: raw.confidence || undefined,
     summary: raw.summary || undefined,
@@ -593,7 +635,7 @@ export async function createJob(job: Partial<Job>): Promise<Job> {
     source: job.source || undefined,
     description_text: job.description || undefined,
     salary: job.salary || undefined,
-    logo_url: job.logoUrl || undefined,
+    logo_url: safeLogoUrl(job.logoUrl) || undefined,
     location: job.location || undefined,
     status: job.status || 'saved',
     notes: job.notes || undefined,
@@ -618,7 +660,7 @@ export async function updateJob(id: string, updates: Partial<Job>): Promise<Job>
   if (updates.role !== undefined) body.role_title = updates.role;
   if (updates.source !== undefined) body.source = updates.source;
   if (updates.url !== undefined) body.job_url = updates.url;
-  if (updates.logoUrl !== undefined) body.logo_url = updates.logoUrl;
+  if (updates.logoUrl !== undefined) body.logo_url = safeLogoUrl(updates.logoUrl) || null;
 
   const res = await apiFetch(`${API_BASE}/api/jobs/${id}`, {
     method: 'PATCH',
@@ -786,7 +828,10 @@ export async function searchJobs(query: string, location: string = ''): Promise<
   if (!res.ok) throw new Error(await readErrorDetail(res, `Failed to search: ${res.status}`));
   const data = await res.json();
   return {
-    results: data.results || [],
+    results: (data.results || []).map((result: any) => ({
+      ...result,
+      logo_url: safeLogoUrl(result.logo_url),
+    })),
     cached: data.cached,
     provider_status: data.provider_status,
     source_summary: data.source_summary,

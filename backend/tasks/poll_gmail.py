@@ -180,7 +180,7 @@ async def _poll_gmail_async():
                 if classification.get("classification") == "not_relevant":
                     continue
 
-                company_info = get_company_info(sender_email)
+                company_info = get_company_info(sender_email, include_logo=False)
                 email_company_name = (
                     classification.get("company_name")
                     or company_info.get("company_name")
@@ -229,21 +229,37 @@ async def _poll_gmail_async():
                 db.add(event)
                 await db.flush()
                 if raw_candidate_urls:
-                    stored_links = await store_many_user_application_links(
-                        db,
-                        user_id=user.id,
-                        raw_urls=raw_candidate_urls,
-                        application_id=application_id,
-                        email_event_id=event.id,
-                        created_from="gmail_poll",
+                    try:
+                        async with db.begin_nested():
+                            stored_links = await store_many_user_application_links(
+                                db,
+                                user_id=user.id,
+                                raw_urls=raw_candidate_urls,
+                                application_id=application_id,
+                                email_event_id=event.id,
+                                created_from="gmail_poll",
+                            )
+                            await process_stored_links_for_source_discovery(
+                                db,
+                                user_id=user.id,
+                                stored_links=stored_links,
+                                discovered_from="gmail_poll",
+                            )
+                    except Exception as exc:
+                        logger.warning(
+                            "Gmail source-link processing skipped",
+                            extra={
+                                "error_type": type(exc).__name__.replace("\r", " ").replace("\n", " "),
+                                "candidate_url_count": len(raw_candidate_urls),
+                            },
+                        )
+                try:
+                    await index_record(db, event)
+                except Exception as exc:
+                    logger.warning(
+                        "Gmail search indexing skipped",
+                        extra={"error_type": type(exc).__name__.replace("\r", " ").replace("\n", " ")},
                     )
-                    await process_stored_links_for_source_discovery(
-                        db,
-                        user_id=user.id,
-                        stored_links=stored_links,
-                        discovered_from="gmail_poll",
-                    )
-                await index_record(db, event)
 
                 if cls in STATUS_UPDATES and application_id:
                     await update_application_status(
