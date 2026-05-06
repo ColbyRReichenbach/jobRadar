@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from datetime import datetime, timezone
 from urllib.parse import parse_qs, urlparse
 
@@ -10,6 +11,9 @@ from bs4 import BeautifulSoup
 from backend.services.research_radar.config import DEFAULT_FETCH_USER_AGENT, SEARCH_TIMEOUT_SECONDS
 from backend.services.research_radar.schemas import SearchCandidate
 from backend.services.url_safety import validate_public_https_url
+
+
+UNSUPPORTED_SEARCH_DOMAINS = ("indeed.com", "linkedin.com")
 
 
 def _clean_search_url(url: str) -> str:
@@ -34,7 +38,29 @@ def _infer_source_type(url: str) -> str:
     return "public_web"
 
 
+def _is_unsupported_search_domain(domain: str) -> bool:
+    return any(domain == blocked or domain.endswith(f".{blocked}") for blocked in UNSUPPORTED_SEARCH_DOMAINS)
+
+
 async def search_public_web(query: str, max_results: int) -> list[SearchCandidate]:
+    candidates = await _duckduckgo_search(query, max_results)
+    if candidates:
+        return candidates
+
+    simplified_query = _simplify_search_query(query)
+    if simplified_query and simplified_query != query:
+        return await _duckduckgo_search(simplified_query, max_results)
+    return candidates
+
+
+def _simplify_search_query(query: str) -> str:
+    simplified = re.sub(r"\bsite:[^\s)]+", " ", query, flags=re.IGNORECASE)
+    simplified = re.sub(r"\bOR\b", " ", simplified, flags=re.IGNORECASE)
+    simplified = simplified.translate(str.maketrans({"(": " ", ")": " ", '"': " "}))
+    return re.sub(r"\s+", " ", simplified).strip()
+
+
+async def _duckduckgo_search(query: str, max_results: int) -> list[SearchCandidate]:
     params = {"q": query}
     headers = {"User-Agent": DEFAULT_FETCH_USER_AGENT}
     async with httpx.AsyncClient(timeout=SEARCH_TIMEOUT_SECONDS, headers=headers, follow_redirects=True) as client:
@@ -57,6 +83,8 @@ async def search_public_web(query: str, max_results: int) -> list[SearchCandidat
         snippet_node = block.select_one(".result__snippet") if block else None
         snippet = snippet_node.get_text(" ", strip=True) if snippet_node else None
         domain = urlparse(clean_url).netloc.lower()
+        if _is_unsupported_search_domain(domain):
+            continue
         candidates.append(
             SearchCandidate(
                 url=clean_url,
@@ -80,6 +108,15 @@ async def run_search_tasks(state):
     async def _run(task_payload: dict):
         async with semaphore:
             candidates = await search_public_web(task_payload["query"], task_payload.get("max_results", 5))
+            if not candidates:
+                fallback_parts = [
+                    task_payload.get("company_hint"),
+                    "careers" if task_payload.get("company_hint") else None,
+                    task_payload.get("role_hint"),
+                ]
+                fallback_query = " ".join(part.strip() for part in fallback_parts if isinstance(part, str) and part.strip())
+                if fallback_query and fallback_query != task_payload["query"]:
+                    candidates = await search_public_web(fallback_query, task_payload.get("max_results", 5))
             updated = dict(task_payload)
             updated["candidates"] = [candidate.model_dump() for candidate in candidates]
             return updated

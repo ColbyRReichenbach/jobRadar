@@ -105,6 +105,94 @@ async def test_dedupe_and_rank_evidence_prefers_stronger_source():
 
 
 @pytest.mark.asyncio
+async def test_search_public_web_retries_simplified_site_query(monkeypatch):
+    from backend.services.research_radar.nodes import search
+
+    calls: list[str] = []
+
+    async def _fake_search(query: str, max_results: int):
+        calls.append(query)
+        if len(calls) == 1:
+            return []
+        return [
+            SearchCandidate(
+                url="https://www.capitalonecareers.com/search-jobs",
+                title="Search Jobs - Capital One Careers",
+                snippet="Search analytics and data roles.",
+                source_type="company_careers",
+                domain="www.capitalonecareers.com",
+                published_at="2026-05-06T00:00:00+00:00",
+                why_selected=query,
+            )
+        ]
+
+    monkeypatch.setattr(search, "_duckduckgo_search", _fake_search)
+
+    result = await search.search_public_web(
+        'site:capitalonecareers.com ("Data Scientist" OR "Risk Analyst")',
+        3,
+    )
+
+    assert len(result) == 1
+    assert calls == [
+        'site:capitalonecareers.com ("Data Scientist" OR "Risk Analyst")',
+        "Data Scientist Risk Analyst",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_run_search_tasks_retries_with_company_hint(monkeypatch):
+    from backend.services.research_radar.nodes import search
+
+    calls: list[str] = []
+
+    async def _fake_search(query: str, max_results: int):
+        calls.append(query)
+        if query.startswith("Capital One careers"):
+            return [
+                SearchCandidate(
+                    url="https://www.capitalonecareers.com/search-jobs",
+                    title="Search Jobs - Capital One Careers",
+                    snippet="Search analytics and data roles.",
+                    source_type="company_careers",
+                    domain="www.capitalonecareers.com",
+                    published_at="2026-05-06T00:00:00+00:00",
+                    why_selected=query,
+                )
+            ]
+        return []
+
+    monkeypatch.setattr(search, "search_public_web", _fake_search)
+
+    result = await search.run_search_tasks(
+        {
+            "search_tasks": [
+                {
+                    "query": 'site:capitalonecareers.com ("Data Scientist" OR "Risk Analyst")',
+                    "company_hint": "Capital One",
+                    "role_hint": "Data Scientist, Risk Analyst",
+                    "max_results": 3,
+                }
+            ]
+        }
+    )
+
+    assert calls == [
+        'site:capitalonecareers.com ("Data Scientist" OR "Risk Analyst")',
+        "Capital One careers Data Scientist, Risk Analyst",
+    ]
+    assert result["search_tasks"][0]["candidates"][0]["domain"] == "www.capitalonecareers.com"
+
+
+def test_search_domain_filter_blocks_unsupported_job_boards():
+    from backend.services.research_radar.nodes.search import _is_unsupported_search_domain
+
+    assert _is_unsupported_search_domain("www.linkedin.com") is True
+    assert _is_unsupported_search_domain("indeed.com") is True
+    assert _is_unsupported_search_domain("www.capitalonecareers.com") is False
+
+
+@pytest.mark.asyncio
 async def test_fetch_documents_returns_json_serializable_source_ids(monkeypatch, db_session):
     async def _fake_fetch(url: str):
         return (
