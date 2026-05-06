@@ -158,3 +158,35 @@ async def test_extract_evidence_fails_when_all_sources_fail(monkeypatch):
                 ],
             }
         )
+
+
+@pytest.mark.asyncio
+async def test_verify_report_requires_review_when_no_evidence(monkeypatch):
+    from backend.services.research_radar.nodes import verify
+
+    async def _verify(*_args, **_kwargs):
+        result = Dumpable({"status": "ready"})
+        result.status = "ready"
+        return result, {"task": "verify"}
+
+    monkeypatch.setattr(verify, "verify_report_with_metrics", _verify)
+
+    result = await verify.verify_report_node(
+        {
+            "normalized_brief": {"search_objective": "Find platform roles."},
+            "report_sections": [],
+            "evidence_items": [],
+            "final_report": {
+                "title": "Empty report",
+                "status": "draft",
+                "overall_confidence": 0.8,
+                "structured_json": {},
+            },
+        }
+    )
+
+    assert result["verification_result"]["status"] == "ready"
+    assert result["final_report"]["status"] == "needs_review"
+    assert result["final_report"]["overall_confidence"] == 0.45
+    assert result["final_report"]["structured_json"]["no_evidence_captured"] is True
+    assert result["final_report"]["structured_json"]["review_reason"] == "no_research_evidence"
