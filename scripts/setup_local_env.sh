@@ -46,7 +46,7 @@ GMAIL_REDIRECT_URI=http://localhost:8000/api/auth/gmail/callback
 
 # Optional local-dev identity override for the "Continue locally" button.
 LOCAL_DEV_AUTH_EMAIL=me@apptrail.local
-LOCAL_DEV_AUTH_NAME=Local AppTrail User
+LOCAL_DEV_AUTH_NAME="Local AppTrail User"
 
 # Optional paid or third-party integrations. Leave blank to disable.
 OPENAI_API_KEY=
@@ -61,6 +61,7 @@ TWILIO_FROM_NUMBER=
 LOG_LEVEL=INFO
 SQLALCHEMY_ECHO=false
 PLAYWRIGHT_HEADLESS=true
+GMAIL_CLASSIFIER_MODE=hybrid_dry_run
 EOF
 
 echo "Created $TARGET_ENV"

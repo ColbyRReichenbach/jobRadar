@@ -52,6 +52,11 @@ These should be set on the backend API and any worker process unless noted other
 - `CORS_ALLOWED_ORIGINS` for any additional exact dashboard/staging origins
 - `CHROME_EXTENSION_ID` for the published extension origin
 - `APPTRAIL_GMAIL_TOKEN_ENCRYPTION_KEY`
+- `SOURCE_LINK_ENCRYPTION_KEY`
+- `SOURCE_LINK_ENCRYPTION_KEY_VERSION=v1`
+- `SOURCE_LINK_HASH_KEY`
+- `SOURCE_LINK_HASH_KEY_VERSION=v1`
+- `GMAIL_CLASSIFIER_MODE=hybrid_dry_run` for the initial deterministic dry-run release. Change to `hybrid` only after reviewing dry-run artifacts and enabling preflight-gated LLM adjudication.
 - `METRICS_BEARER_TOKEN` for Prometheus scraping in production
 - `READINESS_REQUIRE_CELERY=true`
 - `RADAR_ENABLED=true` for beta users, or `false` to disable all Radar API access and scheduled dispatch without a deploy
@@ -286,6 +291,7 @@ Production promotion requires:
 3. For `JWT_SECRET`, force sign-out or coordinate a dual-secret migration before rotation.
 4. For Google OAuth credentials, update Google Cloud redirect URIs before switching production.
 5. For `APPTRAIL_GMAIL_TOKEN_ENCRYPTION_KEY`, do not rotate without a token re-encryption migration.
+6. For `SOURCE_LINK_ENCRYPTION_KEY` and `SOURCE_LINK_HASH_KEY`, do not rotate without a private-link re-encryption and HMAC rehash migration.
 
 ### Extension Release Rollback
 

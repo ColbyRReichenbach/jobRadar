@@ -1,12 +1,8 @@
 import json
 from pathlib import Path
 
-from backend.services.evals.classifier_eval import (
-    build_report_payload,
-    load_examples,
-    run_classifier_eval_sync,
-    stage_from_classification,
-)
+from backend.services.evals import classifier_eval
+from backend.services.evals.classifier_eval import build_report_payload, load_examples, run_classifier_eval_sync, stage_from_classification
 from backend.services.reports.report_templates import report_input_from_dict
 from backend.services.reports.report_writer import render_report_markdown
 
@@ -53,6 +49,78 @@ def test_run_classifier_eval_produces_metrics_and_variant_comparison():
     assert "stage_accuracy" in primary
     assert "latency" in primary
     assert "cost" in primary
+
+
+def test_run_classifier_eval_can_include_live_llm_variant(monkeypatch, tmp_path: Path):
+    dataset = tmp_path / "email_classifier_live_fixture.jsonl"
+    dataset.write_text(
+        json.dumps({
+            "id": "live-1",
+            "sender": "Recruiting Team",
+            "sender_email": "jobs@example.com",
+            "subject": "Interview request",
+            "body": "Please schedule your interview.",
+            "expected_job_related": True,
+            "expected_classification": "interview_request",
+            "expected_stage": "interview",
+        })
+        + "\n",
+        encoding="utf-8",
+    )
+
+    async def _fake_live_predict(example):
+        return classifier_eval.Prediction(
+            example_id=example.id,
+            classification="interview_request",
+            stage="interview",
+            job_related=True,
+            latency_ms=123.4,
+            cost_estimate_cents=0.0123,
+            model_used=True,
+            prompt_tokens=200,
+            output_tokens=40,
+        )
+
+    monkeypatch.setattr(classifier_eval.ai_orchestrator, "has_configured_api_key", lambda: True)
+    monkeypatch.setattr(classifier_eval, "live_llm_predict", _fake_live_predict)
+
+    result = run_classifier_eval_sync(dataset, include_live_llm=True)
+    live = result["variants"]["live_llm_v1"]
+
+    assert live["model"] == classifier_eval.email_classifier.CLASSIFIER_MODEL
+    assert live["metrics"]["model_call_count"] == 1
+    assert live["metrics"]["model_call_rate"] == 1.0
+    assert live["metrics"]["prompt_tokens"] == 200
+    assert live["metrics"]["cost"]["total_cost_cents"] == 0.0123
+
+
+def test_run_classifier_eval_can_include_hybrid_variant(tmp_path: Path):
+    dataset = tmp_path / "email_classifier_hybrid_fixture.jsonl"
+    dataset.write_text(
+        json.dumps({
+            "id": "hybrid-1",
+            "sender": "TraceBank Recruiting",
+            "sender_email": "recruiting@tracebank.example",
+            "subject": "Complete your assessment",
+            "body": "Your next step is a SQL and Python assessment for the Data Scientist opening.",
+            "expected_job_related": True,
+            "expected_classification": "action_item",
+            "expected_stage": "assessment",
+        })
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = run_classifier_eval_sync(dataset, include_hybrid=True)
+    hybrid = result["variants"]["hybrid_rules_nlp_llm_v1"]
+    prediction = hybrid["predictions"][0]
+
+    assert hybrid["model"] == "hybrid-rules-nlp-llm"
+    assert hybrid["metrics"]["category_accuracy"] == 1.0
+    assert hybrid["metrics"]["model_call_count"] == 0
+    assert prediction["classification"] == "action_item"
+    assert prediction["decision_path"] == "deterministic_high_confidence"
+    assert prediction["matched_features"]
 
 
 def test_classifier_eval_report_payload_renders_with_recall_tradeoff_note():

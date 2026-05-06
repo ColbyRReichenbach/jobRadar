@@ -12,6 +12,7 @@ Categories:
 """
 
 import logging
+import os
 
 from backend.services import ai_orchestrator, ai_safety
 from backend.services.email_filter import (
@@ -43,6 +44,32 @@ VALID_SENDER_ROLES = {"recruiter", "hiring_manager", "hr", "automated", "unknown
 
 
 async def classify_email(
+    subject: str,
+    body: str,
+    sender: str,
+    sender_email: str = "",
+    ai_enabled: bool = True,
+) -> dict:
+    mode = os.getenv("GMAIL_CLASSIFIER_MODE", "hybrid_dry_run").strip().lower()
+    if mode in {"hybrid_dry_run", "hybrid", "hybrid_no_model"}:
+        return await _classify_email_hybrid_mode(
+            subject=subject,
+            body=body,
+            sender=sender,
+            sender_email=sender_email,
+            ai_enabled=ai_enabled,
+            mode=mode,
+        )
+    return await _classify_email_legacy(
+        subject=subject,
+        body=body,
+        sender=sender,
+        sender_email=sender_email,
+        ai_enabled=ai_enabled,
+    )
+
+
+async def _classify_email_legacy(
     subject: str,
     body: str,
     sender: str,
@@ -108,6 +135,49 @@ Subject: {subject}
 
     # Fallback: basic keyword classification
     return _fallback_classify(subject, body, sender_email, sender=sender)
+
+
+async def _classify_email_hybrid_mode(
+    *,
+    subject: str,
+    body: str,
+    sender: str,
+    sender_email: str,
+    ai_enabled: bool,
+    mode: str,
+) -> dict:
+    from backend.services.gmail_intelligence.orchestrator import analyze_email
+    from backend.services.gmail_intelligence.types import EmailCandidate
+
+    allow_model = mode == "hybrid" and ai_enabled
+    analysis = await analyze_email(
+        EmailCandidate(
+            subject=subject,
+            body=body,
+            sender=sender,
+            sender_email=sender_email,
+        ),
+        ai_enabled=allow_model,
+        ai_consent=ai_enabled,
+    )
+    result = analysis.result
+    return {
+        "classification": result.classification,
+        "confidence": result.confidence,
+        "company_name": result.company_name,
+        "sender_role": result.sender_role,
+        "key_sentence": result.key_sentence,
+        "summary": result.summary,
+        "action_needed": result.action_needed,
+        "is_automated": result.is_automated,
+        "classifier_mode": mode,
+        "decision_path": result.decision_path,
+        "model_used": result.model_used,
+        "matched_features": result.matched_features,
+        "ambiguity_reasons": result.ambiguity_reasons,
+        "fallback_reason": result.fallback_reason,
+        "redaction_counts": result.redaction_counts,
+    }
 
 
 REJECTION_PHRASES = {
