@@ -85,6 +85,115 @@ async def test_gmail_sync_explicit_days_uses_lookback_query(client, db_session):
 
 
 @pytest.mark.asyncio
+async def test_gmail_sync_allows_large_dry_run_scan_limits(client, db_session):
+    from backend.models import GmailToken
+
+    token = GmailToken(
+        user_id=TEST_USER_ID,
+        access_token=encrypt_gmail_token("access-token"),
+        refresh_token=encrypt_gmail_token("refresh-token"),
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+    )
+    db_session.add(token)
+    await db_session.commit()
+
+    gmail_service = Mock()
+    gmail_service.users.return_value.messages.return_value.list.return_value.execute.return_value = {"messages": []}
+
+    with patch("googleapiclient.discovery.build", return_value=gmail_service):
+        resp = await client.post("/api/gmail/sync?days=365&max_messages=1200", headers=AUTH_HEADER)
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["max_messages"] == 1200
+    assert body["requested_max_messages"] == 1200
+    assert body["hard_max_messages"] >= 1200
+    gmail_service.users.return_value.messages.return_value.list.assert_called_once()
+    assert gmail_service.users.return_value.messages.return_value.list.call_args.kwargs["maxResults"] == 500
+
+
+@pytest.mark.asyncio
+async def test_gmail_sync_reset_clears_current_user_gmail_state(client, db_session):
+    from backend.models import (
+        Alert,
+        EmailEvent,
+        EmailSyncAudit,
+        SearchDocument,
+        SourceDiscoveryEvent,
+        UserApplicationLink,
+    )
+
+    email = EmailEvent(
+        user_id=TEST_USER_ID,
+        gmail_message_id="reset-msg-1",
+        sender="Recruiting Team",
+        sender_email="jobs@example.com",
+        subject="Interview request",
+        body="Can you interview tomorrow?",
+        classification="interview_request",
+        received_at=datetime.now(timezone.utc),
+    )
+    db_session.add(email)
+    await db_session.flush()
+
+    db_session.add_all([
+        EmailSyncAudit(
+            sync_run_id=uuid.uuid4(),
+            user_id=TEST_USER_ID,
+            email_event_id=email.id,
+            gmail_message_id=email.gmail_message_id,
+            decision="stored",
+            reason="job_related",
+        ),
+        UserApplicationLink(
+            user_id=TEST_USER_ID,
+            email_event_id=email.id,
+            raw_url_hash="reset-hash",
+            raw_url_hash_version="test-v1",
+            link_type="public_job_posting",
+            sanitization_status="safe_public",
+        ),
+        SourceDiscoveryEvent(
+            user_id=TEST_USER_ID,
+            email_event_id=email.id,
+            event_type="source_candidate",
+        ),
+        SearchDocument(
+            user_id=TEST_USER_ID,
+            source_type="email",
+            source_id=email.id,
+            title="Interview request",
+            search_text="Interview request",
+            content_hash="a" * 64,
+        ),
+        Alert(
+            user_id=TEST_USER_ID,
+            alert_type="interview_request",
+            title="Interview request",
+            action_url=f"/emails?email_id={email.id}",
+        ),
+    ])
+    await db_session.commit()
+
+    missing_confirm = await client.post("/api/gmail/sync/reset", headers=AUTH_HEADER)
+    assert missing_confirm.status_code == 400
+
+    resp = await client.post("/api/gmail/sync/reset?confirm=true", headers=AUTH_HEADER)
+    assert resp.status_code == 200
+    deleted = resp.json()["deleted"]
+    assert deleted["email_events"] == 1
+    assert deleted["email_sync_audit"] == 1
+    assert deleted["user_application_links"] == 1
+    assert deleted["source_discovery_events"] == 1
+    assert deleted["search_documents"] == 1
+    assert deleted["email_alerts"] == 1
+
+    for model in [EmailEvent, EmailSyncAudit, UserApplicationLink, SourceDiscoveryEvent, SearchDocument, Alert]:
+        result = await db_session.execute(select(model))
+        assert result.scalars().all() == []
+
+
+@pytest.mark.asyncio
 async def test_gmail_sync_keeps_email_when_source_link_crypto_missing(client, db_session):
     from backend.models import EmailEvent, GmailToken, UserApplicationLink
 

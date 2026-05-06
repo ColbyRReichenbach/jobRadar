@@ -17,7 +17,7 @@ from pydantic import BaseModel, EmailStr, Field
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
-from sqlalchemy import func, inspect as sa_inspect, select, text, update
+from sqlalchemy import delete, func, inspect as sa_inspect, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -94,6 +94,7 @@ from backend.models import (
     ResearchSourceItem,
     ResumeDraft,
     RoleUmbrella,
+    SearchDocument,
     SourceDiscoveryEvent,
     SourceVerificationRun,
     User,
@@ -3229,7 +3230,7 @@ async def validate_api_key(request: Request, auth: dict = Depends(verify_api_key
 async def sync_gmail(
     request: Request,
     days: Optional[int] = Query(None, ge=1, le=365),
-    max_messages: Optional[int] = Query(None, ge=1, le=500),
+    max_messages: Optional[int] = Query(None, ge=1),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -3315,9 +3316,10 @@ async def sync_gmail(
     blocklist = {row[0] for row in feedback_result.all()}
 
     sync_days = days or int(os.getenv("APPTRAIL_GMAIL_SYNC_DAYS", "90"))
+    hard_sync_limit = int(os.getenv("APPTRAIL_GMAIL_SYNC_HARD_MAX_MESSAGES", "5000"))
     sync_limit = max_messages or int(os.getenv("APPTRAIL_GMAIL_SYNC_MAX_MESSAGES", "250"))
     sync_days = max(1, min(sync_days, 365))
-    sync_limit = max(1, min(sync_limit, 500))
+    sync_limit = max(1, min(sync_limit, max(1, hard_sync_limit)))
     sync_query = f"newer_than:{sync_days}d"
     sync_query_mode = "lookback"
     sync_cursor_after = None
@@ -3341,7 +3343,7 @@ async def sync_gmail(
         request_kwargs = {
             "userId": "me",
             "q": sync_query,
-            "maxResults": min(100, sync_limit - len(messages)),
+            "maxResults": min(500, sync_limit - len(messages)),
         }
         if next_page_token:
             request_kwargs["pageToken"] = next_page_token
@@ -3695,11 +3697,133 @@ async def sync_gmail(
         "total_found": len(messages),
         "sync_days": sync_days,
         "max_messages": sync_limit,
+        "requested_max_messages": max_messages,
+        "hard_max_messages": hard_sync_limit,
         "query_mode": sync_query_mode,
         "cursor_after": sync_cursor_after,
         "duration_ms": duration_ms,
         "stats": sync_stats,
         "emails": emails_synced[:10],
+    }
+
+
+@app.post("/api/gmail/sync/reset")
+async def reset_gmail_sync_state(
+    confirm: bool = Query(False),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete the current user's Gmail-derived sync rows so a dry run can rescan mail."""
+    if not confirm:
+        raise HTTPException(
+            status_code=400,
+            detail="Pass confirm=true to reset Gmail sync state for the current user.",
+        )
+
+    user_id = current_user.id
+    gmail_email_ids = select(EmailEvent.id).where(
+        EmailEvent.user_id == user_id,
+        EmailEvent.gmail_message_id.isnot(None),
+    )
+    gmail_private_link_ids = select(UserApplicationLink.id).where(
+        UserApplicationLink.user_id == user_id,
+        UserApplicationLink.email_event_id.in_(gmail_email_ids),
+    )
+
+    async def count_rows(stmt) -> int:
+        result = await db.execute(stmt)
+        return int(result.scalar_one() or 0)
+
+    counts = {
+        "email_events": await count_rows(
+            select(func.count(EmailEvent.id)).where(
+                EmailEvent.user_id == user_id,
+                EmailEvent.gmail_message_id.isnot(None),
+            )
+        ),
+        "email_sync_audit": await count_rows(
+            select(func.count(EmailSyncAudit.id)).where(EmailSyncAudit.user_id == user_id)
+        ),
+        "user_application_links": await count_rows(
+            select(func.count(UserApplicationLink.id)).where(
+                UserApplicationLink.user_id == user_id,
+                UserApplicationLink.email_event_id.in_(gmail_email_ids),
+            )
+        ),
+        "source_discovery_events": await count_rows(
+            select(func.count(SourceDiscoveryEvent.id)).where(
+                SourceDiscoveryEvent.user_id == user_id,
+                SourceDiscoveryEvent.email_event_id.in_(gmail_email_ids),
+            )
+        ),
+        "search_documents": await count_rows(
+            select(func.count(SearchDocument.id)).where(
+                SearchDocument.user_id == user_id,
+                SearchDocument.source_type == "email",
+                SearchDocument.source_id.in_(gmail_email_ids),
+            )
+        ),
+        "email_alerts": await count_rows(
+            select(func.count(Alert.id)).where(
+                Alert.user_id == user_id,
+                Alert.action_url.like("%email_id=%"),
+            )
+        ),
+    }
+
+    await db.execute(
+        delete(ApplicationSourceLink).where(
+            ApplicationSourceLink.user_id == user_id,
+            ApplicationSourceLink.user_application_link_id.in_(gmail_private_link_ids),
+        )
+    )
+    await db.execute(
+        delete(SourceDiscoveryEvent).where(
+            SourceDiscoveryEvent.user_id == user_id,
+            SourceDiscoveryEvent.email_event_id.in_(gmail_email_ids),
+        )
+    )
+    await db.execute(
+        delete(UserApplicationLink).where(
+            UserApplicationLink.user_id == user_id,
+            UserApplicationLink.email_event_id.in_(gmail_email_ids),
+        )
+    )
+    await db.execute(
+        delete(SearchDocument).where(
+            SearchDocument.user_id == user_id,
+            SearchDocument.source_type == "email",
+            SearchDocument.source_id.in_(gmail_email_ids),
+        )
+    )
+    await db.execute(
+        delete(Alert).where(
+            Alert.user_id == user_id,
+            Alert.action_url.like("%email_id=%"),
+        )
+    )
+    await db.execute(delete(EmailSyncAudit).where(EmailSyncAudit.user_id == user_id))
+    await db.execute(
+        delete(EmailEvent).where(
+            EmailEvent.user_id == user_id,
+            EmailEvent.gmail_message_id.isnot(None),
+        )
+    )
+    await db.commit()
+
+    request_logger.info(
+        "gmail_sync_state_reset",
+        user_id=str(user_id),
+        deleted_email_events=counts["email_events"],
+        deleted_email_sync_audit=counts["email_sync_audit"],
+        deleted_user_application_links=counts["user_application_links"],
+    )
+
+    return {
+        "status": "ok",
+        "message": "Gmail sync state reset for the current user.",
+        "deleted": counts,
+        "next_step": "Run /api/gmail/sync with explicit days and max_messages to perform a lookback sync.",
     }
 
 
