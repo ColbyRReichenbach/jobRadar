@@ -132,6 +132,12 @@ audit/raw_emails_batch1.json
 audit/__pycache__/
 audit/runs/
 
+# Generated eval/artifact outputs stay local; source datasets, runners, and
+# changelog docs are committed separately.
+docs/interview-artifacts/generated/**
+!docs/interview-artifacts/generated/
+!docs/interview-artifacts/generated/.gitkeep
+
 # ─── Vite / Build Cache ──────────────────────────────────────────────────────
 dashboardv2/.vite/
 dashboardv2/dist/
