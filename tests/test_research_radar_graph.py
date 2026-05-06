@@ -7,6 +7,7 @@ from sqlalchemy import select
 from backend.models import ResearchReport, ResearchRun, ResearchRunStep
 from backend.services.research_radar.llm import deterministic_normalized_brief, deterministic_research_plan
 from backend.services.research_radar.nodes.dedupe import dedupe_and_rank_evidence
+from backend.services.research_radar.nodes.fetch import fetch_documents
 from backend.services.research_radar.schemas import SearchCandidate
 from tests.conftest import AUTH_HEADER
 
@@ -101,6 +102,42 @@ async def test_dedupe_and_rank_evidence_prefers_stronger_source():
     result = await dedupe_and_rank_evidence(state)
     assert len(result["evidence_items"]) == 1
     assert result["evidence_items"][0]["confidence"] == 0.9
+
+
+@pytest.mark.asyncio
+async def test_fetch_documents_returns_json_serializable_source_ids(monkeypatch, db_session):
+    async def _fake_fetch(url: str):
+        return (
+            "<html><body><h1>Platform Engineer</h1><p>Example is hiring.</p></body></html>",
+            "Platform Engineer Example is hiring.",
+        )
+
+    monkeypatch.setattr("backend.services.research_radar.nodes.fetch.fetch_document", _fake_fetch)
+    result = await fetch_documents(
+        {
+            "db": db_session,
+            "user_id": uuid.UUID("00000000-0000-0000-0000-000000000001"),
+            "profile_id": uuid.uuid4(),
+            "run_id": uuid.uuid4(),
+            "tracker": {"max_sources_per_run": 1},
+            "search_tasks": [
+                {
+                    "company_hint": "Example",
+                    "role_hint": "Platform Engineer",
+                    "candidates": [
+                        {
+                            "url": "https://example.com/careers/platform-engineer",
+                            "title": "Platform Engineer at Example",
+                            "source_type": "company_careers",
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+    source_item_id = result["source_items"][0]["source_item_id"]
+    assert isinstance(source_item_id, str)
 
 
 @pytest.mark.asyncio

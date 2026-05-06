@@ -59,7 +59,7 @@ async def fetch_documents(state):
             if existing:
                 source_payloads.append(
                     {
-                        "source_item_id": existing.id,
+                        "source_item_id": str(existing.id),
                         "source_url": existing.source_url,
                         "title": existing.title,
                         "source_type": existing.source_type,
@@ -94,7 +94,7 @@ async def fetch_documents(state):
             await db.flush()
             source_payloads.append(
                 {
-                    "source_item_id": item.id,
+                    "source_item_id": str(item.id),
                     "source_url": item.source_url,
                     "title": item.title,
                     "source_type": item.source_type,
