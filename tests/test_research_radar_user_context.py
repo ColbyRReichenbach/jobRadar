@@ -103,3 +103,58 @@ async def test_radar_llm_nodes_preserve_real_user_id(monkeypatch):
     })
 
     assert captured["user_id"] == user_id
+
+
+@pytest.mark.asyncio
+async def test_extract_evidence_skips_failed_source(monkeypatch):
+    from backend.services.research_radar.llm import ResearchModelUnavailableError
+    from backend.services.research_radar.nodes import extract
+
+    calls: list[str] = []
+
+    async def _extract(_brief, source_item, **_kwargs):
+        calls.append(source_item["source_item_id"])
+        if source_item["source_item_id"] == "source-fails":
+            raise ResearchModelUnavailableError("Radar evidence extraction failed")
+        return [Dumpable({"source_item_id": source_item["source_item_id"], "claim": "Hiring signal"})], {
+            "task": "extract"
+        }
+
+    monkeypatch.setattr(extract, "extract_evidence_with_metrics", _extract)
+
+    result = await extract.extract_evidence_node(
+        {
+            "normalized_brief": {"search_objective": "Find platform roles."},
+            "source_items": [
+                {"source_item_id": "source-fails", "source_url": "https://example.com/fail"},
+                {"source_item_id": "source-ok", "source_url": "https://example.com/ok"},
+            ],
+        }
+    )
+
+    assert calls == ["source-fails", "source-ok"]
+    assert result["evidence_items"] == [{"source_item_id": "source-ok", "claim": "Hiring signal"}]
+    assert result["_llm_calls"] == [{"task": "extract"}]
+    assert result["evidence_extraction_errors"][0]["source_item_id"] == "source-fails"
+
+
+@pytest.mark.asyncio
+async def test_extract_evidence_fails_when_all_sources_fail(monkeypatch):
+    from backend.services.research_radar.llm import ResearchModelUnavailableError
+    from backend.services.research_radar.nodes import extract
+
+    async def _extract(*_args, **_kwargs):
+        raise ResearchModelUnavailableError("Radar evidence extraction failed")
+
+    monkeypatch.setattr(extract, "extract_evidence_with_metrics", _extract)
+
+    with pytest.raises(ResearchModelUnavailableError, match="all sources"):
+        await extract.extract_evidence_node(
+            {
+                "normalized_brief": {"search_objective": "Find platform roles."},
+                "source_items": [
+                    {"source_item_id": "source-1", "source_url": "https://example.com/one"},
+                    {"source_item_id": "source-2", "source_url": "https://example.com/two"},
+                ],
+            }
+        )
