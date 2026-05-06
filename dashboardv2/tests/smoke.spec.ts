@@ -71,6 +71,7 @@ type MockState = {
   jobs?: any[];
   emails?: any[];
   researchProfiles?: any[];
+  researchRuns?: any[];
   interviews?: any[];
   interviewSuggestions?: any[];
   gmailAuditRows?: any[];
@@ -114,6 +115,7 @@ async function mockLoggedInApi(page: Page, initialState: MockState = {}) {
     jobs: [] as any[],
     emails: [] as any[],
     researchProfiles: [] as any[],
+    researchRuns: [] as any[],
     interviews: [] as any[],
     interviewSuggestions: [] as any[],
     gmailAuditRows: [] as any[],
@@ -657,6 +659,33 @@ async function mockLoggedInApi(page: Page, initialState: MockState = {}) {
       return;
     }
 
+    if (/^\/api\/research\/profiles\/[^/]+\/run$/.test(path) && method === 'POST') {
+      const profileId = path.split('/')[4];
+      const run = {
+        id: `run-${state.researchRuns.length + 1}`,
+        profile_id: profileId,
+        run_type: 'manual',
+        mode: state.researchProfiles.find((profile) => profile.id === profileId)?.mode || 'internal',
+        trigger_reason: 'manual_run',
+        status: 'queued',
+        current_step: null,
+        report_id: null,
+        started_at: null,
+        completed_at: null,
+        source_counts: { total: 0 },
+        signal_counts: {},
+        error_message: null,
+        created_at: '2026-05-04T12:01:00Z',
+      };
+      state.researchRuns = [run, ...state.researchRuns];
+      await route.fulfill({
+        status: 202,
+        contentType: 'application/json',
+        body: JSON.stringify(run),
+      });
+      return;
+    }
+
     if (path.startsWith('/api/research/profiles/') && method === 'PATCH') {
       const profileId = path.split('/').pop();
       const body = await json();
@@ -682,12 +711,24 @@ async function mockLoggedInApi(page: Page, initialState: MockState = {}) {
       return;
     }
 
+    if (path === '/api/research/runs' && method === 'GET') {
+      const profileId = url.searchParams.get('profile_id');
+      const rows = profileId
+        ? state.researchRuns.filter((run) => run.profile_id === profileId)
+        : state.researchRuns;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(rows),
+      });
+      return;
+    }
+
     if (
       [
         '/api/research/signals',
         '/api/research/briefs',
         '/api/research/actions',
-        '/api/research/runs',
         '/api/research/reports',
       ].includes(path) &&
       method === 'GET'

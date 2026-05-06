@@ -71,6 +71,10 @@ function supportsReportSurface(mode?: ResearchProfile['mode'] | null): boolean {
   return mode === 'research' || mode === 'hybrid';
 }
 
+function isRunActive(run: ResearchRun): boolean {
+  return ['queued', 'running', 'retrying'].includes(run.status);
+}
+
 function resolveSurface(
   profile: ResearchProfile | null,
   currentSurface: RadarSurface,
@@ -128,6 +132,7 @@ export function Radar({ focusRequest }: RadarProps) {
   const [editingMode, setEditingMode] = useState<'create' | 'edit'>('edit');
   const [createDraftKey, setCreateDraftKey] = useState(0);
   const [createDraftNotice, setCreateDraftNotice] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const selectedProfile = useMemo(
@@ -165,10 +170,13 @@ export function Radar({ focusRequest }: RadarProps) {
   const latestRunSignalCount = Object.values(latestRun?.signal_counts || {}).reduce((total, count) => total + count, 0);
   const researchConsentEnabled = hasResearchConsent(consent);
   const showRadarQuality = Boolean(user?.is_admin);
+  const runInProgress = runs.some(isRunActive);
+  const runButtonLabel = running ? 'Queuing...' : runInProgress ? 'Running...' : 'Run now';
 
   const startCreateTracker = () => {
     setEditingMode('create');
     setCreateDraftKey((current) => current + 1);
+    setStatusMessage(null);
     setCreateDraftNotice('New tracker draft is open below. Add a name or describe what Radar should watch, then create it.');
     if (createDraftNoticeTimeoutRef.current) {
       window.clearTimeout(createDraftNoticeTimeoutRef.current);
@@ -198,9 +206,10 @@ export function Radar({ focusRequest }: RadarProps) {
     requestedProfileId?: string | null,
     preferredSignalId?: string | null,
     preferredReportId?: string | null,
-    preferredSurface?: RadarSurface | null
+    preferredSurface?: RadarSurface | null,
+    options?: { silent?: boolean }
   ) => {
-    setLoading(true);
+    if (!options?.silent) setLoading(true);
     try {
       const [profileRows, feedbackStatsRow, consentRow] = await Promise.all([
         fetchResearchProfiles(),
@@ -269,7 +278,7 @@ export function Radar({ focusRequest }: RadarProps) {
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Radar request failed');
     } finally {
-      setLoading(false);
+      if (!options?.silent) setLoading(false);
     }
   };
 
@@ -301,6 +310,24 @@ export function Radar({ focusRequest }: RadarProps) {
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusRequest?.token]);
+
+  useEffect(() => {
+    if (!selectedProfileId || !runInProgress) return;
+    const interval = window.setInterval(() => {
+      load(selectedProfileId, selectedSignalId, selectedReportId, surface, { silent: true });
+    }, 5000);
+    return () => window.clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runInProgress, selectedProfileId, selectedSignalId, selectedReportId, surface]);
+
+  useEffect(() => {
+    if (!statusMessage?.includes('refresh this page') || runInProgress || !latestRun) return;
+    if (latestRun.status === 'completed') {
+      setStatusMessage('Latest run finished. Results are refreshed below.');
+    } else if (latestRun.status === 'failed') {
+      setStatusMessage('Latest run failed. Open the run history below for the failure detail.');
+    }
+  }, [latestRun, runInProgress, statusMessage]);
 
   useEffect(() => {
     if (!selectedReportId) {
@@ -361,16 +388,36 @@ export function Radar({ focusRequest }: RadarProps) {
 
   const createProfile = async (payload: RadarProfileFormValues) => {
     setCreating(true);
+    setStatusMessage(null);
     try {
       const created = await createResearchProfile(payload);
       setEditingMode('edit');
-      await load(created.id, undefined, undefined, created.mode === 'research' ? 'reports' : 'signals');
-      setErrorMessage(null);
+      const preferredSurface = created.mode === 'research' ? 'reports' : 'signals';
+      let queuedRun: ResearchRun | null = null;
+      let runError: Error | null = null;
+      setRunning(true);
+      try {
+        queuedRun = await runResearchProfile(created.id);
+      } catch (error) {
+        runError = error instanceof Error ? error : new Error('Failed to start first run');
+      } finally {
+        setRunning(false);
+      }
+      await load(created.id, undefined, undefined, preferredSurface);
+      if (queuedRun?.id) {
+        setSelectedRunId(queuedRun.id);
+        setStatusMessage('Tracker created and first run queued. Radar will refresh this page while it works.');
+        setErrorMessage(null);
+      } else if (runError) {
+        setStatusMessage(null);
+        setErrorMessage(`Tracker created, but the first run did not start: ${runError.message}`);
+      }
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to create tracker');
       throw error;
     } finally {
       setCreating(false);
+      setRunning(false);
     }
   };
 
@@ -412,6 +459,7 @@ export function Radar({ focusRequest }: RadarProps) {
     }
 
     setRunning(true);
+    setStatusMessage(null);
     try {
       const queuedRun = await runResearchProfile(selectedProfileId);
       await load(
@@ -421,6 +469,7 @@ export function Radar({ focusRequest }: RadarProps) {
         selectedProfile.mode === 'research' ? 'reports' : surface
       );
       if (queuedRun?.id) setSelectedRunId(queuedRun.id);
+      setStatusMessage('Run queued. Radar will refresh this page while it works.');
       setErrorMessage(null);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to run tracker');
@@ -530,10 +579,10 @@ export function Radar({ focusRequest }: RadarProps) {
               <button
                 type="button"
                 onClick={runNow}
-                disabled={!selectedProfileId || running || Boolean(selectedProfile && supportsReportSurface(selectedProfile.mode) && !researchConsentEnabled)}
+                disabled={!selectedProfileId || running || runInProgress || Boolean(selectedProfile && supportsReportSurface(selectedProfile.mode) && !researchConsentEnabled)}
                 className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:opacity-50"
               >
-                {running ? 'Running...' : 'Run now'}
+                {runButtonLabel}
               </button>
             </div>
           </div>
@@ -566,6 +615,12 @@ export function Radar({ focusRequest }: RadarProps) {
           {errorMessage ? (
             <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
               {errorMessage}
+            </div>
+          ) : null}
+
+          {statusMessage ? (
+            <div role="status" className="mt-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
+              {statusMessage}
             </div>
           ) : null}
 
