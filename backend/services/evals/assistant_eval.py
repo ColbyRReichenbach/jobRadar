@@ -201,7 +201,7 @@ def run_copilot_eval(dataset_path: Path | str = DEFAULT_COPILOT_DATASET) -> Copi
         "cost_estimate_cents": 0,
     }
     return CopilotEvalResult(
-        dataset_version="copilot_questions_v1",
+        dataset_version=Path(dataset_path).stem,
         generated_at=datetime.now(timezone.utc).isoformat(),
         cases=results,
         bad_examples=bad_examples,

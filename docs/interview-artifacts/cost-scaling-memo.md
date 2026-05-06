@@ -56,6 +56,6 @@ Promote a cheaper model or shorter prompt only when:
 - cost savings are material at projected scale
 - the rollback plan is documented in the model card
 
-## What This Shows In An Interview
+## What This Shows
 
 This artifact demonstrates that the system treats AI as an operating cost and risk surface, not a single API call. The ledger makes tradeoffs measurable; Admin AI Ops makes them reviewable; promotion reports make changes governed.

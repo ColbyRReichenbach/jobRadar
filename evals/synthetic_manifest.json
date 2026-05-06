@@ -1,0 +1,59 @@
+{
+  "datasets": [
+    {
+      "component": "copilot_router",
+      "count": 198,
+      "description": "Synthetic route-intent inputs.",
+      "path": "evals/copilot/copilot_router_synthetic_v1.jsonl"
+    },
+    {
+      "component": "copilot_grounded_answers",
+      "count": 50,
+      "description": "Synthetic grounded-answer inputs.",
+      "path": "evals/copilot/copilot_questions_synthetic_v1.jsonl"
+    },
+    {
+      "component": "gmail_classifier",
+      "count": 150,
+      "description": "Synthetic sanitized email classifier inputs.",
+      "path": "evals/email_classifier/email_classifier_synthetic_v1.jsonl"
+    },
+    {
+      "component": "radar_evidence",
+      "count": 120,
+      "description": "Synthetic Radar source-quality inputs.",
+      "path": "evals/radar/radar_evidence_quality_synthetic_v1.jsonl"
+    },
+    {
+      "component": "search_documents",
+      "count": 90,
+      "description": "Synthetic retrieval corpus.",
+      "path": "evals/search/search_documents_synthetic_v1.json"
+    },
+    {
+      "component": "search_queries",
+      "count": 85,
+      "description": "Synthetic retrieval queries.",
+      "path": "evals/search/search_queries_synthetic_v1.jsonl"
+    },
+    {
+      "component": "search_baselines",
+      "count": 5,
+      "description": "Synthetic retrieval strategies.",
+      "path": "evals/search/search_baselines_synthetic_v1.json"
+    },
+    {
+      "component": "red_team",
+      "count": 50,
+      "description": "Synthetic Copilot safety and privacy inputs.",
+      "path": "evals/red_team/synthetic_safety_v1.jsonl"
+    }
+  ],
+  "generation": "deterministic",
+  "notes": [
+    "These fixtures are synthetic and sanitized.",
+    "They are intended for coverage and regression, not production distribution claims.",
+    "Real redacted Gmail examples should be added separately after local redaction and review."
+  ],
+  "schema_version": "synthetic_eval_inputs_v1"
+}

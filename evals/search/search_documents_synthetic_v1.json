@@ -1,0 +1,1346 @@
+{
+  "dataset_version": "search_synthetic_v1",
+  "documents": [
+    {
+      "body": "Synthetic sanitized record for Assistant Search Data Scientist: NLP ranking, chat, voice assistant, model evaluation.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "application:assistant-search-001",
+      "keywords": [
+        "assistant search",
+        "Assistant Search Data Scientist",
+        "NLP ranking, chat, voice assistant, model evaluation"
+      ],
+      "source_type": "application",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Assistant Search Data Scientist 1",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for FinOps Analytics Engineer: cloud spend forecasting, dashboards, anomaly detection.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "radar_report:finops-002",
+      "keywords": [
+        "finops",
+        "FinOps Analytics Engineer",
+        "cloud spend forecasting, dashboards, anomaly detection"
+      ],
+      "source_type": "radar_report",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "FinOps Analytics Engineer 2",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Risk Data Analyst: fraud monitoring, risk reporting, controls.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "email:risk-003",
+      "keywords": [
+        "risk",
+        "Risk Data Analyst",
+        "fraud monitoring, risk reporting, controls"
+      ],
+      "source_type": "email",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Risk Data Analyst 3",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for ML Platform Engineer: feature stores, model deployment, observability.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "contact:platform-004",
+      "keywords": [
+        "platform",
+        "ML Platform Engineer",
+        "feature stores, model deployment, observability"
+      ],
+      "source_type": "contact",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "ML Platform Engineer 4",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Product Analyst: experimentation, funnels, retention analytics.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "application:product-005",
+      "keywords": [
+        "product",
+        "Product Analyst",
+        "experimentation, funnels, retention analytics"
+      ],
+      "source_type": "application",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Product Analyst 5",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Business Intelligence Analyst: executive reporting, dashboards, metrics.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "radar_report:bi-006",
+      "keywords": [
+        "bi",
+        "Business Intelligence Analyst",
+        "executive reporting, dashboards, metrics"
+      ],
+      "source_type": "radar_report",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Business Intelligence Analyst 6",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Recruiter Follow Up: interview scheduling, recruiter contact, next steps.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "email:recruiter-007",
+      "keywords": [
+        "recruiter",
+        "Recruiter Follow Up",
+        "interview scheduling, recruiter contact, next steps"
+      ],
+      "source_type": "email",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Recruiter Follow Up 7",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Verified Job Source Health: workday, greenhouse, source verification, stale source.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "contact:source-health-008",
+      "keywords": [
+        "source health",
+        "Verified Job Source Health",
+        "workday, greenhouse, source verification, stale source"
+      ],
+      "source_type": "contact",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Verified Job Source Health 8",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Assistant Search Data Scientist: NLP ranking, chat, voice assistant, model evaluation.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "application:assistant-search-009",
+      "keywords": [
+        "assistant search",
+        "Assistant Search Data Scientist",
+        "NLP ranking, chat, voice assistant, model evaluation"
+      ],
+      "source_type": "application",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Assistant Search Data Scientist 9",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for FinOps Analytics Engineer: cloud spend forecasting, dashboards, anomaly detection.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "radar_report:finops-010",
+      "keywords": [
+        "finops",
+        "FinOps Analytics Engineer",
+        "cloud spend forecasting, dashboards, anomaly detection"
+      ],
+      "source_type": "radar_report",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "FinOps Analytics Engineer 10",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Risk Data Analyst: fraud monitoring, risk reporting, controls.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "email:risk-011",
+      "keywords": [
+        "risk",
+        "Risk Data Analyst",
+        "fraud monitoring, risk reporting, controls"
+      ],
+      "source_type": "email",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Risk Data Analyst 11",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for ML Platform Engineer: feature stores, model deployment, observability.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "contact:platform-012",
+      "keywords": [
+        "platform",
+        "ML Platform Engineer",
+        "feature stores, model deployment, observability"
+      ],
+      "source_type": "contact",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "ML Platform Engineer 12",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Product Analyst: experimentation, funnels, retention analytics.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "application:product-013",
+      "keywords": [
+        "product",
+        "Product Analyst",
+        "experimentation, funnels, retention analytics"
+      ],
+      "source_type": "application",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Product Analyst 13",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Business Intelligence Analyst: executive reporting, dashboards, metrics.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "radar_report:bi-014",
+      "keywords": [
+        "bi",
+        "Business Intelligence Analyst",
+        "executive reporting, dashboards, metrics"
+      ],
+      "source_type": "radar_report",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Business Intelligence Analyst 14",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Recruiter Follow Up: interview scheduling, recruiter contact, next steps.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "email:recruiter-015",
+      "keywords": [
+        "recruiter",
+        "Recruiter Follow Up",
+        "interview scheduling, recruiter contact, next steps"
+      ],
+      "source_type": "email",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Recruiter Follow Up 15",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Verified Job Source Health: workday, greenhouse, source verification, stale source.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "contact:source-health-016",
+      "keywords": [
+        "source health",
+        "Verified Job Source Health",
+        "workday, greenhouse, source verification, stale source"
+      ],
+      "source_type": "contact",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Verified Job Source Health 16",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Assistant Search Data Scientist: NLP ranking, chat, voice assistant, model evaluation.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "application:assistant-search-017",
+      "keywords": [
+        "assistant search",
+        "Assistant Search Data Scientist",
+        "NLP ranking, chat, voice assistant, model evaluation"
+      ],
+      "source_type": "application",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Assistant Search Data Scientist 17",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for FinOps Analytics Engineer: cloud spend forecasting, dashboards, anomaly detection.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "radar_report:finops-018",
+      "keywords": [
+        "finops",
+        "FinOps Analytics Engineer",
+        "cloud spend forecasting, dashboards, anomaly detection"
+      ],
+      "source_type": "radar_report",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "FinOps Analytics Engineer 18",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Risk Data Analyst: fraud monitoring, risk reporting, controls.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "email:risk-019",
+      "keywords": [
+        "risk",
+        "Risk Data Analyst",
+        "fraud monitoring, risk reporting, controls"
+      ],
+      "source_type": "email",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Risk Data Analyst 19",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for ML Platform Engineer: feature stores, model deployment, observability.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "contact:platform-020",
+      "keywords": [
+        "platform",
+        "ML Platform Engineer",
+        "feature stores, model deployment, observability"
+      ],
+      "source_type": "contact",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "ML Platform Engineer 20",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Product Analyst: experimentation, funnels, retention analytics.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "application:product-021",
+      "keywords": [
+        "product",
+        "Product Analyst",
+        "experimentation, funnels, retention analytics"
+      ],
+      "source_type": "application",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Product Analyst 21",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Business Intelligence Analyst: executive reporting, dashboards, metrics.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "radar_report:bi-022",
+      "keywords": [
+        "bi",
+        "Business Intelligence Analyst",
+        "executive reporting, dashboards, metrics"
+      ],
+      "source_type": "radar_report",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Business Intelligence Analyst 22",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Recruiter Follow Up: interview scheduling, recruiter contact, next steps.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "email:recruiter-023",
+      "keywords": [
+        "recruiter",
+        "Recruiter Follow Up",
+        "interview scheduling, recruiter contact, next steps"
+      ],
+      "source_type": "email",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Recruiter Follow Up 23",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Verified Job Source Health: workday, greenhouse, source verification, stale source.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "contact:source-health-024",
+      "keywords": [
+        "source health",
+        "Verified Job Source Health",
+        "workday, greenhouse, source verification, stale source"
+      ],
+      "source_type": "contact",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Verified Job Source Health 24",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Assistant Search Data Scientist: NLP ranking, chat, voice assistant, model evaluation.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "application:assistant-search-025",
+      "keywords": [
+        "assistant search",
+        "Assistant Search Data Scientist",
+        "NLP ranking, chat, voice assistant, model evaluation"
+      ],
+      "source_type": "application",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Assistant Search Data Scientist 25",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for FinOps Analytics Engineer: cloud spend forecasting, dashboards, anomaly detection.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "radar_report:finops-026",
+      "keywords": [
+        "finops",
+        "FinOps Analytics Engineer",
+        "cloud spend forecasting, dashboards, anomaly detection"
+      ],
+      "source_type": "radar_report",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "FinOps Analytics Engineer 26",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Risk Data Analyst: fraud monitoring, risk reporting, controls.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "email:risk-027",
+      "keywords": [
+        "risk",
+        "Risk Data Analyst",
+        "fraud monitoring, risk reporting, controls"
+      ],
+      "source_type": "email",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Risk Data Analyst 27",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for ML Platform Engineer: feature stores, model deployment, observability.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "contact:platform-028",
+      "keywords": [
+        "platform",
+        "ML Platform Engineer",
+        "feature stores, model deployment, observability"
+      ],
+      "source_type": "contact",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "ML Platform Engineer 28",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Product Analyst: experimentation, funnels, retention analytics.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "application:product-029",
+      "keywords": [
+        "product",
+        "Product Analyst",
+        "experimentation, funnels, retention analytics"
+      ],
+      "source_type": "application",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Product Analyst 29",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Business Intelligence Analyst: executive reporting, dashboards, metrics.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "radar_report:bi-030",
+      "keywords": [
+        "bi",
+        "Business Intelligence Analyst",
+        "executive reporting, dashboards, metrics"
+      ],
+      "source_type": "radar_report",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Business Intelligence Analyst 30",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Recruiter Follow Up: interview scheduling, recruiter contact, next steps.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "email:recruiter-031",
+      "keywords": [
+        "recruiter",
+        "Recruiter Follow Up",
+        "interview scheduling, recruiter contact, next steps"
+      ],
+      "source_type": "email",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Recruiter Follow Up 31",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Verified Job Source Health: workday, greenhouse, source verification, stale source.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "contact:source-health-032",
+      "keywords": [
+        "source health",
+        "Verified Job Source Health",
+        "workday, greenhouse, source verification, stale source"
+      ],
+      "source_type": "contact",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Verified Job Source Health 32",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Assistant Search Data Scientist: NLP ranking, chat, voice assistant, model evaluation.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "application:assistant-search-033",
+      "keywords": [
+        "assistant search",
+        "Assistant Search Data Scientist",
+        "NLP ranking, chat, voice assistant, model evaluation"
+      ],
+      "source_type": "application",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Assistant Search Data Scientist 33",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for FinOps Analytics Engineer: cloud spend forecasting, dashboards, anomaly detection.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "radar_report:finops-034",
+      "keywords": [
+        "finops",
+        "FinOps Analytics Engineer",
+        "cloud spend forecasting, dashboards, anomaly detection"
+      ],
+      "source_type": "radar_report",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "FinOps Analytics Engineer 34",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Risk Data Analyst: fraud monitoring, risk reporting, controls.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "email:risk-035",
+      "keywords": [
+        "risk",
+        "Risk Data Analyst",
+        "fraud monitoring, risk reporting, controls"
+      ],
+      "source_type": "email",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Risk Data Analyst 35",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for ML Platform Engineer: feature stores, model deployment, observability.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "contact:platform-036",
+      "keywords": [
+        "platform",
+        "ML Platform Engineer",
+        "feature stores, model deployment, observability"
+      ],
+      "source_type": "contact",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "ML Platform Engineer 36",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Product Analyst: experimentation, funnels, retention analytics.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "application:product-037",
+      "keywords": [
+        "product",
+        "Product Analyst",
+        "experimentation, funnels, retention analytics"
+      ],
+      "source_type": "application",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Product Analyst 37",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Business Intelligence Analyst: executive reporting, dashboards, metrics.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "radar_report:bi-038",
+      "keywords": [
+        "bi",
+        "Business Intelligence Analyst",
+        "executive reporting, dashboards, metrics"
+      ],
+      "source_type": "radar_report",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Business Intelligence Analyst 38",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Recruiter Follow Up: interview scheduling, recruiter contact, next steps.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "email:recruiter-039",
+      "keywords": [
+        "recruiter",
+        "Recruiter Follow Up",
+        "interview scheduling, recruiter contact, next steps"
+      ],
+      "source_type": "email",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Recruiter Follow Up 39",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Verified Job Source Health: workday, greenhouse, source verification, stale source.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "contact:source-health-040",
+      "keywords": [
+        "source health",
+        "Verified Job Source Health",
+        "workday, greenhouse, source verification, stale source"
+      ],
+      "source_type": "contact",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Verified Job Source Health 40",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Assistant Search Data Scientist: NLP ranking, chat, voice assistant, model evaluation.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "application:assistant-search-041",
+      "keywords": [
+        "assistant search",
+        "Assistant Search Data Scientist",
+        "NLP ranking, chat, voice assistant, model evaluation"
+      ],
+      "source_type": "application",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Assistant Search Data Scientist 41",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for FinOps Analytics Engineer: cloud spend forecasting, dashboards, anomaly detection.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "radar_report:finops-042",
+      "keywords": [
+        "finops",
+        "FinOps Analytics Engineer",
+        "cloud spend forecasting, dashboards, anomaly detection"
+      ],
+      "source_type": "radar_report",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "FinOps Analytics Engineer 42",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Risk Data Analyst: fraud monitoring, risk reporting, controls.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "email:risk-043",
+      "keywords": [
+        "risk",
+        "Risk Data Analyst",
+        "fraud monitoring, risk reporting, controls"
+      ],
+      "source_type": "email",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Risk Data Analyst 43",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for ML Platform Engineer: feature stores, model deployment, observability.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "contact:platform-044",
+      "keywords": [
+        "platform",
+        "ML Platform Engineer",
+        "feature stores, model deployment, observability"
+      ],
+      "source_type": "contact",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "ML Platform Engineer 44",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Product Analyst: experimentation, funnels, retention analytics.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "application:product-045",
+      "keywords": [
+        "product",
+        "Product Analyst",
+        "experimentation, funnels, retention analytics"
+      ],
+      "source_type": "application",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Product Analyst 45",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Business Intelligence Analyst: executive reporting, dashboards, metrics.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "radar_report:bi-046",
+      "keywords": [
+        "bi",
+        "Business Intelligence Analyst",
+        "executive reporting, dashboards, metrics"
+      ],
+      "source_type": "radar_report",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Business Intelligence Analyst 46",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Recruiter Follow Up: interview scheduling, recruiter contact, next steps.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "email:recruiter-047",
+      "keywords": [
+        "recruiter",
+        "Recruiter Follow Up",
+        "interview scheduling, recruiter contact, next steps"
+      ],
+      "source_type": "email",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Recruiter Follow Up 47",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Verified Job Source Health: workday, greenhouse, source verification, stale source.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "contact:source-health-048",
+      "keywords": [
+        "source health",
+        "Verified Job Source Health",
+        "workday, greenhouse, source verification, stale source"
+      ],
+      "source_type": "contact",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Verified Job Source Health 48",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Assistant Search Data Scientist: NLP ranking, chat, voice assistant, model evaluation.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "application:assistant-search-049",
+      "keywords": [
+        "assistant search",
+        "Assistant Search Data Scientist",
+        "NLP ranking, chat, voice assistant, model evaluation"
+      ],
+      "source_type": "application",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Assistant Search Data Scientist 49",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for FinOps Analytics Engineer: cloud spend forecasting, dashboards, anomaly detection.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "radar_report:finops-050",
+      "keywords": [
+        "finops",
+        "FinOps Analytics Engineer",
+        "cloud spend forecasting, dashboards, anomaly detection"
+      ],
+      "source_type": "radar_report",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "FinOps Analytics Engineer 50",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Risk Data Analyst: fraud monitoring, risk reporting, controls.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "email:risk-051",
+      "keywords": [
+        "risk",
+        "Risk Data Analyst",
+        "fraud monitoring, risk reporting, controls"
+      ],
+      "source_type": "email",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Risk Data Analyst 51",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for ML Platform Engineer: feature stores, model deployment, observability.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "contact:platform-052",
+      "keywords": [
+        "platform",
+        "ML Platform Engineer",
+        "feature stores, model deployment, observability"
+      ],
+      "source_type": "contact",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "ML Platform Engineer 52",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Product Analyst: experimentation, funnels, retention analytics.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "application:product-053",
+      "keywords": [
+        "product",
+        "Product Analyst",
+        "experimentation, funnels, retention analytics"
+      ],
+      "source_type": "application",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Product Analyst 53",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Business Intelligence Analyst: executive reporting, dashboards, metrics.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "radar_report:bi-054",
+      "keywords": [
+        "bi",
+        "Business Intelligence Analyst",
+        "executive reporting, dashboards, metrics"
+      ],
+      "source_type": "radar_report",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Business Intelligence Analyst 54",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Recruiter Follow Up: interview scheduling, recruiter contact, next steps.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "email:recruiter-055",
+      "keywords": [
+        "recruiter",
+        "Recruiter Follow Up",
+        "interview scheduling, recruiter contact, next steps"
+      ],
+      "source_type": "email",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Recruiter Follow Up 55",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Verified Job Source Health: workday, greenhouse, source verification, stale source.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "contact:source-health-056",
+      "keywords": [
+        "source health",
+        "Verified Job Source Health",
+        "workday, greenhouse, source verification, stale source"
+      ],
+      "source_type": "contact",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Verified Job Source Health 56",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Assistant Search Data Scientist: NLP ranking, chat, voice assistant, model evaluation.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "application:assistant-search-057",
+      "keywords": [
+        "assistant search",
+        "Assistant Search Data Scientist",
+        "NLP ranking, chat, voice assistant, model evaluation"
+      ],
+      "source_type": "application",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Assistant Search Data Scientist 57",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for FinOps Analytics Engineer: cloud spend forecasting, dashboards, anomaly detection.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "radar_report:finops-058",
+      "keywords": [
+        "finops",
+        "FinOps Analytics Engineer",
+        "cloud spend forecasting, dashboards, anomaly detection"
+      ],
+      "source_type": "radar_report",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "FinOps Analytics Engineer 58",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Risk Data Analyst: fraud monitoring, risk reporting, controls.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "email:risk-059",
+      "keywords": [
+        "risk",
+        "Risk Data Analyst",
+        "fraud monitoring, risk reporting, controls"
+      ],
+      "source_type": "email",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Risk Data Analyst 59",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for ML Platform Engineer: feature stores, model deployment, observability.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "contact:platform-060",
+      "keywords": [
+        "platform",
+        "ML Platform Engineer",
+        "feature stores, model deployment, observability"
+      ],
+      "source_type": "contact",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "ML Platform Engineer 60",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Product Analyst: experimentation, funnels, retention analytics.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "application:product-061",
+      "keywords": [
+        "product",
+        "Product Analyst",
+        "experimentation, funnels, retention analytics"
+      ],
+      "source_type": "application",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Product Analyst 61",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Business Intelligence Analyst: executive reporting, dashboards, metrics.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "radar_report:bi-062",
+      "keywords": [
+        "bi",
+        "Business Intelligence Analyst",
+        "executive reporting, dashboards, metrics"
+      ],
+      "source_type": "radar_report",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Business Intelligence Analyst 62",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Recruiter Follow Up: interview scheduling, recruiter contact, next steps.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "email:recruiter-063",
+      "keywords": [
+        "recruiter",
+        "Recruiter Follow Up",
+        "interview scheduling, recruiter contact, next steps"
+      ],
+      "source_type": "email",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Recruiter Follow Up 63",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Verified Job Source Health: workday, greenhouse, source verification, stale source.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "contact:source-health-064",
+      "keywords": [
+        "source health",
+        "Verified Job Source Health",
+        "workday, greenhouse, source verification, stale source"
+      ],
+      "source_type": "contact",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Verified Job Source Health 64",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Assistant Search Data Scientist: NLP ranking, chat, voice assistant, model evaluation.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "application:assistant-search-065",
+      "keywords": [
+        "assistant search",
+        "Assistant Search Data Scientist",
+        "NLP ranking, chat, voice assistant, model evaluation"
+      ],
+      "source_type": "application",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Assistant Search Data Scientist 65",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for FinOps Analytics Engineer: cloud spend forecasting, dashboards, anomaly detection.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "radar_report:finops-066",
+      "keywords": [
+        "finops",
+        "FinOps Analytics Engineer",
+        "cloud spend forecasting, dashboards, anomaly detection"
+      ],
+      "source_type": "radar_report",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "FinOps Analytics Engineer 66",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Risk Data Analyst: fraud monitoring, risk reporting, controls.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "email:risk-067",
+      "keywords": [
+        "risk",
+        "Risk Data Analyst",
+        "fraud monitoring, risk reporting, controls"
+      ],
+      "source_type": "email",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Risk Data Analyst 67",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for ML Platform Engineer: feature stores, model deployment, observability.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "contact:platform-068",
+      "keywords": [
+        "platform",
+        "ML Platform Engineer",
+        "feature stores, model deployment, observability"
+      ],
+      "source_type": "contact",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "ML Platform Engineer 68",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Product Analyst: experimentation, funnels, retention analytics.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "application:product-069",
+      "keywords": [
+        "product",
+        "Product Analyst",
+        "experimentation, funnels, retention analytics"
+      ],
+      "source_type": "application",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Product Analyst 69",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Business Intelligence Analyst: executive reporting, dashboards, metrics.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "radar_report:bi-070",
+      "keywords": [
+        "bi",
+        "Business Intelligence Analyst",
+        "executive reporting, dashboards, metrics"
+      ],
+      "source_type": "radar_report",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Business Intelligence Analyst 70",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Recruiter Follow Up: interview scheduling, recruiter contact, next steps.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "email:recruiter-071",
+      "keywords": [
+        "recruiter",
+        "Recruiter Follow Up",
+        "interview scheduling, recruiter contact, next steps"
+      ],
+      "source_type": "email",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Recruiter Follow Up 71",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Verified Job Source Health: workday, greenhouse, source verification, stale source.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "contact:source-health-072",
+      "keywords": [
+        "source health",
+        "Verified Job Source Health",
+        "workday, greenhouse, source verification, stale source"
+      ],
+      "source_type": "contact",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Verified Job Source Health 72",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Assistant Search Data Scientist: NLP ranking, chat, voice assistant, model evaluation.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "application:assistant-search-073",
+      "keywords": [
+        "assistant search",
+        "Assistant Search Data Scientist",
+        "NLP ranking, chat, voice assistant, model evaluation"
+      ],
+      "source_type": "application",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Assistant Search Data Scientist 73",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for FinOps Analytics Engineer: cloud spend forecasting, dashboards, anomaly detection.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "radar_report:finops-074",
+      "keywords": [
+        "finops",
+        "FinOps Analytics Engineer",
+        "cloud spend forecasting, dashboards, anomaly detection"
+      ],
+      "source_type": "radar_report",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "FinOps Analytics Engineer 74",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Risk Data Analyst: fraud monitoring, risk reporting, controls.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "email:risk-075",
+      "keywords": [
+        "risk",
+        "Risk Data Analyst",
+        "fraud monitoring, risk reporting, controls"
+      ],
+      "source_type": "email",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Risk Data Analyst 75",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for ML Platform Engineer: feature stores, model deployment, observability.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "contact:platform-076",
+      "keywords": [
+        "platform",
+        "ML Platform Engineer",
+        "feature stores, model deployment, observability"
+      ],
+      "source_type": "contact",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "ML Platform Engineer 76",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Product Analyst: experimentation, funnels, retention analytics.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "application:product-077",
+      "keywords": [
+        "product",
+        "Product Analyst",
+        "experimentation, funnels, retention analytics"
+      ],
+      "source_type": "application",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Product Analyst 77",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Business Intelligence Analyst: executive reporting, dashboards, metrics.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "radar_report:bi-078",
+      "keywords": [
+        "bi",
+        "Business Intelligence Analyst",
+        "executive reporting, dashboards, metrics"
+      ],
+      "source_type": "radar_report",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Business Intelligence Analyst 78",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Recruiter Follow Up: interview scheduling, recruiter contact, next steps.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "email:recruiter-079",
+      "keywords": [
+        "recruiter",
+        "Recruiter Follow Up",
+        "interview scheduling, recruiter contact, next steps"
+      ],
+      "source_type": "email",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Recruiter Follow Up 79",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "Synthetic sanitized record for Verified Job Source Health: workday, greenhouse, source verification, stale source.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "contact:source-health-080",
+      "keywords": [
+        "source health",
+        "Verified Job Source Health",
+        "workday, greenhouse, source verification, stale source"
+      ],
+      "source_type": "contact",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "synthetic fixture",
+      "title": "Verified Job Source Health 80",
+      "user_key": "candidate_demo_user"
+    },
+    {
+      "body": "This synthetic document belongs to another user.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "application:foreign-user-001",
+      "keywords": [
+        "private",
+        "offer"
+      ],
+      "source_type": "application",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "must not leak",
+      "title": "Foreign User Private Offer",
+      "user_key": "other_user"
+    },
+    {
+      "body": "This synthetic document belongs to another user.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "application:foreign-user-002",
+      "keywords": [
+        "private",
+        "offer"
+      ],
+      "source_type": "application",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "must not leak",
+      "title": "Foreign User Private Offer",
+      "user_key": "other_user"
+    },
+    {
+      "body": "This synthetic document belongs to another user.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "application:foreign-user-003",
+      "keywords": [
+        "private",
+        "offer"
+      ],
+      "source_type": "application",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "must not leak",
+      "title": "Foreign User Private Offer",
+      "user_key": "other_user"
+    },
+    {
+      "body": "This synthetic document belongs to another user.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "application:foreign-user-004",
+      "keywords": [
+        "private",
+        "offer"
+      ],
+      "source_type": "application",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "must not leak",
+      "title": "Foreign User Private Offer",
+      "user_key": "other_user"
+    },
+    {
+      "body": "This synthetic document belongs to another user.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "application:foreign-user-005",
+      "keywords": [
+        "private",
+        "offer"
+      ],
+      "source_type": "application",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "must not leak",
+      "title": "Foreign User Private Offer",
+      "user_key": "other_user"
+    },
+    {
+      "body": "This synthetic document belongs to another user.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "application:foreign-user-006",
+      "keywords": [
+        "private",
+        "offer"
+      ],
+      "source_type": "application",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "must not leak",
+      "title": "Foreign User Private Offer",
+      "user_key": "other_user"
+    },
+    {
+      "body": "This synthetic document belongs to another user.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "application:foreign-user-007",
+      "keywords": [
+        "private",
+        "offer"
+      ],
+      "source_type": "application",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "must not leak",
+      "title": "Foreign User Private Offer",
+      "user_key": "other_user"
+    },
+    {
+      "body": "This synthetic document belongs to another user.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "application:foreign-user-008",
+      "keywords": [
+        "private",
+        "offer"
+      ],
+      "source_type": "application",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "must not leak",
+      "title": "Foreign User Private Offer",
+      "user_key": "other_user"
+    },
+    {
+      "body": "This synthetic document belongs to another user.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "application:foreign-user-009",
+      "keywords": [
+        "private",
+        "offer"
+      ],
+      "source_type": "application",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "must not leak",
+      "title": "Foreign User Private Offer",
+      "user_key": "other_user"
+    },
+    {
+      "body": "This synthetic document belongs to another user.",
+      "indexed_at": "2026-05-02T12:00:00Z",
+      "key": "application:foreign-user-010",
+      "keywords": [
+        "private",
+        "offer"
+      ],
+      "source_type": "application",
+      "source_updated_at": "2026-05-01T12:00:00Z",
+      "subtitle": "must not leak",
+      "title": "Foreign User Private Offer",
+      "user_key": "other_user"
+    }
+  ],
+  "primary_user_key": "candidate_demo_user"
+}

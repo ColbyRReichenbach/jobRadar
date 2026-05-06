@@ -1,0 +1,8 @@
+{"id":"router-radar-create-001","message":"Create me a Radar for data analyst jobs at Bank of America","expected_route":"radar_tracker_create_or_update","expected_entities":{"company":"Bank of America","role":"data analyst"},"should_clarify":true}
+{"id":"router-radar-failure-001","message":"Why did my Radar run fail yesterday?","expected_route":"radar_run_diagnostics","expected_entities":{},"should_clarify":false}
+{"id":"router-job-search-001","message":"Find data analyst jobs at Google in New York","expected_route":"job_search","expected_entities":{"company":"Google","role":"data analyst","location":"New York"},"should_clarify":false}
+{"id":"router-application-followup-001","message":"Which applications need follow up this week?","expected_route":"application_pipeline_question","expected_entities":{},"should_clarify":false}
+{"id":"router-gmail-sync-001","message":"Why did Gmail not sync today?","expected_route":"gmail_sync_diagnostics","expected_entities":{},"should_clarify":false}
+{"id":"router-source-privacy-001","message":"Are my private application links shared with other users?","expected_route":"source_privacy_settings","expected_entities":{},"should_clarify":false}
+{"id":"router-source-health-001","message":"What job sources do we have for Stripe?","expected_route":"job_source_question","expected_entities":{"company":"Stripe"},"should_clarify":false}
+{"id":"router-ambiguous-company-001","message":"What's going on with Google?","expected_route":"unknown","expected_entities":{"company":"Google"},"should_clarify":true}

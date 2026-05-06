@@ -1,0 +1,85 @@
+{"expected_document_keys": ["application:assistant-search-001"], "id": "synthetic-search-query-001", "notes": "Synthetic query for assistant-search.", "query": "NLP ranking"}
+{"expected_document_keys": ["radar_report:finops-002"], "id": "synthetic-search-query-002", "notes": "Synthetic query for finops.", "query": "cloud spend forecasting"}
+{"expected_document_keys": ["email:risk-003"], "id": "synthetic-search-query-003", "notes": "Synthetic query for risk.", "query": "fraud monitoring"}
+{"expected_document_keys": ["contact:platform-004"], "id": "synthetic-search-query-004", "notes": "Synthetic query for platform.", "query": "feature stores"}
+{"expected_document_keys": ["application:product-005"], "id": "synthetic-search-query-005", "notes": "Synthetic query for product.", "query": "experimentation"}
+{"expected_document_keys": ["radar_report:bi-006"], "id": "synthetic-search-query-006", "notes": "Synthetic query for bi.", "query": "executive reporting"}
+{"expected_document_keys": ["email:recruiter-007"], "id": "synthetic-search-query-007", "notes": "Synthetic query for recruiter.", "query": "interview scheduling"}
+{"expected_document_keys": ["contact:source-health-008"], "id": "synthetic-search-query-008", "notes": "Synthetic query for source-health.", "query": "workday"}
+{"expected_document_keys": ["application:assistant-search-009"], "id": "synthetic-search-query-009", "notes": "Synthetic query for assistant-search.", "query": "NLP ranking"}
+{"expected_document_keys": ["radar_report:finops-010"], "id": "synthetic-search-query-010", "notes": "Synthetic query for finops.", "query": "cloud spend forecasting"}
+{"expected_document_keys": ["email:risk-011"], "id": "synthetic-search-query-011", "notes": "Synthetic query for risk.", "query": "fraud monitoring"}
+{"expected_document_keys": ["contact:platform-012"], "id": "synthetic-search-query-012", "notes": "Synthetic query for platform.", "query": "feature stores"}
+{"expected_document_keys": ["application:product-013"], "id": "synthetic-search-query-013", "notes": "Synthetic query for product.", "query": "experimentation"}
+{"expected_document_keys": ["radar_report:bi-014"], "id": "synthetic-search-query-014", "notes": "Synthetic query for bi.", "query": "executive reporting"}
+{"expected_document_keys": ["email:recruiter-015"], "id": "synthetic-search-query-015", "notes": "Synthetic query for recruiter.", "query": "interview scheduling"}
+{"expected_document_keys": ["contact:source-health-016"], "id": "synthetic-search-query-016", "notes": "Synthetic query for source-health.", "query": "workday"}
+{"expected_document_keys": ["application:assistant-search-017"], "id": "synthetic-search-query-017", "notes": "Synthetic query for assistant-search.", "query": "NLP ranking"}
+{"expected_document_keys": ["radar_report:finops-018"], "id": "synthetic-search-query-018", "notes": "Synthetic query for finops.", "query": "cloud spend forecasting"}
+{"expected_document_keys": ["email:risk-019"], "id": "synthetic-search-query-019", "notes": "Synthetic query for risk.", "query": "fraud monitoring"}
+{"expected_document_keys": ["contact:platform-020"], "id": "synthetic-search-query-020", "notes": "Synthetic query for platform.", "query": "feature stores"}
+{"expected_document_keys": ["application:product-021"], "id": "synthetic-search-query-021", "notes": "Synthetic query for product.", "query": "experimentation"}
+{"expected_document_keys": ["radar_report:bi-022"], "id": "synthetic-search-query-022", "notes": "Synthetic query for bi.", "query": "executive reporting"}
+{"expected_document_keys": ["email:recruiter-023"], "id": "synthetic-search-query-023", "notes": "Synthetic query for recruiter.", "query": "interview scheduling"}
+{"expected_document_keys": ["contact:source-health-024"], "id": "synthetic-search-query-024", "notes": "Synthetic query for source-health.", "query": "workday"}
+{"expected_document_keys": ["application:assistant-search-025"], "id": "synthetic-search-query-025", "notes": "Synthetic query for assistant-search.", "query": "NLP ranking"}
+{"expected_document_keys": ["radar_report:finops-026"], "id": "synthetic-search-query-026", "notes": "Synthetic query for finops.", "query": "cloud spend forecasting"}
+{"expected_document_keys": ["email:risk-027"], "id": "synthetic-search-query-027", "notes": "Synthetic query for risk.", "query": "fraud monitoring"}
+{"expected_document_keys": ["contact:platform-028"], "id": "synthetic-search-query-028", "notes": "Synthetic query for platform.", "query": "feature stores"}
+{"expected_document_keys": ["application:product-029"], "id": "synthetic-search-query-029", "notes": "Synthetic query for product.", "query": "experimentation"}
+{"expected_document_keys": ["radar_report:bi-030"], "id": "synthetic-search-query-030", "notes": "Synthetic query for bi.", "query": "executive reporting"}
+{"expected_document_keys": ["email:recruiter-031"], "id": "synthetic-search-query-031", "notes": "Synthetic query for recruiter.", "query": "interview scheduling"}
+{"expected_document_keys": ["contact:source-health-032"], "id": "synthetic-search-query-032", "notes": "Synthetic query for source-health.", "query": "workday"}
+{"expected_document_keys": ["application:assistant-search-033"], "id": "synthetic-search-query-033", "notes": "Synthetic query for assistant-search.", "query": "NLP ranking"}
+{"expected_document_keys": ["radar_report:finops-034"], "id": "synthetic-search-query-034", "notes": "Synthetic query for finops.", "query": "cloud spend forecasting"}
+{"expected_document_keys": ["email:risk-035"], "id": "synthetic-search-query-035", "notes": "Synthetic query for risk.", "query": "fraud monitoring"}
+{"expected_document_keys": ["contact:platform-036"], "id": "synthetic-search-query-036", "notes": "Synthetic query for platform.", "query": "feature stores"}
+{"expected_document_keys": ["application:product-037"], "id": "synthetic-search-query-037", "notes": "Synthetic query for product.", "query": "experimentation"}
+{"expected_document_keys": ["radar_report:bi-038"], "id": "synthetic-search-query-038", "notes": "Synthetic query for bi.", "query": "executive reporting"}
+{"expected_document_keys": ["email:recruiter-039"], "id": "synthetic-search-query-039", "notes": "Synthetic query for recruiter.", "query": "interview scheduling"}
+{"expected_document_keys": ["contact:source-health-040"], "id": "synthetic-search-query-040", "notes": "Synthetic query for source-health.", "query": "workday"}
+{"expected_document_keys": ["application:assistant-search-041"], "id": "synthetic-search-query-041", "notes": "Synthetic query for assistant-search.", "query": "NLP ranking"}
+{"expected_document_keys": ["radar_report:finops-042"], "id": "synthetic-search-query-042", "notes": "Synthetic query for finops.", "query": "cloud spend forecasting"}
+{"expected_document_keys": ["email:risk-043"], "id": "synthetic-search-query-043", "notes": "Synthetic query for risk.", "query": "fraud monitoring"}
+{"expected_document_keys": ["contact:platform-044"], "id": "synthetic-search-query-044", "notes": "Synthetic query for platform.", "query": "feature stores"}
+{"expected_document_keys": ["application:product-045"], "id": "synthetic-search-query-045", "notes": "Synthetic query for product.", "query": "experimentation"}
+{"expected_document_keys": ["radar_report:bi-046"], "id": "synthetic-search-query-046", "notes": "Synthetic query for bi.", "query": "executive reporting"}
+{"expected_document_keys": ["email:recruiter-047"], "id": "synthetic-search-query-047", "notes": "Synthetic query for recruiter.", "query": "interview scheduling"}
+{"expected_document_keys": ["contact:source-health-048"], "id": "synthetic-search-query-048", "notes": "Synthetic query for source-health.", "query": "workday"}
+{"expected_document_keys": ["application:assistant-search-049"], "id": "synthetic-search-query-049", "notes": "Synthetic query for assistant-search.", "query": "NLP ranking"}
+{"expected_document_keys": ["radar_report:finops-050"], "id": "synthetic-search-query-050", "notes": "Synthetic query for finops.", "query": "cloud spend forecasting"}
+{"expected_document_keys": ["email:risk-051"], "id": "synthetic-search-query-051", "notes": "Synthetic query for risk.", "query": "fraud monitoring"}
+{"expected_document_keys": ["contact:platform-052"], "id": "synthetic-search-query-052", "notes": "Synthetic query for platform.", "query": "feature stores"}
+{"expected_document_keys": ["application:product-053"], "id": "synthetic-search-query-053", "notes": "Synthetic query for product.", "query": "experimentation"}
+{"expected_document_keys": ["radar_report:bi-054"], "id": "synthetic-search-query-054", "notes": "Synthetic query for bi.", "query": "executive reporting"}
+{"expected_document_keys": ["email:recruiter-055"], "id": "synthetic-search-query-055", "notes": "Synthetic query for recruiter.", "query": "interview scheduling"}
+{"expected_document_keys": ["contact:source-health-056"], "id": "synthetic-search-query-056", "notes": "Synthetic query for source-health.", "query": "workday"}
+{"expected_document_keys": ["application:assistant-search-057"], "id": "synthetic-search-query-057", "notes": "Synthetic query for assistant-search.", "query": "NLP ranking"}
+{"expected_document_keys": ["radar_report:finops-058"], "id": "synthetic-search-query-058", "notes": "Synthetic query for finops.", "query": "cloud spend forecasting"}
+{"expected_document_keys": ["email:risk-059"], "id": "synthetic-search-query-059", "notes": "Synthetic query for risk.", "query": "fraud monitoring"}
+{"expected_document_keys": ["contact:platform-060"], "id": "synthetic-search-query-060", "notes": "Synthetic query for platform.", "query": "feature stores"}
+{"expected_document_keys": ["application:product-061"], "id": "synthetic-search-query-061", "notes": "Synthetic query for product.", "query": "experimentation"}
+{"expected_document_keys": ["radar_report:bi-062"], "id": "synthetic-search-query-062", "notes": "Synthetic query for bi.", "query": "executive reporting"}
+{"expected_document_keys": ["email:recruiter-063"], "id": "synthetic-search-query-063", "notes": "Synthetic query for recruiter.", "query": "interview scheduling"}
+{"expected_document_keys": ["contact:source-health-064"], "id": "synthetic-search-query-064", "notes": "Synthetic query for source-health.", "query": "workday"}
+{"expected_document_keys": ["application:assistant-search-065"], "id": "synthetic-search-query-065", "notes": "Synthetic query for assistant-search.", "query": "NLP ranking"}
+{"expected_document_keys": ["radar_report:finops-066"], "id": "synthetic-search-query-066", "notes": "Synthetic query for finops.", "query": "cloud spend forecasting"}
+{"expected_document_keys": ["email:risk-067"], "id": "synthetic-search-query-067", "notes": "Synthetic query for risk.", "query": "fraud monitoring"}
+{"expected_document_keys": ["contact:platform-068"], "id": "synthetic-search-query-068", "notes": "Synthetic query for platform.", "query": "feature stores"}
+{"expected_document_keys": ["application:product-069"], "id": "synthetic-search-query-069", "notes": "Synthetic query for product.", "query": "experimentation"}
+{"expected_document_keys": ["radar_report:bi-070"], "id": "synthetic-search-query-070", "notes": "Synthetic query for bi.", "query": "executive reporting"}
+{"expected_document_keys": ["email:recruiter-071"], "id": "synthetic-search-query-071", "notes": "Synthetic query for recruiter.", "query": "interview scheduling"}
+{"expected_document_keys": ["contact:source-health-072"], "id": "synthetic-search-query-072", "notes": "Synthetic query for source-health.", "query": "workday"}
+{"expected_document_keys": ["application:assistant-search-073"], "id": "synthetic-search-query-073", "notes": "Synthetic query for assistant-search.", "query": "NLP ranking"}
+{"expected_document_keys": ["radar_report:finops-074"], "id": "synthetic-search-query-074", "notes": "Synthetic query for finops.", "query": "cloud spend forecasting"}
+{"expected_document_keys": ["email:risk-075"], "id": "synthetic-search-query-075", "notes": "Synthetic query for risk.", "query": "fraud monitoring"}
+{"expected_document_keys": ["contact:platform-076"], "id": "synthetic-search-query-076", "notes": "Synthetic query for platform.", "query": "feature stores"}
+{"expected_document_keys": ["application:product-077"], "id": "synthetic-search-query-077", "notes": "Synthetic query for product.", "query": "experimentation"}
+{"expected_document_keys": ["radar_report:bi-078"], "id": "synthetic-search-query-078", "notes": "Synthetic query for bi.", "query": "executive reporting"}
+{"expected_document_keys": ["email:recruiter-079"], "id": "synthetic-search-query-079", "notes": "Synthetic query for recruiter.", "query": "interview scheduling"}
+{"expected_document_keys": ["contact:source-health-080"], "id": "synthetic-search-query-080", "notes": "Synthetic query for source-health.", "query": "workday"}
+{"expected_document_keys": [], "id": "synthetic-search-no-match-081", "notes": "No-match query for zero-result behavior.", "query": "cobol aerospace firmware mainframe"}
+{"expected_document_keys": [], "id": "synthetic-search-no-match-082", "notes": "No-match query for zero-result behavior.", "query": "marine biology internship"}
+{"expected_document_keys": [], "id": "synthetic-search-no-match-083", "notes": "No-match query for zero-result behavior.", "query": "kubernetes antique restoration"}
+{"expected_document_keys": [], "id": "synthetic-search-no-match-084", "notes": "No-match query for zero-result behavior.", "query": "restaurant shift manager"}
+{"expected_document_keys": [], "id": "synthetic-search-no-match-085", "notes": "No-match query for zero-result behavior.", "query": "architectural drafting permit"}

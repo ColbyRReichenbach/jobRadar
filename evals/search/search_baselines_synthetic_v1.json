@@ -1,0 +1,76 @@
+{
+  "dataset_version": "search_synthetic_v1",
+  "semantic_aliases": {
+    "assistant": [
+      "chat",
+      "voice",
+      "erica",
+      "virtual"
+    ],
+    "dashboards": [
+      "reporting",
+      "metrics",
+      "bi"
+    ],
+    "deployment": [
+      "platform",
+      "model"
+    ],
+    "forecasting": [
+      "cost",
+      "finops",
+      "spend"
+    ],
+    "fraud": [
+      "risk",
+      "controls"
+    ],
+    "ranking": [
+      "search",
+      "retrieval"
+    ],
+    "scheduling": [
+      "interview",
+      "recruiter"
+    ],
+    "verification": [
+      "source",
+      "health",
+      "stale"
+    ]
+  },
+  "source_boosts": {
+    "application": 1.15,
+    "contact": 0.95,
+    "email": 1.0,
+    "radar_report": 1.1
+  },
+  "strategies": [
+    {
+      "description": "Cheap title/subtitle baseline.",
+      "name": "title_keyword_v1",
+      "type": "keyword_title"
+    },
+    {
+      "description": "Portable lexical retrieval.",
+      "name": "full_text_keyword_v1",
+      "type": "keyword_full_text"
+    },
+    {
+      "description": "Deterministic expansion proxy.",
+      "name": "semantic_expansion_v1",
+      "type": "semantic_expansion"
+    },
+    {
+      "description": "Lexical plus source boosts.",
+      "name": "hybrid_plus_boost_v1",
+      "type": "hybrid_plus_boost"
+    },
+    {
+      "enabled": false,
+      "name": "vector_embedding_v1",
+      "skip_reason": "Embeddings are not provisioned in CI.",
+      "type": "vector"
+    }
+  ]
+}

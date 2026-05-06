@@ -33,6 +33,9 @@ pytest_targets=(
   tests/test_red_team_eval.py
   tests/test_report_generation.py
   tests/test_progress_index.py
+  tests/test_feature_artifact_suite.py
+  tests/test_feature_artifact_workflow.py
+  tests/test_synthetic_eval_inputs.py
   tests/test_radar_lineage.py
   tests/test_radar_quality_metrics.py
   tests/test_ai_retention.py
