@@ -1540,7 +1540,7 @@ test.describe('desktop app flows', () => {
 
     await page.getByRole('button', { name: 'New tracker' }).first().click();
     await expect(page.locator('#radar-tracker-form input').first()).toBeFocused();
-    await expect(page.getByRole('status').filter({ hasText: 'New tracker draft started' })).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: 'New tracker draft is open below' })).toBeVisible();
 
     const modeOptionBoxes = await page.locator('label:has(input[name="tracker-mode"])').evaluateAll((nodes) =>
       nodes.map((node) => {

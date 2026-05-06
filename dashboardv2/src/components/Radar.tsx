@@ -670,7 +670,7 @@ export function Radar({ focusRequest }: RadarProps) {
             </summary>
             <div className="border-t border-slate-200 p-4">
               {createDraftNotice ? (
-                <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800" role="status">
+                <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
                   {createDraftNotice}
                 </div>
               ) : null}
