@@ -392,7 +392,14 @@ function AppContent() {
                 {activeTab === 'search' && <JobSearch jobs={jobs} setJobs={setJobs} />}
                 {activeTab === 'radar' && <Radar focusRequest={radarFocusRequest} />}
                 {activeTab === 'analytics' && <Analytics jobs={jobs} />}
-              {activeTab === 'conversations' && <Conversations emails={emails} jobs={jobs} focusRequest={emailFocusRequest?.tab === 'conversations' ? emailFocusRequest : null} />}
+              {activeTab === 'conversations' && (
+                <Conversations
+                  emails={emails}
+                  jobs={jobs}
+                  focusRequest={emailFocusRequest?.tab === 'conversations' ? emailFocusRequest : null}
+                  onFeedbackSubmitted={loadData}
+                />
+              )}
               {activeTab === 'network' && <NetworkPage onOpenEmail={handleOpenEmail} onRefreshData={loadData} focusRequest={networkFocusRequest} />}
               {activeTab === 'calendar' && <Calendar focusRequest={calendarFocusRequest} />}
               {activeTab === 'profile' && <ProfilePage />}

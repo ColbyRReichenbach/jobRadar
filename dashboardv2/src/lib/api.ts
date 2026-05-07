@@ -2,8 +2,10 @@ import {
   ApplicationSuggestion,
   Contact,
   Email,
+  EmailFeedbackPayload,
   InterviewSuggestion,
   Job,
+  NetworkSuggestion,
   OpportunityBrief,
   OpportunitySignal,
   RadarFeedbackStats,
@@ -686,11 +688,20 @@ export async function markEmailRead(id: string): Promise<void> {
   });
 }
 
-export async function submitEmailFeedback(emailId: string, isJobRelated: boolean): Promise<void> {
+export async function submitEmailFeedback(
+  payloadOrEmailId: EmailFeedbackPayload | string,
+  isJobRelated?: boolean,
+): Promise<void> {
+  const payload: EmailFeedbackPayload =
+    typeof payloadOrEmailId === 'string'
+      ? { email_id: payloadOrEmailId, is_job_related: !!isJobRelated }
+      : payloadOrEmailId;
   await apiFetch(`${API_BASE}/api/emails/feedback`, {
     method: 'POST',
     headers: authHeaders(),
-    body: JSON.stringify({ email_id: emailId, is_job_related: isJobRelated }),
+    body: JSON.stringify(payload),
+  }).then(async (res) => {
+    if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to submit email feedback'));
   });
 }
 
@@ -1202,6 +1213,32 @@ export async function deleteNetworkContact(email: string): Promise<void> {
     headers: authHeaders(),
   });
   if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to delete contact'));
+}
+
+export async function fetchNetworkSuggestions(): Promise<NetworkSuggestion[]> {
+  const res = await apiFetch(`${API_BASE}/api/network-suggestions`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to load network suggestions'));
+  const data = await res.json();
+  return Array.isArray(data) ? data : [];
+}
+
+export async function acceptNetworkSuggestion(payload: { email_id?: string; email?: string }): Promise<any> {
+  const res = await apiFetch(`${API_BASE}/api/network-suggestions/accept`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to add contact'));
+  return await res.json();
+}
+
+export async function dismissNetworkSuggestion(payload: { email_id?: string; email?: string }): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/api/network-suggestions/dismiss`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(await readErrorDetail(res, 'Failed to dismiss contact suggestion'));
 }
 
 export async function deleteContact(contactId: string): Promise<void> {

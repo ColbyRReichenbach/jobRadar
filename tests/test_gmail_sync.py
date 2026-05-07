@@ -586,8 +586,8 @@ async def test_gmail_sync_creates_actionable_alerts_for_new_conversation(client,
     assert "Jamie Recruiter" in email_alert.title
 
     network_alert = next(alert for alert in alerts if alert.alert_type == "network_contact")
-    assert network_alert.action_url == "/network?email=jamie.recruiter%40matchco.com"
-    assert "Added Jamie Recruiter" in network_alert.title
+    assert network_alert.action_url == f"/conversations?tab=conversations&email_id={event.id}&thread_id=thread-convo-1"
+    assert "Suggested contact: Jamie Recruiter" in network_alert.title
 
 
 @pytest.mark.asyncio

@@ -83,6 +83,7 @@ type MockState = {
   profile?: MockProfile;
   alerts?: MockAlert[];
   networkContacts?: MockContact[];
+  networkSuggestions?: any[];
   networkDetails?: Record<string, MockNetworkDetail>;
   contactDistinctPairs?: string[][];
 };
@@ -127,6 +128,7 @@ async function mockLoggedInApi(page: Page, initialState: MockState = {}) {
     profile: null as MockProfile,
     alerts: [] as MockAlert[],
     networkContacts: [] as MockContact[],
+    networkSuggestions: [] as any[],
     networkDetails: {} as Record<string, MockNetworkDetail>,
     contactDistinctPairs: [] as string[][],
     ...initialState,
@@ -313,6 +315,34 @@ async function mockLoggedInApi(page: Page, initialState: MockState = {}) {
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify(state.emails),
+      });
+      return;
+    }
+
+    if (path === '/api/emails/feedback' && method === 'POST') {
+      const body = await json();
+      state.emails = state.emails.map((email) => {
+        if (email.id !== body?.email_id) return email;
+        if (body?.corrected_route === 'filter') {
+          return { ...email, hidden: true, collapsed: true, classification: 'not_relevant', email_type: null };
+        }
+        if (body?.corrected_route === 'conversation') {
+          return { ...email, hidden: true, email_type: 'conversation', classification: 'conversation' };
+        }
+        if (body?.corrected_route === 'application_inbox') {
+          return {
+            ...email,
+            hidden: true,
+            email_type: 'decision',
+            classification: body?.corrected_subtype === 'interview_request' ? 'interview_request' : 'job_update',
+          };
+        }
+        return email;
+      });
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'ok', feedback_id: 'feedback-1' }),
       });
       return;
     }
@@ -829,6 +859,58 @@ async function mockLoggedInApi(page: Page, initialState: MockState = {}) {
       return;
     }
 
+    if (path === '/api/network-suggestions' && method === 'GET') {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(state.networkSuggestions),
+      });
+      return;
+    }
+
+    if (path === '/api/network-suggestions/accept' && method === 'POST') {
+      const body = await json();
+      const suggestion = state.networkSuggestions.find((item) => item.email_id === body?.email_id || item.email === body?.email);
+      if (!suggestion) {
+        await route.fulfill({
+          status: 404,
+          contentType: 'application/json',
+          body: JSON.stringify({ detail: 'Network suggestion not found' }),
+        });
+        return;
+      }
+      const contact = {
+        id: `contact-${state.networkContacts.length + 1}`,
+        name: suggestion.name,
+        email: suggestion.email,
+        title: suggestion.title,
+        company: suggestion.company,
+        source: 'email',
+        reached_out: false,
+        response_received: false,
+        linkedin_url: suggestion.linkedin_url,
+      };
+      state.networkContacts = [...state.networkContacts, contact];
+      state.networkSuggestions = state.networkSuggestions.filter((item) => item.email !== suggestion.email);
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify(contact),
+      });
+      return;
+    }
+
+    if (path === '/api/network-suggestions/dismiss' && method === 'POST') {
+      const body = await json();
+      state.networkSuggestions = state.networkSuggestions.filter((item) => item.email_id !== body?.email_id && item.email !== body?.email);
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ status: 'ok' }),
+      });
+      return;
+    }
+
     if (path.startsWith('/api/network/') && method === 'GET') {
       const email = decodeURIComponent(path.replace('/api/network/', ''));
       const detail = state.networkDetails[email];
@@ -1039,6 +1121,118 @@ test.describe('desktop app flows', () => {
     await expect(page.getByRole('button', { name: 'Extraction Reports' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Source Intelligence' })).toHaveCount(0);
     await expect(page.getByText('Test User')).toBeVisible();
+  });
+
+  test('Gmail inbox actions require explicit calendar details and capture route corrections', async ({ page }) => {
+    await mockLoggedInApi(page, {
+      emails: [
+        {
+          id: 'email-interview-action',
+          sender: 'BankCo Recruiting',
+          sender_email: 'recruiting@bankco.example',
+          subject: 'Schedule your interview with BankCo',
+          snippet: 'Please choose a time for your interview.',
+          body: 'Please choose a time for your interview.',
+          received_at: '2026-05-07T12:00:00Z',
+          classification: 'interview_request',
+          email_type: 'decision',
+          company_name: 'BankCo',
+          sender_domain: 'bankco.example',
+          resolved: false,
+        },
+        {
+          id: 'email-move-conversation',
+          sender: 'Taylor Recruiter',
+          sender_email: 'taylor@talent.example',
+          subject: 'Quick recruiter intro',
+          snippet: 'Open to talking about data roles?',
+          body: 'Open to talking about data roles?',
+          received_at: '2026-05-06T12:00:00Z',
+          classification: 'job_update',
+          email_type: 'decision',
+          company_name: 'TalentCo',
+          sender_domain: 'talent.example',
+          resolved: false,
+        },
+      ],
+    });
+
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Inbox' }).click();
+    await page.getByText('Schedule your interview with BankCo').first().click();
+
+    await page.getByRole('button', { name: 'Add to Calendar' }).click();
+    const interviewDialog = page.getByRole('dialog', { name: 'Add Interview' });
+    await expect(interviewDialog).toBeVisible();
+    await expect(interviewDialog.getByText('Confirm the date and details before adding this to your calendar.')).toBeVisible();
+    await expect(interviewDialog.getByRole('button', { name: 'Add to Calendar' })).toBeDisabled();
+    await interviewDialog.locator('input[type="datetime-local"]').fill('2026-05-08T10:30');
+    await interviewDialog.getByRole('button', { name: 'Add to Calendar' }).click();
+    await expect(interviewDialog).toHaveCount(0);
+
+    await page.getByText('Quick recruiter intro').first().click();
+    await page.getByRole('button', { name: 'Move to Conversations' }).click();
+    const correctionDialog = page.getByRole('dialog', { name: 'Move to Conversations' });
+    await expect(correctionDialog).toBeVisible();
+    await correctionDialog.getByRole('button', { name: /Other/ }).click();
+    await correctionDialog.getByRole('button', { name: 'Move to Conversations' }).click();
+    await expect(correctionDialog).toHaveCount(0);
+
+    const fitsViewport = await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
+    expect(fitsViewport).toBeTruthy();
+  });
+
+  test('Gmail conversations suggest network contacts and capture non-conversation feedback', async ({ page }) => {
+    await mockLoggedInApi(page, {
+      emails: [
+        {
+          id: 'email-conversation-action',
+          sender: 'Jamie Recruiter',
+          sender_email: 'jamie@matchco.example',
+          subject: 'Following up on the analyst role',
+          snippet: 'Can you send availability next week?',
+          body: 'Can you send availability next week?',
+          received_at: '2026-05-07T12:00:00Z',
+          classification: 'conversation',
+          email_type: 'conversation',
+          company_name: 'MatchCo',
+          sender_domain: 'matchco.example',
+          is_human: true,
+          resolved: false,
+        },
+      ],
+      networkSuggestions: [
+        {
+          email_id: 'email-conversation-action',
+          name: 'Jamie Recruiter',
+          email: 'jamie@matchco.example',
+          title: 'Recruiter',
+          company: 'MatchCo',
+          linkedin_url: null,
+          email_count: 1,
+          last_interaction_at: '2026-05-07T12:00:00Z',
+          subject: 'Following up on the analyst role',
+          snippet: 'Can you send availability next week?',
+        },
+      ],
+    });
+
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Conversations' }).click();
+    await page.getByText('Jamie Recruiter').first().click();
+
+    await page.getByRole('button', { name: 'Add to Network' }).click();
+    await expect(page.getByText('Contact added to your network.')).toBeVisible();
+
+    await page.getByRole('button', { name: 'Not Conversation Related' }).click();
+    const correctionDialog = page.getByRole('dialog', { name: 'Not Conversation Related' });
+    await expect(correctionDialog).toBeVisible();
+    await correctionDialog.getByRole('button', { name: 'External job board alert' }).click();
+    await correctionDialog.getByRole('button', { name: 'Filter from Conversations' }).click();
+    await expect(correctionDialog).toHaveCount(0);
+
+    const fitsViewport = await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
+    expect(fitsViewport).toBeTruthy();
   });
 
   test('shows admin navigation only for admin users', async ({ page }) => {

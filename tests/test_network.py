@@ -148,7 +148,7 @@ async def test_network_excludes_non_human_email_senders(client, db_session):
     )
     await db_session.commit()
 
-    resp = await client.get("/api/network", headers=AUTH_HEADER)
+    resp = await client.get("/api/network-suggestions", headers=AUTH_HEADER)
     assert resp.status_code == 200
     data = resp.json()
 
@@ -179,6 +179,40 @@ async def test_network_excludes_inbox_updates_even_if_human(client, db_session):
     assert resp.status_code == 200
     emails = {contact["email"] for contact in resp.json()}
     assert "hiring@company.com" not in emails
+
+
+@pytest.mark.asyncio
+async def test_network_requires_acceptance_for_conversation_senders(client, db_session):
+    from backend.models import EmailEvent
+
+    db_session.add(
+        EmailEvent(
+            gmail_message_id="network-suggest-only-1",
+            sender="Jamie Recruiter",
+            sender_email="jamie@example.com",
+            subject="Following up",
+            classification="conversation",
+            is_human=True,
+            email_type="conversation",
+        )
+    )
+    await db_session.commit()
+
+    network_resp = await client.get("/api/network", headers=AUTH_HEADER)
+    assert "jamie@example.com" not in {contact["email"] for contact in network_resp.json()}
+
+    suggestions_resp = await client.get("/api/network-suggestions", headers=AUTH_HEADER)
+    suggestion = next(item for item in suggestions_resp.json() if item["email"] == "jamie@example.com")
+
+    accept_resp = await client.post(
+        "/api/network-suggestions/accept",
+        json={"email_id": suggestion["email_id"]},
+        headers=AUTH_HEADER,
+    )
+    assert accept_resp.status_code == 201
+
+    network_resp = await client.get("/api/network", headers=AUTH_HEADER)
+    assert "jamie@example.com" in {contact["email"] for contact in network_resp.json()}
 
 
 @pytest.mark.asyncio
@@ -269,7 +303,7 @@ async def test_manual_contact_company_name_persists(client):
 
 
 @pytest.mark.asyncio
-async def test_network_auto_fills_email_derived_contact_fields(client, db_session):
+async def test_network_suggestion_auto_fills_email_derived_contact_fields(client, db_session):
     from backend.models import EmailEvent
     from datetime import datetime, timezone
 
@@ -296,14 +330,25 @@ async def test_network_auto_fills_email_derived_contact_fields(client, db_sessio
     )
     await db_session.commit()
 
-    resp = await client.get("/api/network", headers=AUTH_HEADER)
+    resp = await client.get("/api/network-suggestions", headers=AUTH_HEADER)
     assert resp.status_code == 200
-    contacts = resp.json()
-    contact = next(c for c in contacts if c["email"] == "jane.doe@stripe.com")
-    assert contact["name"] == "Jane Doe"
-    assert contact["company"] == "Stripe"
-    assert contact["title"] == "Senior Technical Recruiter at Stripe"
-    assert contact["linkedin_url"] == "https://www.linkedin.com/in/jane-doe/"
+    suggestions = resp.json()
+    suggestion = next(c for c in suggestions if c["email"] == "jane.doe@stripe.com")
+    assert suggestion["name"] == "Jane Doe"
+    assert suggestion["company"] == "Stripe"
+    assert suggestion["title"] == "Senior Technical Recruiter at Stripe"
+    assert suggestion["linkedin_url"] == "https://www.linkedin.com/in/jane-doe/"
+
+    accept_resp = await client.post(
+        "/api/network-suggestions/accept",
+        json={"email_id": suggestion["email_id"]},
+        headers=AUTH_HEADER,
+    )
+    assert accept_resp.status_code == 201
+
+    network_resp = await client.get("/api/network", headers=AUTH_HEADER)
+    contact = next(c for c in network_resp.json() if c["email"] == "jane.doe@stripe.com")
+    assert contact["source"] == "email"
 
 
 @pytest.mark.asyncio
@@ -336,7 +381,7 @@ async def test_network_does_not_copy_user_signature_linkedin_to_sender(client, d
     )
     await db_session.commit()
 
-    resp = await client.get("/api/network", headers=AUTH_HEADER)
+    resp = await client.get("/api/network-suggestions", headers=AUTH_HEADER)
     assert resp.status_code == 200
     contacts = resp.json()
     contact = next(c for c in contacts if c["email"] == "alex.herra@example.com")

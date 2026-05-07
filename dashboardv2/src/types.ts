@@ -109,6 +109,32 @@ export interface InterviewSuggestion {
   confidence: number;
 }
 
+export interface NetworkSuggestion {
+  email_id: string;
+  name: string | null;
+  email: string;
+  title: string | null;
+  company: string | null;
+  linkedin_url: string | null;
+  email_count: number;
+  last_interaction_at: string | null;
+  subject: string | null;
+  snippet: string | null;
+}
+
+export type EmailFeedbackAction = 'not_relevant' | 'move_to_inbox' | 'move_to_conversation';
+
+export interface EmailFeedbackPayload {
+  email_id: string;
+  is_job_related: boolean;
+  feedback_action?: EmailFeedbackAction;
+  corrected_route?: 'filter' | 'application_inbox' | 'conversation';
+  corrected_subtype?: string;
+  feedback_label?: string;
+  source_surface?: string;
+  notes?: string;
+}
+
 export interface ResearchProfile {
   id: string;
   name: string;

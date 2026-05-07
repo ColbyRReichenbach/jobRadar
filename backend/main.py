@@ -501,6 +501,11 @@ class InterviewSuggestionAccept(BaseModel):
     notes: Optional[str] = Field(None, max_length=MAX_LONG_TEXT_LEN)
 
 
+class NetworkSuggestionAction(BaseModel):
+    email_id: Optional[str] = Field(None, max_length=MAX_ID_LEN)
+    email: Optional[EmailStr] = None
+
+
 class ResearchProfileCreate(BaseModel):
     name: str = Field(..., max_length=MAX_NAME_LEN)
     objective: Optional[str] = Field(None, max_length=MAX_LONG_TEXT_LEN)
@@ -1032,6 +1037,27 @@ APPLICATION_SUGGESTION_STATUS_BY_CLASSIFICATION = {
     "action_item": "applied",
     "job_update": "applied",
 }
+APPLICATION_INBOX_SUBTYPE_TO_CLASSIFICATION = {
+    "application_update": "job_update",
+    "interview_request": "interview_request",
+    "rejection": "rejection",
+    "offer": "offer",
+    "assessment": "action_item",
+    "document_request": "action_item",
+    "other_application": "job_update",
+}
+CONVERSATION_SUBTYPE_TO_CLASSIFICATION = {
+    "recruiter_outreach": "conversation",
+    "networking": "conversation",
+    "alumni_career": "conversation",
+    "hiring_manager": "conversation",
+    "other_conversation": "conversation",
+}
+FEEDBACK_ACTION_ROUTES = {
+    "move_to_inbox": "application_inbox",
+    "move_to_conversation": "conversation",
+    "not_relevant": "filter",
+}
 GENERIC_COMPANY_DOMAINS = {
     "gmail.com",
     "googlemail.com",
@@ -1285,6 +1311,30 @@ def _email_alert_type(email_type: str | None, classification: str | None) -> str
     if email_type == "conversation":
         return "conversation_message"
     return classification or "email_update"
+
+
+def _classifier_route_from_event(event: EmailEvent) -> str:
+    if event.hidden or event.classification == "not_relevant":
+        return "filter"
+    if event.email_type == "conversation":
+        return "conversation"
+    return "application_inbox"
+
+
+def _classification_for_corrected_route(route: str | None, subtype: str | None) -> str:
+    if route == "conversation":
+        return CONVERSATION_SUBTYPE_TO_CLASSIFICATION.get(subtype or "", "conversation")
+    if route == "application_inbox":
+        return APPLICATION_INBOX_SUBTYPE_TO_CLASSIFICATION.get(subtype or "", "job_update")
+    return "not_relevant"
+
+
+def _email_type_for_corrected_route(route: str | None) -> str | None:
+    if route == "conversation":
+        return "conversation"
+    if route == "application_inbox":
+        return "decision"
+    return None
 
 
 def _serialize_contact(contact_row: Contact) -> dict:
@@ -2336,6 +2386,12 @@ async def update_email(
 class EmailFeedbackCreate(BaseModel):
     email_id: str = Field(..., max_length=MAX_ID_LEN)
     is_job_related: bool
+    feedback_action: Optional[Literal["not_relevant", "move_to_inbox", "move_to_conversation"]] = None
+    corrected_route: Optional[Literal["filter", "application_inbox", "conversation"]] = None
+    corrected_subtype: Optional[str] = Field(None, max_length=MAX_SHORT_TEXT_LEN)
+    feedback_label: Optional[str] = Field(None, max_length=MAX_SHORT_TEXT_LEN)
+    source_surface: Optional[str] = Field(None, max_length=MAX_SHORT_TEXT_LEN)
+    notes: Optional[str] = Field(None, max_length=MAX_LONG_TEXT_LEN)
 
 
 @app.post("/api/emails/feedback", status_code=201)
@@ -2344,7 +2400,12 @@ async def create_email_feedback(
     db: AsyncSession = Depends(get_db),
     auth: dict = Depends(verify_api_key),
 ):
-    """User feedback: mark an email as job-related or not. Builds sender blocklist over time."""
+    """Capture user corrections and apply the product-route side effect.
+
+    The classifier proposes a route; user actions are the feedback signal. A
+    correction can either filter the email or move it between Inbox and
+    Conversations without requiring another Gmail sync.
+    """
     user_id = _require_user_id(auth)
 
     eid = _uuid.UUID(payload.email_id)
@@ -2366,21 +2427,51 @@ async def create_email_feedback(
         pattern = re.sub(r'\b[A-Z][a-z]+\b', '*', pattern)
         subject_pattern = pattern[:100]
 
+    predicted_route = _classifier_route_from_event(event)
+    corrected_route = payload.corrected_route
+    if not corrected_route and payload.feedback_action:
+        corrected_route = FEEDBACK_ACTION_ROUTES.get(payload.feedback_action)
+    if not corrected_route and not payload.is_job_related:
+        corrected_route = "filter"
+
     feedback = EmailFeedback(
         email_id=eid,
         is_job_related=payload.is_job_related,
         sender_domain=event.sender_domain,
         subject_pattern=subject_pattern,
+        predicted_route=predicted_route,
+        predicted_subtype=event.classification,
+        predicted_classification=event.classification,
+        feedback_action=payload.feedback_action or ("not_relevant" if not payload.is_job_related else None),
+        corrected_route=corrected_route,
+        corrected_subtype=payload.corrected_subtype,
+        feedback_label=payload.feedback_label,
+        source_surface=payload.source_surface,
+        notes=payload.notes,
     )
     db.add(feedback)
 
-    # If not job related, collapse the email
-    if not payload.is_job_related:
+    if corrected_route == "filter" or not payload.is_job_related:
         event.collapsed = True
+        event.hidden = True
         event.classification = "not_relevant"
+        event.email_type = None
+        event.action_needed = False
+    elif corrected_route in {"application_inbox", "conversation"}:
+        event.hidden = False
+        event.collapsed = False
+        event.resolved = False
+        event.email_type = _email_type_for_corrected_route(corrected_route)
+        event.classification = _classification_for_corrected_route(corrected_route, payload.corrected_subtype)
 
     await db.commit()
-    return {"status": "ok", "feedback_id": str(feedback.id)}
+    return {
+        "status": "ok",
+        "feedback_id": str(feedback.id),
+        "corrected_route": corrected_route,
+        "classification": event.classification,
+        "email_type": event.email_type,
+    }
 
 
 @app.get("/api/emails/feedback/stats")
@@ -2420,11 +2511,7 @@ async def email_feedback_stats(
             if fb.sender_domain:
                 domain_counts[fb.sender_domain] = domain_counts.get(fb.sender_domain, 0) + 1
 
-            # Track what the classifier originally called these
-            # Before feedback, classification was set — but we just overwrote it to not_relevant.
-            # Use the email's pipeline field as a proxy for original classifier decision,
-            # or fall back to "unknown" since the classification was already overwritten.
-            orig_cls = ev.pipeline or "unknown"
+            orig_cls = fb.predicted_classification or ev.pipeline or "unknown"
             original_classifications[orig_cls] = original_classifications.get(orig_cls, 0) + 1
 
         # Daily trend
@@ -3244,8 +3331,9 @@ async def sync_gmail(
     from backend.services.email_classifier import (
         classify_email as classify_email_llm,
         CLASSIFICATION_TO_COLOR,
-        CLASSIFICATION_TO_EMAIL_TYPE,
+        email_type_for_classifier_result,
         is_likely_person_sender,
+        should_store_classifier_result,
         should_create_network_contact,
     )
     from backend.services.company_identity import extract_domain, get_company_info
@@ -3519,8 +3607,9 @@ async def sync_gmail(
             )
             continue
 
-        # Skip not_relevant
-        if cls == "not_relevant":
+        # Skip filtered messages and opportunity-discovery alerts until that
+        # route has a dedicated product surface/source-intelligence sink.
+        if not should_store_classifier_result(classification):
             sync_stats["skipped_not_relevant"] += 1
             record_sync_audit(
                 gmail_message_id=msg_id,
@@ -3531,7 +3620,7 @@ async def sync_gmail(
                 subject=subject,
                 received_at=received_at,
                 decision="filtered",
-                reason="classifier_not_relevant",
+                reason=f"classifier_route:{classification.get('route') or cls}",
                 classification=cls,
             )
             continue
@@ -3558,7 +3647,7 @@ async def sync_gmail(
         should_alert_network_contact = False
         if (
             sender_email_addr
-            and CLASSIFICATION_TO_EMAIL_TYPE.get(cls) == "conversation"
+            and email_type_for_classifier_result(classification) == "conversation"
             and should_create_network_contact(sender_name, sender_email_addr, cls, user_email=current_user.email)
             and not contact_id
         ):
@@ -3583,7 +3672,7 @@ async def sync_gmail(
             received_at=received_at,
             classification=cls,
             color_code=CLASSIFICATION_TO_COLOR.get(cls, "gray"),
-            email_type=CLASSIFICATION_TO_EMAIL_TYPE.get(cls),
+            email_type=email_type_for_classifier_result(classification),
             action_needed=classification.get("action_needed", False),
             key_sentence=classification.get("key_sentence"),
             summary=classification.get("summary"),
@@ -3667,9 +3756,14 @@ async def sync_gmail(
                     db,
                     user_id=user_id,
                     alert_type="network_contact",
-                    title=f"Added {sender_name or sender_email_addr} to your network",
-                    body="Open their card to review contact details from this conversation.",
-                    action_url=_alert_action_url("/network", email=sender_email_addr),
+                    title=f"Suggested contact: {sender_name or sender_email_addr}",
+                    body="Review this conversation before adding the sender to your network.",
+                    action_url=_alert_action_url(
+                        "/conversations",
+                        tab="conversations",
+                        email_id=str(email_event.id),
+                        thread_id=email_event.thread_id or None,
+                    ),
                     notification_pref=notification_pref,
                 )
 
@@ -4716,11 +4810,9 @@ async def list_network(
     db: AsyncSession = Depends(get_db),
     auth: dict = Depends(verify_api_key),
 ):
-    """Unified network view: all contacts + unique email senders."""
+    """Unified network view: explicitly accepted contacts only."""
     from sqlalchemy import or_, func
     from sqlalchemy.orm import selectinload
-    from backend.services.email_classifier import should_create_network_contact
-    from backend.services.contact_enrichment import build_inferred_contact_from_email_event
 
     user_id = _require_user_id(auth)
     contacts_list = []
@@ -4767,73 +4859,217 @@ async def list_network(
             "linkedin_url": c.linkedin_url,
         })
 
-    # Add unique email senders not already in contacts
-    email_stmt = select(EmailEvent).where(
+    return contacts_list[:limit]
+
+
+def _serialize_network_suggestion(email_addr: str, aggregate: dict) -> dict:
+    from backend.services.contact_enrichment import build_inferred_contact_from_email_event
+
+    event = aggregate["event"]
+    inferred = build_inferred_contact_from_email_event(event)
+    display_name = inferred["name"] or event.sender
+    return {
+        "email_id": str(event.id),
+        "name": display_name,
+        "email": email_addr,
+        "title": inferred["title"],
+        "company": inferred["company"],
+        "linkedin_url": inferred["linkedin_url"],
+        "email_count": aggregate["email_count"],
+        "last_interaction_at": aggregate["last_interaction"].isoformat() if aggregate["last_interaction"] else None,
+        "subject": event.subject,
+        "snippet": event.snippet or event.summary or event.key_sentence,
+    }
+
+
+@app.get("/api/network-suggestions")
+async def list_network_suggestions(
+    q: Optional[str] = Query(None),
+    limit: int = Query(25, ge=1, le=MAX_PAGE_SIZE),
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    """Conversation-derived contact candidates that require explicit user acceptance."""
+    from backend.services.email_classifier import should_create_network_contact
+
+    user_id = _require_user_id(auth)
+    ignored_result = await db.execute(
+        select(IgnoredNetworkContact.email).where(IgnoredNetworkContact.user_id == user_id)
+    )
+    ignored_emails = {row[0].lower() for row in ignored_result.all()}
+    contacts_result = await db.execute(
+        select(Contact.email).where(Contact.user_id == user_id, Contact.email.isnot(None))
+    )
+    accepted_emails = {(row[0] or "").lower() for row in contacts_result.all()}
+
+    event_result = await db.execute(
+        select(EmailEvent).where(
+            EmailEvent.user_id == user_id,
+            EmailEvent.sender_email.isnot(None),
+            EmailEvent.is_from_user.is_(False),
+            EmailEvent.hidden.is_(False),
+            EmailEvent.is_human.is_(True),
+            EmailEvent.email_type == "conversation",
+        ).order_by(EmailEvent.received_at.desc())
+    )
+    sender_aggregate: dict[str, dict] = {}
+    for event in event_result.scalars():
+        email_addr = (event.sender_email or "").lower()
+        if not email_addr or email_addr in ignored_emails or email_addr in accepted_emails:
+            continue
+        if not should_create_network_contact(event.sender or "", email_addr):
+            continue
+        aggregate = sender_aggregate.setdefault(
+            email_addr,
+            {"event": event, "email_count": 0, "last_interaction": event.received_at},
+        )
+        aggregate["email_count"] += 1
+        if aggregate["last_interaction"] is None or (
+            event.received_at and event.received_at > aggregate["last_interaction"]
+        ):
+            aggregate["last_interaction"] = event.received_at
+            aggregate["event"] = event
+
+    suggestions = []
+    query = (q or "").strip().lower()
+    for email_addr, aggregate in sorted(
+        sender_aggregate.items(),
+        key=lambda item: item[1]["last_interaction"] or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    ):
+        suggestion = _serialize_network_suggestion(email_addr, aggregate)
+        haystack = " ".join(
+            str(suggestion.get(key) or "")
+            for key in ["email", "name", "title", "company", "subject", "snippet"]
+        ).lower()
+        if query and query not in haystack:
+            continue
+        suggestions.append(suggestion)
+        if len(suggestions) >= limit:
+            break
+
+    return suggestions
+
+
+async def _network_suggestion_event(
+    db: AsyncSession,
+    *,
+    user_id: _uuid.UUID,
+    payload: NetworkSuggestionAction,
+) -> EmailEvent:
+    conditions = [
         EmailEvent.user_id == user_id,
         EmailEvent.sender_email.isnot(None),
         EmailEvent.is_from_user.is_(False),
         EmailEvent.hidden.is_(False),
-        EmailEvent.is_human.is_(True),
         EmailEvent.email_type == "conversation",
-    ).order_by(EmailEvent.received_at.desc())
-    email_result = await db.execute(email_stmt)
-    sender_aggregate: dict[str, dict] = {}
-    for email_event in email_result.scalars():
-        email_addr = (email_event.sender_email or "").lower()
-        if not email_addr:
-            continue
-        aggregate = sender_aggregate.setdefault(
-            email_addr,
-            {
-                "event": email_event,
-                "email_count": 0,
-                "last_interaction": email_event.received_at,
-            },
+    ]
+    if payload.email_id:
+        conditions.append(EmailEvent.id == _uuid.UUID(payload.email_id))
+    elif payload.email:
+        conditions.append(func.lower(EmailEvent.sender_email) == str(payload.email).lower())
+    else:
+        raise HTTPException(status_code=400, detail="email_id or email is required")
+
+    result = await db.execute(select(EmailEvent).where(*conditions).order_by(EmailEvent.received_at.desc()).limit(1))
+    event = result.scalar_one_or_none()
+    if not event:
+        raise HTTPException(status_code=404, detail="Network suggestion not found")
+    return event
+
+
+@app.post("/api/network-suggestions/accept", status_code=201)
+async def accept_network_suggestion(
+    payload: NetworkSuggestionAction,
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    """Promote a conversation sender into an explicit network contact."""
+    from backend.services.contact_enrichment import build_inferred_contact_from_email_event
+    from backend.services.email_classifier import should_create_network_contact
+
+    user_id = _require_user_id(auth)
+    event = await _network_suggestion_event(db, user_id=user_id, payload=payload)
+    email_addr = (event.sender_email or "").lower()
+    if not should_create_network_contact(event.sender or "", email_addr):
+        raise HTTPException(status_code=400, detail="Email sender is not a contact suggestion")
+
+    existing = (
+        await db.execute(
+            select(Contact)
+            .options(selectinload(Contact.application), selectinload(Contact.company_ref))
+            .where(Contact.user_id == user_id, Contact.email == email_addr)
+            .limit(1)
         )
-        aggregate["email_count"] += 1
-        if aggregate["last_interaction"] is None or (
-            email_event.received_at and email_event.received_at > aggregate["last_interaction"]
-        ):
-            aggregate["last_interaction"] = email_event.received_at
-            aggregate["event"] = email_event
+    ).scalar_one_or_none()
+    if existing:
+        return _serialize_contact(existing)
 
-    derived_contacts = sorted(
-        sender_aggregate.items(),
-        key=lambda item: item[1]["last_interaction"] or datetime.min.replace(tzinfo=timezone.utc),
-        reverse=True,
+    inferred = build_inferred_contact_from_email_event(event)
+    contact = Contact(
+        user_id=user_id,
+        application_id=event.application_id,
+        name=inferred["name"] or event.sender,
+        title=inferred["title"],
+        email=email_addr,
+        company_name=inferred["company"] or event.company_name,
+        linkedin_url=inferred["linkedin_url"],
+        source="email",
+        confidence_score=0.75,
     )
+    db.add(contact)
+    await db.flush()
 
-    for email_addr, aggregate in derived_contacts[offset : offset + limit]:
-        if email_addr in ignored_emails:
-            continue
-        if email_addr in seen_emails:
-            continue
-        event = aggregate["event"]
-        if not should_create_network_contact(event.sender or "", email_addr):
-            continue
-        seen_emails.add(email_addr)
-        inferred = build_inferred_contact_from_email_event(event)
-        display_name = inferred["name"] or event.sender
-        haystack = " ".join(filter(None, [email_addr, display_name, inferred["title"], inferred["company"]])).lower()
-        if q and q.lower() not in haystack:
-            continue
-        contacts_list.append({
-            "id": f"email-{email_addr}",
-            "name": display_name,
-            "email": email_addr,
-            "title": inferred["title"],
-            "phone_number": None,
-            "company": inferred["company"],
-            "company_id": None,
-            "source": "email",
-            "reached_out": False,
-            "response_received": False,
-            "linkedin_url": inferred["linkedin_url"],
-            "email_count": aggregate["email_count"],
-            "last_interaction_at": aggregate["last_interaction"].isoformat() if aggregate["last_interaction"] else None,
-        })
+    await db.execute(
+        update(EmailEvent)
+        .where(EmailEvent.user_id == user_id, func.lower(EmailEvent.sender_email) == email_addr)
+        .values(contact_id=contact.id)
+    )
+    ignored = (
+        await db.execute(
+            select(IgnoredNetworkContact).where(
+                IgnoredNetworkContact.user_id == user_id,
+                IgnoredNetworkContact.email == email_addr,
+            )
+        )
+    ).scalar_one_or_none()
+    if ignored:
+        await db.delete(ignored)
 
-    return contacts_list[:limit]
+    from backend.services.search.indexer import index_record
+    await index_record(db, contact)
+    await db.commit()
+
+    contact_result = await db.execute(
+        select(Contact)
+        .options(selectinload(Contact.application), selectinload(Contact.company_ref))
+        .where(Contact.id == contact.id, Contact.user_id == user_id)
+    )
+    return _serialize_contact(contact_result.scalar_one())
+
+
+@app.post("/api/network-suggestions/dismiss")
+async def dismiss_network_suggestion(
+    payload: NetworkSuggestionAction,
+    db: AsyncSession = Depends(get_db),
+    auth: dict = Depends(verify_api_key),
+):
+    """Dismiss a conversation-derived contact candidate without deleting the email."""
+    user_id = _require_user_id(auth)
+    event = await _network_suggestion_event(db, user_id=user_id, payload=payload)
+    email_addr = (event.sender_email or "").lower()
+    ignored = (
+        await db.execute(
+            select(IgnoredNetworkContact).where(
+                IgnoredNetworkContact.user_id == user_id,
+                IgnoredNetworkContact.email == email_addr,
+            )
+        )
+    ).scalar_one_or_none()
+    if not ignored:
+        db.add(IgnoredNetworkContact(user_id=user_id, email=email_addr))
+    await db.commit()
+    return {"status": "ok", "email": email_addr}
 
 
 @app.get("/api/network/{email}")
@@ -5440,6 +5676,8 @@ async def create_interview_from_email(
     event = result.scalar_one_or_none()
     if not event:
         raise HTTPException(status_code=404, detail="Email not found")
+    if event.classification != "interview_request":
+        raise HTTPException(status_code=400, detail="Email is not classified as an interview request.")
 
     # Extract datetime from email
     extracted = extract_interview_datetime(
@@ -5460,6 +5698,12 @@ async def create_interview_from_email(
             pass
         duration_minutes = extracted.get("duration_minutes")
         location_or_link = extracted.get("location_or_link")
+
+    if not scheduled_at:
+        raise HTTPException(
+            status_code=400,
+            detail="Choose a date and time before adding this interview to your calendar.",
+        )
 
     interview = Interview(
         application_id=event.application_id,

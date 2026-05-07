@@ -211,6 +211,15 @@ class EmailFeedback(Base):
     is_job_related: Mapped[bool] = mapped_column(Boolean, nullable=False)
     sender_domain: Mapped[str | None] = mapped_column(Text, nullable=True)
     subject_pattern: Mapped[str | None] = mapped_column(Text, nullable=True)
+    predicted_route: Mapped[str | None] = mapped_column(Text, nullable=True)
+    predicted_subtype: Mapped[str | None] = mapped_column(Text, nullable=True)
+    predicted_classification: Mapped[str | None] = mapped_column(Text, nullable=True)
+    feedback_action: Mapped[str | None] = mapped_column(Text, nullable=True)
+    corrected_route: Mapped[str | None] = mapped_column(Text, nullable=True)
+    corrected_subtype: Mapped[str | None] = mapped_column(Text, nullable=True)
+    feedback_label: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_surface: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 

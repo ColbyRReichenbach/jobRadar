@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { Email, Job } from '../types';
+import { Email, EmailFeedbackPayload, Job } from '../types';
 import { format, formatDistanceToNow } from 'date-fns';
 import { motion, AnimatePresence } from 'motion/react';
 import { Search, Clock, AlertCircle, CheckCircle2, MessageSquare, ArrowRight, Send, ChevronDown, ChevronUp, Undo2, Trash2, Users } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { fetchReplyContext, sendEmail, generateDraft, updateEmail } from '../lib/api';
+import { acceptNetworkSuggestion, fetchReplyContext, sendEmail, generateDraft, submitEmailFeedback, updateEmail } from '../lib/api';
 import { useAuth } from '../lib/AuthContext';
+import { EmailCorrectionDialog } from './EmailCorrectionDialog';
 
 interface ReplyComposerState {
   to: string;
@@ -36,9 +37,10 @@ interface ConversationsProps {
     tab: 'emails' | 'conversations';
     token: number;
   } | null;
+  onFeedbackSubmitted?: () => void | Promise<void>;
 }
 
-export function Conversations({ emails, jobs, focusRequest }: ConversationsProps) {
+export function Conversations({ emails, jobs, focusRequest, onFeedbackSubmitted }: ConversationsProps) {
   const { user } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<'all' | 'needs_reply' | 'waiting' | 'done'>('all');
@@ -50,6 +52,12 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
   const [replyComposer, setReplyComposer] = useState<ReplyComposerState>(EMPTY_REPLY_COMPOSER);
   const [sendingReply, setSendingReply] = useState(false);
   const [replyError, setReplyError] = useState<string | null>(null);
+  const [contactStatus, setContactStatus] = useState<string | null>(null);
+  const [contactBusy, setContactBusy] = useState(false);
+  const [correctionDialog, setCorrectionDialog] = useState<{
+    action: 'not_relevant' | 'move_to_inbox';
+    email: Email;
+  } | null>(null);
   const [resolvedThreadOverrides, setResolvedThreadOverrides] = useState<Record<string, boolean>>({});
   const [hiddenEmailIds, setHiddenEmailIds] = useState<Set<string>>(new Set());
   const [localSentEmails, setLocalSentEmails] = useState<Email[]>([]);
@@ -60,6 +68,7 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
     setIsReplying(false);
     setReplyComposer(EMPTY_REPLY_COMPOSER);
     setReplyError(null);
+    setContactStatus(null);
   }, [selectedThreadId]);
 
   useEffect(() => {
@@ -215,6 +224,37 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
         return next;
       });
       console.error('Failed to hide email:', err);
+    }
+  };
+
+  const handleCorrectionSubmit = async (payload: EmailFeedbackPayload) => {
+    const email = correctionDialog?.email;
+    await submitEmailFeedback(payload);
+    if (email) {
+      const threadId = email.threadId || email.id;
+      const hiddenIds = selectedThread?.id === threadId
+        ? selectedThread.emails.map((threadEmail) => threadEmail.id)
+        : [email.id];
+      setHiddenEmailIds((prev) => new Set([...prev, ...hiddenIds]));
+      setSelectedThreadId(null);
+      setSelectedMessageId(null);
+    }
+    await onFeedbackSubmitted?.();
+  };
+
+  const handleAddSelectedContact = async () => {
+    const candidate = selectedThread?.emails.find((email) => !email.isFromUser && email.senderEmail);
+    if (!candidate) return;
+    setContactBusy(true);
+    setContactStatus(null);
+    try {
+      await acceptNetworkSuggestion({ email_id: candidate.id });
+      setContactStatus('Contact added to your network.');
+      await onFeedbackSubmitted?.();
+    } catch (err) {
+      setContactStatus(err instanceof Error ? err.message : 'Could not add this contact.');
+    } finally {
+      setContactBusy(false);
     }
   };
 
@@ -773,6 +813,14 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
                   )}
                   <div className="flex flex-wrap gap-2 sm:gap-3">
                     <button
+                      onClick={() => void handleAddSelectedContact()}
+                      disabled={contactBusy || !selectedThread.emails.some((email) => !email.isFromUser && email.senderEmail)}
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-xl shadow-sm transition-colors inline-flex items-center gap-2 disabled:opacity-50"
+                    >
+                      <Users className="w-4 h-4" />
+                      {contactBusy ? 'Adding...' : 'Add to Network'}
+                    </button>
+                    <button
                       onClick={() => void handleStartReply('reply')}
                       className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-sm font-medium rounded-xl shadow-sm transition-colors"
                     >
@@ -793,13 +841,30 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
                       {selectedThread.resolved ? 'Undo Done' : 'Mark as Done'}
                     </button>
                     <button
+                      onClick={() => selectedMessage && setCorrectionDialog({ action: 'move_to_inbox', email: selectedMessage })}
+                      className="px-4 py-2 bg-white border border-slate-200 text-slate-700 text-sm font-medium rounded-xl shadow-sm hover:bg-slate-50 transition-colors inline-flex items-center gap-2"
+                    >
+                      <ArrowRight className="w-4 h-4" />
+                      Move to Inbox
+                    </button>
+                    <button
                       onClick={handleHideThread}
                       className="px-4 py-2 bg-white border border-slate-200 text-slate-700 text-sm font-medium rounded-xl shadow-sm hover:bg-slate-50 transition-colors inline-flex items-center gap-2"
                     >
                       <Trash2 className="w-4 h-4" />
                       Delete
                     </button>
+                    <button
+                      onClick={() => selectedMessage && setCorrectionDialog({ action: 'not_relevant', email: selectedMessage })}
+                      className="px-4 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-medium rounded-xl shadow-sm hover:bg-slate-50 transition-colors inline-flex items-center gap-2"
+                    >
+                      <AlertCircle className="w-4 h-4" />
+                      Not Conversation Related
+                    </button>
                   </div>
+                  {contactStatus && (
+                    <div className="text-sm text-slate-500">{contactStatus}</div>
+                  )}
                 </div>
               )}
             </div>
@@ -814,6 +879,18 @@ export function Conversations({ emails, jobs, focusRequest }: ConversationsProps
           </div>
         )}
       </div>
+      <AnimatePresence>
+        {correctionDialog && (
+          <EmailCorrectionDialog
+            action={correctionDialog.action}
+            surface="conversation"
+            emailId={correctionDialog.email.id}
+            subject={correctionDialog.email.subject}
+            onClose={() => setCorrectionDialog(null)}
+            onSubmit={handleCorrectionSubmit}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

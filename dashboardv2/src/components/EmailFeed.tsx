@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ApplicationSuggestion, Email, Job } from '../types';
+import { ApplicationSuggestion, Email, EmailFeedbackPayload, InterviewSuggestion, Job } from '../types';
 import { format, formatDistanceToNow } from 'date-fns';
 import { cn } from '../lib/utils';
 import {
@@ -24,7 +24,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import {
   acceptApplicationSuggestion,
-  createInterviewFromEmail,
+  acceptInterviewSuggestion,
   checkEmailPipeline,
   dismissApplicationSuggestion,
   fetchApplicationSuggestions,
@@ -32,6 +32,7 @@ import {
   updateEmail,
 } from '../lib/api';
 import { DialogShell } from './DialogShell';
+import { EmailCorrectionDialog } from './EmailCorrectionDialog';
 
 interface EmailFeedProps {
   emails: Email[];
@@ -168,6 +169,19 @@ export function EmailFeed({
   const [applicationSuggestions, setApplicationSuggestions] = useState<ApplicationSuggestion[]>([]);
   const [suggestionStatus, setSuggestionStatus] = useState<string | null>(null);
   const [busySuggestionKey, setBusySuggestionKey] = useState<string | null>(null);
+  const [correctionDialog, setCorrectionDialog] = useState<{
+    action: 'not_relevant' | 'move_to_conversation';
+    email: Email;
+  } | null>(null);
+  const [interviewDraft, setInterviewDraft] = useState<{
+    email: Email;
+    scheduledAt: string;
+    duration: string;
+    location: string;
+    interviewerName: string;
+    interviewerEmail: string;
+    notes: string;
+  } | null>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const collapsed = forceOpen ? false : isCollapsed;
@@ -359,32 +373,20 @@ export function EmailFeed({
     onNavigateToEmail?.(email);
   };
 
-  const handleNotJobRelated = async (event: React.MouseEvent, email: Email) => {
-    event.stopPropagation();
+  const hideEmailLocally = (email: Email) => {
     setDismissedEmails((prev) => new Set([...prev, email.id]));
     setHiddenEmailIds((prev) => new Set([...prev, email.id]));
     if (selectedMessageId === email.id) {
       setSelectedThreadId(null);
       setSelectedMessageId(null);
     }
-    try {
-      await Promise.all([
-        submitEmailFeedback(email.id, false),
-        updateEmail(email.id, { hidden: true }),
-      ]);
-    } catch (err) {
-      setDismissedEmails((prev) => {
-        const next = new Set(prev);
-        next.delete(email.id);
-        return next;
-      });
-      setHiddenEmailIds((prev) => {
-        const next = new Set(prev);
-        next.delete(email.id);
-        return next;
-      });
-      console.error('Failed to submit feedback:', err);
-    }
+  };
+
+  const handleCorrectionSubmit = async (payload: EmailFeedbackPayload) => {
+    const email = correctionDialog?.email;
+    await submitEmailFeedback(payload);
+    if (email) hideEmailLocally(email);
+    await onSuggestionAccepted?.();
   };
 
   const handleDeleteThread = async (thread: EmailThread) => {
@@ -488,13 +490,52 @@ export function EmailFeed({
     setPipelineAlert(null);
   };
 
-  const handleCreateInterviewFromEmail = async () => {
-    if (!selectedMessage) return;
+  const openInterviewDraft = (email: Email) => {
+    setInterviewStatus(null);
+    setInterviewDraft({
+      email,
+      scheduledAt: '',
+      duration: '30',
+      location: '',
+      interviewerName: email.sender || '',
+      interviewerEmail: email.senderEmail || '',
+      notes: `Created from email: ${email.subject}`,
+    });
+  };
+
+  const handleCreateInterviewFromDraft = async () => {
+    if (!interviewDraft) return;
     setCreatingInterview(true);
     setInterviewStatus(null);
     try {
-      await createInterviewFromEmail(selectedMessage.id);
+      const suggestion: InterviewSuggestion = {
+        email_id: interviewDraft.email.id,
+        subject: interviewDraft.email.subject,
+        sender: interviewDraft.email.sender,
+        sender_email: interviewDraft.email.senderEmail || null,
+        company_name: interviewDraft.email.companyName || null,
+        role_title: null,
+        application_id: interviewDraft.email.jobId || null,
+        interview_type: 'phone',
+        scheduled_at: null,
+        duration_minutes: null,
+        location_or_link: null,
+        snippet: interviewDraft.email.snippet || null,
+        received_at: interviewDraft.email.date || null,
+        confidence: interviewDraft.email.confidence || 0,
+      };
+      await acceptInterviewSuggestion(suggestion, {
+        scheduled_at: interviewDraft.scheduledAt,
+        duration_minutes: interviewDraft.duration ? Number(interviewDraft.duration) : undefined,
+        location_or_link: interviewDraft.location || undefined,
+        interviewer_name: interviewDraft.interviewerName || undefined,
+        interviewer_email: interviewDraft.interviewerEmail || undefined,
+        notes: interviewDraft.notes || undefined,
+      });
       setInterviewStatus('Interview added to your calendar view.');
+      hideEmailLocally(interviewDraft.email);
+      setInterviewDraft(null);
+      await onSuggestionAccepted?.();
     } catch (err) {
       setInterviewStatus(err instanceof Error ? err.message : 'Could not create the interview.');
     } finally {
@@ -1103,14 +1144,21 @@ export function EmailFeed({
                   )}
                   {selectedMessage.category === 'interview_request' && (
                     <button
-                      onClick={() => void handleCreateInterviewFromEmail()}
+                      onClick={() => openInterviewDraft(selectedMessage)}
                       disabled={creatingInterview}
                       className="px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-xl shadow-sm hover:bg-emerald-700 transition-colors inline-flex items-center gap-2 disabled:opacity-50"
                     >
                       <CalendarPlus className="w-4 h-4" />
-                      {creatingInterview ? 'Adding...' : 'Add Interview'}
+                      Add to Calendar
                     </button>
                   )}
+                  <button
+                    onClick={() => setCorrectionDialog({ action: 'move_to_conversation', email: selectedMessage })}
+                    className="px-4 py-2 bg-white border border-slate-200 text-slate-700 text-sm font-medium rounded-xl shadow-sm hover:bg-slate-50 transition-colors inline-flex items-center gap-2"
+                  >
+                    <ArrowRight className="w-4 h-4" />
+                    Move to Conversations
+                  </button>
                   <button
                     onClick={() => handleResolveThread(!selectedThread.resolved)}
                     className="px-4 py-2 bg-white border border-slate-200 text-slate-700 text-sm font-medium rounded-xl shadow-sm hover:bg-slate-50 transition-colors inline-flex items-center gap-2"
@@ -1126,7 +1174,7 @@ export function EmailFeed({
                     Delete
                   </button>
                   <button
-                    onClick={(event) => handleNotJobRelated(event, selectedMessage)}
+                    onClick={() => setCorrectionDialog({ action: 'not_relevant', email: selectedMessage })}
                     className="px-4 py-2 bg-white border border-slate-200 text-slate-600 text-sm font-medium rounded-xl shadow-sm hover:bg-slate-50 transition-colors flex items-center gap-2"
                   >
                     <ThumbsDown className="w-4 h-4" />
@@ -1151,6 +1199,122 @@ export function EmailFeed({
           )}
         </div>
       )}
+
+      <AnimatePresence>
+        {correctionDialog && (
+          <EmailCorrectionDialog
+            action={correctionDialog.action}
+            surface="inbox"
+            emailId={correctionDialog.email.id}
+            subject={correctionDialog.email.subject}
+            onClose={() => setCorrectionDialog(null)}
+            onSubmit={handleCorrectionSubmit}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {interviewDraft && (
+          <DialogShell
+            onClose={() => setInterviewDraft(null)}
+            titleId="email-interview-draft-title"
+            wrapperClassName="fixed inset-0 z-[60] flex items-end justify-center p-0 sm:items-center sm:p-4"
+            panelClassName="bg-white w-full max-w-xl max-h-[92dvh] sm:max-h-[min(720px,calc(100dvh-2rem))] rounded-t-[2rem] sm:rounded-3xl shadow-2xl overflow-hidden flex flex-col"
+          >
+            <div className="shrink-0 border-b border-slate-100 p-4 sm:p-6">
+              <h2 id="email-interview-draft-title" className="text-xl font-serif font-bold text-slate-900">
+                Add Interview
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Confirm the date and details before adding this to your calendar.
+              </p>
+              <p className="mt-2 truncate text-xs text-slate-400">{interviewDraft.email.subject}</p>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
+              <label className="block">
+                <span className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">Date and Time</span>
+                <input
+                  type="datetime-local"
+                  value={interviewDraft.scheduledAt}
+                  onChange={(event) => setInterviewDraft((prev) => prev ? { ...prev, scheduledAt: event.target.value } : prev)}
+                  className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20"
+                />
+              </label>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block">
+                  <span className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">Duration</span>
+                  <input
+                    type="number"
+                    min="15"
+                    step="15"
+                    value={interviewDraft.duration}
+                    onChange={(event) => setInterviewDraft((prev) => prev ? { ...prev, duration: event.target.value } : prev)}
+                    className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">Location / Link</span>
+                  <input
+                    value={interviewDraft.location}
+                    onChange={(event) => setInterviewDraft((prev) => prev ? { ...prev, location: event.target.value } : prev)}
+                    className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20"
+                  />
+                </label>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block">
+                  <span className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">Interviewer</span>
+                  <input
+                    value={interviewDraft.interviewerName}
+                    onChange={(event) => setInterviewDraft((prev) => prev ? { ...prev, interviewerName: event.target.value } : prev)}
+                    className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">Email</span>
+                  <input
+                    type="email"
+                    value={interviewDraft.interviewerEmail}
+                    onChange={(event) => setInterviewDraft((prev) => prev ? { ...prev, interviewerEmail: event.target.value } : prev)}
+                    className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20"
+                  />
+                </label>
+              </div>
+              <label className="block">
+                <span className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">Notes</span>
+                <textarea
+                  rows={3}
+                  value={interviewDraft.notes}
+                  onChange={(event) => setInterviewDraft((prev) => prev ? { ...prev, notes: event.target.value } : prev)}
+                  className="mt-2 w-full resize-y rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-500/20"
+                />
+              </label>
+              {interviewStatus && (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  {interviewStatus}
+                </div>
+              )}
+            </div>
+            <div className="shrink-0 border-t border-slate-100 bg-white p-4 sm:px-6">
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <button
+                  onClick={() => setInterviewDraft(null)}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => void handleCreateInterviewFromDraft()}
+                  disabled={creatingInterview || !interviewDraft.scheduledAt}
+                  className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  {creatingInterview ? 'Adding...' : 'Add to Calendar'}
+                </button>
+              </div>
+            </div>
+          </DialogShell>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {threadPendingDeletion && (
