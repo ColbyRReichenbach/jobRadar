@@ -52,8 +52,8 @@ def _route_for_classification(classification: str | None) -> str:
     if email_type == "conversation":
         return "conversation"
     if email_type == "decision":
-        return "inbox"
-    return "ignore"
+        return "application_inbox"
+    return "filter"
 
 
 def _classification_dict(result: HybridClassificationResult) -> dict[str, Any]:
@@ -67,6 +67,11 @@ def _classification_dict(result: HybridClassificationResult) -> dict[str, Any]:
         "action_needed": result.action_needed,
         "is_automated": result.is_automated,
         "sender_role": result.sender_role,
+        "route": result.route,
+        "subtype": result.subtype,
+        "route_confidence": round(float(result.route_confidence or 0), 4),
+        "subtype_confidence": round(float(result.subtype_confidence or 0), 4),
+        "status_update_allowed": result.status_update_allowed,
         "matched_features": result.matched_features,
         "ambiguity_reasons": result.ambiguity_reasons,
         "fallback_reason": result.fallback_reason,
@@ -118,7 +123,7 @@ async def analyze_email_event_for_dry_run(
         }
 
     existing_route = _route_for_classification(event.classification)
-    hybrid_route = _route_for_classification(analysis.result.classification)
+    hybrid_route = analysis.result.route
     needs_manual_review = bool(
         preflight.should_call_llm
         or preflight.blocked
@@ -147,10 +152,19 @@ async def analyze_email_event_for_dry_run(
         },
         "hybrid": {
             **_classification_dict(analysis.result),
-            "route": hybrid_route,
             "scores": {
                 "job_signal_score": analysis.scores.job_signal_score,
                 "noise_score": analysis.scores.noise_score,
+                "top_route": analysis.scores.top_route,
+                "top_route_score": analysis.scores.top_route_score,
+                "second_route_score": analysis.scores.second_route_score,
+                "route_margin": analysis.scores.route_margin,
+                "route_scores": analysis.scores.route_scores,
+                "top_subtype": analysis.scores.top_subtype,
+                "top_subtype_score": analysis.scores.top_subtype_score,
+                "second_subtype_score": analysis.scores.second_subtype_score,
+                "subtype_margin": analysis.scores.subtype_margin,
+                "subtype_scores": analysis.scores.subtype_scores,
                 "top_category": analysis.scores.top_category,
                 "top_score": analysis.scores.top_score,
                 "second_score": analysis.scores.second_score,
@@ -200,6 +214,8 @@ def summarize_dry_run(case_results: list[dict[str, Any]]) -> dict[str, Any]:
     count = len(case_results)
     existing_counts = Counter(case["existing"]["classification"] or "unknown" for case in case_results)
     hybrid_counts = Counter(case["hybrid"]["classification"] for case in case_results)
+    hybrid_route_counts = Counter(case["hybrid"]["route"] for case in case_results)
+    hybrid_subtype_counts = Counter(case["hybrid"].get("subtype") or "unknown_other" for case in case_results)
     decision_paths = Counter(case["hybrid"]["decision_path"] for case in case_results)
     route_changes = sum(1 for case in case_results if case["existing"]["route"] != case["hybrid"]["route"])
     classification_changes = sum(
@@ -222,6 +238,8 @@ def summarize_dry_run(case_results: list[dict[str, Any]]) -> dict[str, Any]:
         "event_count": count,
         "existing_classification_counts": dict(sorted(existing_counts.items())),
         "hybrid_classification_counts": dict(sorted(hybrid_counts.items())),
+        "hybrid_route_counts": dict(sorted(hybrid_route_counts.items())),
+        "hybrid_subtype_counts": dict(sorted(hybrid_subtype_counts.items())),
         "hybrid_decision_path_counts": dict(sorted(decision_paths.items())),
         "route_change_count": route_changes,
         "route_change_rate": round(route_changes / count, 4) if count else 0,

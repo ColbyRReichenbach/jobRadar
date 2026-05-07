@@ -58,6 +58,11 @@ class Prediction:
     retry_count: int = 0
     safety_status: str | None = None
     decision_path: str | None = None
+    route: str | None = None
+    subtype: str | None = None
+    route_confidence: float | None = None
+    subtype_confidence: float | None = None
+    status_update_allowed: bool = False
     matched_features: list[str] | None = None
     ambiguity_reasons: list[str] | None = None
     redaction_applied: bool = False
@@ -272,6 +277,11 @@ async def hybrid_rules_nlp_llm_predict(example: ClassifierExample) -> Prediction
         output_tokens=result.output_tokens,
         retry_count=result.retry_count,
         decision_path=result.decision_path,
+        route=result.route,
+        subtype=result.subtype,
+        route_confidence=result.route_confidence,
+        subtype_confidence=result.subtype_confidence,
+        status_update_allowed=result.status_update_allowed,
         matched_features=result.matched_features,
         ambiguity_reasons=result.ambiguity_reasons,
         redaction_applied=result.redaction_applied,
