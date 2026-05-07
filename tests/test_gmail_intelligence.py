@@ -1,6 +1,6 @@
 import pytest
 
-from backend.services.email_classifier import classify_email
+from backend.services.email_classifier import classify_email, email_type_for_classifier_result, should_store_classifier_result
 from backend.services.gmail_intelligence.feature_extractor import extract_email_features
 from backend.services.gmail_intelligence.normalizer import normalize_email
 from backend.services.gmail_intelligence.orchestrator import analyze_email
@@ -116,6 +116,80 @@ async def test_analyze_email_accepts_high_confidence_without_llm():
     assert analysis.result.model_used is False
     assert analysis.result.decision_path == "deterministic_high_confidence"
     assert analysis.result.confidence_band == "high"
+
+
+@pytest.mark.asyncio
+async def test_handshake_job_alert_routes_to_filter_not_application_inbox():
+    candidate = EmailCandidate(
+        sender="Handshake",
+        sender_email="notifications@joinhandshake.com",
+        subject="New jobs for you: onsite analyst roles",
+        body="Applications due soon. Apply now to open positions in Charlotte and onsite programs.",
+    )
+
+    analysis = await analyze_email(candidate, ai_enabled=False)
+
+    assert analysis.result.route == "filter"
+    assert analysis.result.subtype == "job_alert"
+    assert analysis.result.classification == "not_relevant"
+    assert analysis.result.job_related is False
+    assert analysis.result.status_update_allowed is False
+    assert analysis.scores.category_scores["interview_request"] < 0.7
+
+
+@pytest.mark.asyncio
+async def test_onsite_with_scheduler_routes_to_application_interview():
+    candidate = EmailCandidate(
+        sender="Handshake",
+        sender_email="notifications@joinhandshake.com",
+        subject="Onsite interview request from Acme",
+        body="Acme would like to schedule your interview. Choose a time here.",
+    )
+
+    analysis = await analyze_email(candidate, ai_enabled=False)
+
+    assert analysis.result.route == "application_inbox"
+    assert analysis.result.subtype == "interview_request"
+    assert analysis.result.classification == "interview_request"
+    assert analysis.result.status_update_allowed is True
+
+
+@pytest.mark.asyncio
+async def test_retail_marketing_career_language_routes_to_filter():
+    candidate = EmailCandidate(
+        sender="Target",
+        sender_email="marketing@target.com",
+        subject="Career-ready discounts",
+        body="Spring sale and rewards. Shop now for deals.",
+    )
+
+    analysis = await analyze_email(candidate, ai_enabled=False)
+
+    assert analysis.result.route == "filter"
+    assert analysis.result.classification == "not_relevant"
+    assert analysis.result.subtype in {"retail_noise", "marketing_promo"}
+
+
+def test_sync_storage_policy_skips_opportunity_discovery_route():
+    payload = {
+        "classification": "job_update",
+        "route": "opportunity_discovery",
+        "subtype": "job_alert",
+    }
+
+    assert should_store_classifier_result(payload) is False
+    assert email_type_for_classifier_result(payload) is None
+
+
+def test_sync_storage_policy_skips_action_review_route():
+    payload = {
+        "classification": "conversation",
+        "route": "action_review",
+        "subtype": "recruiter_outreach",
+    }
+
+    assert should_store_classifier_result(payload) is False
+    assert email_type_for_classifier_result(payload) is None
 
 
 @pytest.mark.asyncio

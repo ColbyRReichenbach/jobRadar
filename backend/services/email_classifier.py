@@ -173,6 +173,11 @@ async def _classify_email_hybrid_mode(
         "classifier_mode": mode,
         "decision_path": result.decision_path,
         "model_used": result.model_used,
+        "route": result.route,
+        "subtype": result.subtype,
+        "route_confidence": result.route_confidence,
+        "subtype_confidence": result.subtype_confidence,
+        "status_update_allowed": result.status_update_allowed,
         "matched_features": result.matched_features,
         "ambiguity_reasons": result.ambiguity_reasons,
         "fallback_reason": result.fallback_reason,
@@ -425,6 +430,40 @@ CLASSIFICATION_TO_EMAIL_TYPE = {
     "conversation": "conversation",
     "not_relevant": None,
 }
+
+
+def email_type_for_classifier_result(result: dict) -> str | None:
+    """Map a classifier payload to the current EmailEvent surface.
+
+    The hybrid classifier emits a route-first result. The existing database
+    still only has `email_type`, so we translate routes conservatively and keep
+    legacy category mapping as the fallback.
+    """
+    route = str(result.get("route") or "").strip()
+    if route == "conversation":
+        return "conversation"
+    if route == "application_inbox":
+        return "decision"
+    if route in {"filter", "opportunity_discovery", "action_review"}:
+        return None
+    return CLASSIFICATION_TO_EMAIL_TYPE.get(str(result.get("classification") or ""))
+
+
+def should_store_classifier_result(result: dict) -> bool:
+    """Return whether the Gmail sync should create an EmailEvent row.
+
+    Opportunity discovery is job-adjacent, but it is not an application
+    lifecycle email or human conversation. Until that route has its own product
+    surface/source-intelligence sink, it should not pollute the inbox.
+    """
+    if result.get("safety_status") == "quarantined":
+        return False
+    route = str(result.get("route") or "").strip()
+    if route in {"filter", "opportunity_discovery", "action_review"}:
+        return False
+    classification = str(result.get("classification") or "not_relevant")
+    return classification != "not_relevant"
+
 
 # Map classifier categories to color codes for UI
 CLASSIFICATION_TO_COLOR = {

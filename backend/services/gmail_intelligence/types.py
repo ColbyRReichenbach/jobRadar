@@ -16,6 +16,35 @@ EmailClassification = Literal[
     "not_relevant",
 ]
 
+EmailRoute = Literal[
+    "filter",
+    "opportunity_discovery",
+    "conversation",
+    "application_inbox",
+    "action_review",
+]
+
+EmailSubtype = Literal[
+    "application_received",
+    "application_status_update",
+    "interview_request",
+    "rejection",
+    "offer",
+    "assessment_or_task",
+    "document_request",
+    "recruiter_outreach",
+    "referral_or_networking",
+    "job_alert",
+    "job_board_promo",
+    "career_fair_or_event",
+    "company_newsletter",
+    "marketing_promo",
+    "system_notification",
+    "finance_noise",
+    "retail_noise",
+    "unknown_other",
+]
+
 DecisionPath = Literal[
     "deterministic_high_confidence",
     "deterministic_noise_skip",
@@ -77,6 +106,8 @@ class RedactedEmail:
 class EmailFeatures:
     sender_domain: str
     sender_local_part: str
+    sender_domain_family: str
+    sender_local_type: str
     is_ats_domain: bool
     is_known_company_domain: bool
     is_noise_domain: bool
@@ -87,6 +118,7 @@ class EmailFeatures:
     has_private_url_signal: bool
     matched_features: list[str]
     category_feature_hits: dict[str, list[str]]
+    route_feature_hits: dict[str, list[str]]
     url_feature_types: list[str]
 
 
@@ -94,6 +126,16 @@ class EmailFeatures:
 class ScoreResult:
     job_signal_score: float
     noise_score: float
+    route_scores: dict[EmailRoute, float]
+    top_route: EmailRoute
+    top_route_score: float
+    second_route_score: float
+    route_margin: float
+    subtype_scores: dict[EmailSubtype, float]
+    top_subtype: EmailSubtype
+    top_subtype_score: float
+    second_subtype_score: float
+    subtype_margin: float
     category_scores: dict[EmailClassification, float]
     top_category: EmailClassification
     top_score: float
@@ -125,3 +167,10 @@ class HybridClassificationResult:
     model: str | None = None
     cost_estimate_cents: float = 0.0
     fallback_reason: str | None = None
+    route: EmailRoute = "filter"
+    subtype: EmailSubtype = "unknown_other"
+    route_confidence: float = 0.0
+    subtype_confidence: float = 0.0
+    status_update_allowed: bool = False
+    route_scores: dict[str, float] = field(default_factory=dict)
+    subtype_scores: dict[str, float] = field(default_factory=dict)

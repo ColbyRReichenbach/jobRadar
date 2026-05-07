@@ -76,6 +76,8 @@ class GmailLlmPreflightDecision:
     redaction_reasons: list[str] = field(default_factory=list)
     leak_findings: list[str] = field(default_factory=list)
     local_classification: str = "not_relevant"
+    local_route: str = "filter"
+    local_subtype: str = "unknown_other"
     local_decision_path: str = ""
     ambiguity_reasons: list[str] = field(default_factory=list)
     matched_features: list[str] = field(default_factory=list)
@@ -111,9 +113,12 @@ job_update, interview_request, action_item, offer, rejection, conversation, not_
 Local classifier context:
 - threshold_version: {thresholds.version}
 - local_classification: {local.classification}
+- local_route: {local.route}
+- local_subtype: {local.subtype}
 - local_confidence: {local.confidence}
 - job_signal_score: {scores.job_signal_score}
 - noise_score: {scores.noise_score}
+- route_scores: {scores.route_scores}
 - category_scores: {scores.category_scores}
 - matched_features: {features.matched_features}
 - url_feature_types: {features.url_feature_types}
@@ -175,6 +180,8 @@ def _blocked_decision(
         redaction_reasons=redaction_reasons or [],
         leak_findings=leak_findings or [],
         local_classification=local.classification,
+        local_route=local.route,
+        local_subtype=local.subtype,
         local_decision_path=local.decision_path,
         ambiguity_reasons=local.ambiguity_reasons,
         matched_features=local.matched_features,
@@ -208,6 +215,8 @@ def evaluate_llm_preflight(
             prompt_injection_reasons=risk.reasons,
             redacted_prompt=None,
             local_classification=local.classification,
+            local_route=local.route,
+            local_subtype=local.subtype,
             local_decision_path=local.decision_path,
             ambiguity_reasons=local.ambiguity_reasons,
             matched_features=local.matched_features,
@@ -269,6 +278,8 @@ def evaluate_llm_preflight(
         redaction_reasons=redaction_reasons,
         leak_findings=[],
         local_classification=local.classification,
+        local_route=local.route,
+        local_subtype=local.subtype,
         local_decision_path=local.decision_path,
         ambiguity_reasons=ambiguity_reasons,
         matched_features=matched_features,

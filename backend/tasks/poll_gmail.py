@@ -72,8 +72,9 @@ async def _poll_gmail_async():
     from backend.services.company_identity import extract_domain, get_company_info
     from backend.services.email_classifier import (
         CLASSIFICATION_TO_COLOR,
-        CLASSIFICATION_TO_EMAIL_TYPE,
         classify_email,
+        email_type_for_classifier_result,
+        should_store_classifier_result,
     )
     from backend.services.email_parser import extract_sender_parts, parse_email_body
     from backend.services.source_intelligence.discovery import process_stored_links_for_source_discovery
@@ -177,7 +178,7 @@ async def _poll_gmail_async():
                     ai_enabled=ai_enabled,
                 )
 
-                if classification.get("classification") == "not_relevant":
+                if not should_store_classifier_result(classification):
                     continue
 
                 company_info = get_company_info(sender_email, include_logo=False)
@@ -216,7 +217,7 @@ async def _poll_gmail_async():
                     received_at=received_at,
                     classification=cls,
                     color_code=CLASSIFICATION_TO_COLOR.get(cls, "gray"),
-                    email_type=CLASSIFICATION_TO_EMAIL_TYPE.get(cls),
+                    email_type=email_type_for_classifier_result(classification),
                     action_needed=classification.get("action_needed", False),
                     key_sentence=classification.get("key_sentence"),
                     summary=classification.get("summary"),
@@ -261,7 +262,7 @@ async def _poll_gmail_async():
                         extra={"error_type": type(exc).__name__.replace("\r", " ").replace("\n", " ")},
                     )
 
-                if cls in STATUS_UPDATES and application_id:
+                if classification.get("status_update_allowed", cls in STATUS_UPDATES) and cls in STATUS_UPDATES and application_id:
                     await update_application_status(
                         db,
                         application_id,

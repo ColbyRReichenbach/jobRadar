@@ -56,6 +56,9 @@ Precomputed local features:
 - url_feature_types: {features.url_feature_types}
 - job_signal_score: {scores.job_signal_score}
 - noise_score: {scores.noise_score}
+- route_scores: {scores.route_scores}
+- local_route: {scores.top_route}
+- local_subtype: {scores.top_subtype}
 - category_scores: {scores.category_scores}
 - threshold_version: {thresholds.version}
 
@@ -140,6 +143,13 @@ async def adjudicate_with_llm(
             retry_count=result.retries,
             model=result.model,
             cost_estimate_cents=_cost_from_tokens(result.model, result.tokens_in, result.tokens_out),
+            route=fallback.route,
+            subtype=fallback.subtype,
+            route_confidence=fallback.route_confidence,
+            subtype_confidence=fallback.subtype_confidence,
+            status_update_allowed=fallback.status_update_allowed,
+            route_scores=fallback.route_scores,
+            subtype_scores=fallback.subtype_scores,
         )
     except ai_safety.AiSafetyQuarantinedError:
         return _with_llm_fallback(
@@ -182,4 +192,11 @@ def _with_llm_fallback(
         redaction_applied=True,
         redaction_counts=redaction_counts,
         fallback_reason=fallback_reason,
+        route=fallback.route,
+        subtype=fallback.subtype,
+        route_confidence=fallback.route_confidence,
+        subtype_confidence=fallback.subtype_confidence,
+        status_update_allowed=fallback.status_update_allowed,
+        route_scores=fallback.route_scores,
+        subtype_scores=fallback.subtype_scores,
     )
