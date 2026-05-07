@@ -110,6 +110,7 @@ def main() -> int:
         "GOOGLE_REDIRECT_URI": google_redirect_uri,
         "GMAIL_CLIENT_ID": first_present(source, "GMAIL_CLIENT_ID"),
         "GMAIL_CLIENT_SECRET": first_present(source, "GMAIL_CLIENT_SECRET"),
+        "GMAIL_CLASSIFIER_MODE": first_present(source, "GMAIL_CLASSIFIER_MODE") or "hybrid",
         "OPENAI_API_KEY": first_present(source, "OPENAI_API_KEY"),
         "HUNTER_API_KEY": first_present(source, "HUNTER_API_KEY"),
         "SERPAPI_KEY": first_present(source, "SERPAPI_KEY"),
