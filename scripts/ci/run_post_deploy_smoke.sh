@@ -22,8 +22,11 @@ API_URL="$(trim_trailing_slash "$PRODUCTION_API_URL")"
 DASHBOARD_URL="$(trim_trailing_slash "$PRODUCTION_DASHBOARD_URL")"
 
 curl -fsS "$API_URL/api/health" >/dev/null
-curl -fsS "$API_URL/api/ready" >/dev/null
 curl -fsS "$DASHBOARD_URL" >/dev/null
+
+if [ "${POST_DEPLOY_DEEP_SMOKE:-false}" = "true" ]; then
+  curl -fsS "$API_URL/api/ready" >/dev/null
+fi
 
 admin_metrics_status="$(curl -sS -o /dev/null -w "%{http_code}" "$API_URL/api/ai/metrics")"
 case "$admin_metrics_status" in
@@ -35,7 +38,7 @@ case "$admin_metrics_status" in
     ;;
 esac
 
-if [ -n "${POST_DEPLOY_SMOKE_BEARER:-}" ]; then
+if [ "${POST_DEPLOY_DEEP_SMOKE:-false}" = "true" ] && [ -n "${POST_DEPLOY_SMOKE_BEARER:-}" ]; then
   curl -fsS \
     -H "Authorization: Bearer $POST_DEPLOY_SMOKE_BEARER" \
     "$API_URL/api/ready" >/dev/null

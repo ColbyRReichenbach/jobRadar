@@ -29,7 +29,7 @@ if (!rawApiUrl && import.meta.env.PROD) {
 }
 const API_BASE = normalizeApiBase(rawApiUrl || 'http://localhost:8000');
 const PAGE_SIZE = 100;
-export const LOCAL_DEV_AUTH_ENABLED = import.meta.env.DEV && import.meta.env.VITE_LOCAL_DEV_AUTH === 'true';
+export const LOCAL_DEV_AUTH_ENABLED = import.meta.env.VITE_LOCAL_DEV_AUTH === 'true';
 const AUTH_SESSION_HINT_KEY = 'apptrail-auth-session';
 
 let _accessToken: string | null = null;

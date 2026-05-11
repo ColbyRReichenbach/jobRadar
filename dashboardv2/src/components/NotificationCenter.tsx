@@ -4,6 +4,7 @@ import { formatDistanceToNow, isToday, isYesterday } from 'date-fns';
 import { cn } from '../lib/utils';
 import { AlertItem, fetchAlerts, getUnreadAlertCount, markAlertRead, markAllAlertsRead } from '../lib/api';
 import { DEFAULT_LOCAL_NOTIFICATION_PREFS, LOCAL_NOTIFICATION_PREFS_EVENT, LocalNotificationPrefs, isWithinLocalQuietHours, loadLocalNotificationPrefs, saveLocalNotificationPrefs } from '../lib/localNotificationPrefs';
+import { DASHBOARD_POLL_INTERVAL_MS, canRunBackgroundRefresh } from '../lib/polling';
 
 interface NotificationCenterProps {
   onNavigate: (actionUrl: string | null) => void;
@@ -103,10 +104,19 @@ export function NotificationCenter({ onNavigate }: NotificationCenterProps) {
 
   useEffect(() => {
     void loadAlerts();
-    const interval = window.setInterval(() => {
-      void loadAlerts();
-    }, 30000);
-    return () => window.clearInterval(interval);
+    if (!DASHBOARD_POLL_INTERVAL_MS) return;
+
+    const refreshIfVisible = () => {
+      if (canRunBackgroundRefresh()) {
+        void loadAlerts();
+      }
+    };
+    const interval = window.setInterval(refreshIfVisible, DASHBOARD_POLL_INTERVAL_MS);
+    document.addEventListener('visibilitychange', refreshIfVisible);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', refreshIfVisible);
+    };
   }, []);
 
   useEffect(() => {

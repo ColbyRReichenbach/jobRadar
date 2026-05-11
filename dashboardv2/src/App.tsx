@@ -16,6 +16,7 @@ import { CopilotLauncher } from './components/copilot/CopilotLauncher';
 import { cn } from './lib/utils';
 import { Logo } from './components/Logo';
 import { COPILOT_ENABLED } from './lib/featureFlags';
+import { DASHBOARD_POLL_INTERVAL_MS, canRunBackgroundRefresh } from './lib/polling';
 
 // Lazy-loaded route components for code splitting
 const KanbanBoard = lazy(() => import('./components/KanbanBoard').then(m => ({ default: m.KanbanBoard })));
@@ -126,8 +127,19 @@ function AppContent() {
     if (!user) return;
 
     loadData();
-    const interval = setInterval(loadData, 30000);
-    return () => clearInterval(interval);
+    if (!DASHBOARD_POLL_INTERVAL_MS) return;
+
+    const refreshIfVisible = () => {
+      if (canRunBackgroundRefresh()) {
+        void loadData();
+      }
+    };
+    const interval = setInterval(refreshIfVisible, DASHBOARD_POLL_INTERVAL_MS);
+    document.addEventListener('visibilitychange', refreshIfVisible);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', refreshIfVisible);
+    };
   }, [authLoading, loadData, user]);
 
   // Dynamic page title

@@ -5,8 +5,9 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from dotenv import load_dotenv
-load_dotenv()
+from backend.env import load_app_env
+
+load_app_env()
 
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from backend.models import Base, Application, Contact, EmailEvent

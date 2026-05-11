@@ -358,8 +358,8 @@ Return only valid JSON with answer, citations, and suggested_actions.""",
 }
 
 
-client = openai.AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-_client_api_key: str | None = os.getenv("OPENAI_API_KEY")
+client: openai.AsyncOpenAI | None = None
+_client_api_key: str | None = None
 _AI_METRICS: dict[str, dict[str, Any]] = {}
 
 
@@ -383,7 +383,7 @@ def get_openai_client() -> openai.AsyncOpenAI:
         raise RuntimeError("OPENAI_API_KEY is not configured")
 
     global client, _client_api_key
-    if _client_api_key != api_key:
+    if client is None or _client_api_key != api_key:
         client = openai.AsyncOpenAI(api_key=api_key)
         _client_api_key = api_key
     return client

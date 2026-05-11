@@ -217,6 +217,7 @@ jobs:
       PRODUCTION_API_URL: ${{ vars.PRODUCTION_API_URL }}
       PRODUCTION_DASHBOARD_URL: ${{ vars.PRODUCTION_DASHBOARD_URL }}
       POST_DEPLOY_SMOKE_BEARER: ${{ secrets.POST_DEPLOY_SMOKE_BEARER }}
+      POST_DEPLOY_DEEP_SMOKE: ${{ vars.POST_DEPLOY_DEEP_SMOKE }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4

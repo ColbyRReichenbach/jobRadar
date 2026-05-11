@@ -94,11 +94,15 @@ make local-reset
 If you want to run services separately:
 
 ```bash
+make local-env
 pip install -r requirements.txt
 playwright install chromium
 alembic upgrade head
 uvicorn backend.main:app --reload --port 8000
 ```
+
+Manual backend commands load `.env.local` when it exists, so local development
+uses local Postgres instead of the hosted Neon database.
 
 In another terminal:
 

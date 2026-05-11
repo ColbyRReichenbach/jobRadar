@@ -2,9 +2,10 @@ import os
 import warnings
 
 from celery import Celery
-from dotenv import load_dotenv
 
-load_dotenv()
+from backend.env import load_app_env
+
+load_app_env()
 
 REDIS_URL = os.getenv("REDIS_URL")
 if not REDIS_URL:
@@ -41,7 +42,7 @@ beat_schedule = {
     },
 }
 
-if _env_flag("SCHEDULED_DB_JOBS_ENABLED", default=True):
+if _env_flag("SCHEDULED_DB_JOBS_ENABLED", default=False):
     beat_schedule.update({
         "check-followups-daily-9am": {
             "task": "backend.tasks.check_followups.check_followups",
@@ -61,13 +62,13 @@ if _env_flag("SCHEDULED_DB_JOBS_ENABLED", default=True):
         },
     })
 
-    if _env_flag("GMAIL_POLLING_ENABLED", default=True):
+    if _env_flag("GMAIL_POLLING_ENABLED", default=False):
         beat_schedule["poll-gmail"] = {
             "task": "backend.tasks.poll_gmail.poll_gmail",
             "schedule": _env_seconds("GMAIL_POLL_INTERVAL_SECONDS", 900.0),
         }
 
-    if _env_flag("RADAR_ENABLED", default=True):
+    if _env_flag("RADAR_ENABLED", default=False):
         beat_schedule["dispatch-due-research-profiles"] = {
             "task": "backend.tasks.run_research_radar.dispatch_due_research_profiles",
             "schedule": _env_seconds("RADAR_DISPATCH_INTERVAL_SECONDS", 900.0),

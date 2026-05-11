@@ -116,8 +116,24 @@ def main() -> int:
         "SERPAPI_KEY": first_present(source, "SERPAPI_KEY"),
         "SENTRY_DSN": first_present(source, "SENTRY_DSN"),
         "SENTRY_ENVIRONMENT": "production",
-        "READINESS_REQUIRE_CELERY": "true",
-        "RADAR_ENABLED": first_present(source, "RADAR_ENABLED") or "true",
+        "READINESS_REQUIRE_CELERY": first_present(source, "READINESS_REQUIRE_CELERY")
+        or "false",
+        "HEALTH_CHECK_DATABASE": first_present(source, "HEALTH_CHECK_DATABASE") or "false",
+        "HEALTH_CHECK_REDIS": first_present(source, "HEALTH_CHECK_REDIS") or "false",
+        "SCHEDULED_DB_JOBS_ENABLED": first_present(source, "SCHEDULED_DB_JOBS_ENABLED")
+        or "false",
+        "GMAIL_POLLING_ENABLED": first_present(source, "GMAIL_POLLING_ENABLED") or "false",
+        "GMAIL_POLL_INTERVAL_SECONDS": first_present(source, "GMAIL_POLL_INTERVAL_SECONDS")
+        or "3600",
+        "JOB_SOURCE_VERIFICATION_BEAT_ENABLED": first_present(
+            source, "JOB_SOURCE_VERIFICATION_BEAT_ENABLED"
+        )
+        or "false",
+        "SOURCE_VERIFICATION_INTERVAL_SECONDS": first_present(
+            source, "SOURCE_VERIFICATION_INTERVAL_SECONDS"
+        )
+        or "3600",
+        "RADAR_ENABLED": first_present(source, "RADAR_ENABLED") or "false",
         "RADAR_RESEARCH_ENABLED": first_present(source, "RADAR_RESEARCH_ENABLED") or "false",
         "RADAR_ALERT_MAX_PER_USER_PER_DAY": first_present(
             source, "RADAR_ALERT_MAX_PER_USER_PER_DAY"

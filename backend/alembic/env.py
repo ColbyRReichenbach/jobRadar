@@ -4,17 +4,17 @@ import sys
 from logging.config import fileConfig
 
 from alembic import context
-from dotenv import load_dotenv
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 # Add project root to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-load_dotenv()
-
+from backend.env import load_app_env
 from backend.database_url import normalize_asyncpg_database_url
 from backend.models import Base
+
+load_app_env()
 
 config = context.config
 database_url, connect_args = normalize_asyncpg_database_url(os.getenv("DATABASE_URL"))
