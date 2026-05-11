@@ -9,7 +9,6 @@ from typing import Literal, Optional
 from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
 from uuid import UUID, uuid4
 
-from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
@@ -23,7 +22,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import NO_VALUE
 
-load_dotenv(override=os.getenv("TESTING") != "1")
+from backend.env import load_app_env
+
+load_app_env()
 os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
 
 from backend.database import async_session_factory, get_db
@@ -105,6 +106,8 @@ from backend.models import (
 )
 from backend.services.alerts import create_user_alert
 from backend.services.ai_orchestrator import get_metrics_snapshot
+from backend.services.action_candidates import build_action_dedupe_key, fingerprint_from_parts
+from backend.services.email_classification_traces import create_email_classification_trace
 from backend.monitoring import configure_sentry
 from backend.services.hunter import find_contacts, generate_linkedin_search_url
 from backend.services.notification_preferences import is_alert_enabled, serialize_notification_preferences
@@ -1305,6 +1308,15 @@ def _alert_action_url(path: str, **params: str | None) -> str:
     clean_params = {key: value for key, value in params.items() if value}
     query = urlencode(clean_params)
     return f"{path}?{query}" if query else path
+
+
+def _alert_dedupe_key(user_id: _uuid.UUID, alert_type: str, target_entity_type: str, target_fingerprint: str) -> str:
+    return build_action_dedupe_key(
+        user_id=user_id,
+        action_type=f"notify:{alert_type}",
+        target_entity_type=target_entity_type,
+        target_fingerprint=target_fingerprint,
+    )
 
 
 def _email_alert_type(email_type: str | None, classification: str | None) -> str:
@@ -2884,6 +2896,15 @@ async def google_auth_redirect(
     from google_auth_oauthlib.flow import Flow
     from fastapi.responses import RedirectResponse
 
+    if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Google OAuth is not configured. Use local dev auth, or set "
+                "GMAIL_CLIENT_ID and GMAIL_CLIENT_SECRET in .env.local."
+            ),
+        )
+
     flow = Flow.from_client_config(
         {
             "web": {
@@ -3586,12 +3607,20 @@ async def sync_gmail(
             sender=sender_name,
             sender_email=sender_email_addr,
             ai_enabled=ai_enabled,
+            raw_candidate_urls=tuple(raw_candidate_urls),
         )
         sync_stats["classified"] += 1
 
         cls = classification.get("classification", "job_update")
 
         if classification.get("safety_status") == "quarantined":
+            await create_email_classification_trace(
+                db,
+                user_id=user_id,
+                classification=classification,
+                gmail_message_id=msg_id,
+                candidate_source_url_count=len(raw_candidate_urls),
+            )
             sync_stats["quarantined"] += 1
             record_sync_audit(
                 gmail_message_id=msg_id,
@@ -3610,6 +3639,13 @@ async def sync_gmail(
         # Skip filtered messages and opportunity-discovery alerts until that
         # route has a dedicated product surface/source-intelligence sink.
         if not should_store_classifier_result(classification):
+            await create_email_classification_trace(
+                db,
+                user_id=user_id,
+                classification=classification,
+                gmail_message_id=msg_id,
+                candidate_source_url_count=len(raw_candidate_urls),
+            )
             sync_stats["skipped_not_relevant"] += 1
             record_sync_audit(
                 gmail_message_id=msg_id,
@@ -3686,6 +3722,14 @@ async def sync_gmail(
         )
         db.add(email_event)
         await db.flush()
+        await create_email_classification_trace(
+            db,
+            user_id=user_id,
+            classification=classification,
+            email_event=email_event,
+            gmail_message_id=msg_id,
+            candidate_source_url_count=len(raw_candidate_urls),
+        )
         if raw_candidate_urls:
             try:
                 async with db.begin_nested():
@@ -3736,10 +3780,11 @@ async def sync_gmail(
         action_path = "/conversations" if email_event.email_type == "conversation" else "/emails"
         action_tab = "conversations" if email_event.email_type == "conversation" else "emails"
         if notifications_enabled:
+            email_alert_type = _email_alert_type(email_event.email_type, cls)
             await create_user_alert(
                 db,
                 user_id=user_id,
-                alert_type=_email_alert_type(email_event.email_type, cls),
+                alert_type=email_alert_type,
                 title=f"{sender_name or sender_email_addr or 'New update'}: {subject or '(no subject)'}",
                 body=(classification.get("summary") or snippet or body_text[:160] if body_text else snippet),
                 action_url=_alert_action_url(
@@ -3747,6 +3792,12 @@ async def sync_gmail(
                     tab=action_tab,
                     email_id=str(email_event.id),
                     thread_id=email_event.thread_id or None,
+                ),
+                dedupe_key=_alert_dedupe_key(
+                    user_id,
+                    email_alert_type,
+                    "email_event",
+                    fingerprint_from_parts("email_event", email_event.id, email_alert_type),
                 ),
                 notification_pref=notification_pref,
             )
@@ -3763,6 +3814,12 @@ async def sync_gmail(
                         tab="conversations",
                         email_id=str(email_event.id),
                         thread_id=email_event.thread_id or None,
+                    ),
+                    dedupe_key=_alert_dedupe_key(
+                        user_id,
+                        "network_contact",
+                        "contact",
+                        fingerprint_from_parts("email", sender_email_addr),
                     ),
                     notification_pref=notification_pref,
                 )
@@ -4010,6 +4067,17 @@ async def sync_calendar(
                     action_url=_alert_action_url(
                         "/calendar",
                         interview_id=item.get("interview_id"),
+                    ),
+                    dedupe_key=_alert_dedupe_key(
+                        current_user.id,
+                        "interview_request",
+                        "interview",
+                        fingerprint_from_parts(
+                            "interview",
+                            item.get("interview_id"),
+                            item.get("status"),
+                            item.get("scheduled_at"),
+                        ),
                     ),
                     notification_pref=notification_pref,
                 )

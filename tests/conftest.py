@@ -46,6 +46,8 @@ _USER_SCOPED_MODELS = {
     "Application",
     "Contact",
     "EmailEvent",
+    "EmailClassificationTrace",
+    "ActionCandidate",
     "UserProfile",
     "WarmConnection",
     "Interview",

@@ -200,6 +200,51 @@ class EmailEvent(Base):
     application: Mapped["Application | None"] = relationship("Application", back_populates="email_events")
     company_ref: Mapped["Company | None"] = relationship("Company", back_populates="email_events")
     private_links: Mapped[list["UserApplicationLink"]] = relationship("UserApplicationLink", back_populates="email_event")
+    classification_traces: Mapped[list["EmailClassificationTrace"]] = relationship(
+        "EmailClassificationTrace",
+        back_populates="email_event",
+        cascade="all, delete-orphan",
+    )
+
+
+class EmailClassificationTrace(Base):
+    __tablename__ = "email_classification_traces"
+    __table_args__ = (
+        Index("ix_email_classification_traces_user_created", "user_id", "created_at"),
+        Index("ix_email_classification_traces_email_event", "email_event_id", "created_at"),
+        Index("ix_email_classification_traces_route_subtype", "route", "subtype", "created_at"),
+        Index(
+            "ux_email_classification_traces_user_message_mode",
+            "user_id",
+            "gmail_message_id",
+            "classifier_mode",
+            unique=True,
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    email_event_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("email_events.id", ondelete="CASCADE"), nullable=True)
+    gmail_message_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    classifier_mode: Mapped[str] = mapped_column(Text, nullable=False)
+    classification: Mapped[str | None] = mapped_column(Text, nullable=True)
+    classification_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    route: Mapped[str | None] = mapped_column(Text, nullable=True)
+    subtype: Mapped[str | None] = mapped_column(Text, nullable=True)
+    route_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    subtype_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    decision_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    threshold_version: Mapped[str | None] = mapped_column(Text, nullable=True)
+    policy_version: Mapped[str | None] = mapped_column(Text, nullable=True)
+    matched_signals_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    feature_summary_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    preflight_status: Mapped[str | None] = mapped_column(Text, nullable=True)
+    candidate_source_url_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    model_used: Mapped[bool] = mapped_column(Boolean, default=False)
+    status_update_allowed: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    email_event: Mapped["EmailEvent | None"] = relationship("EmailEvent", back_populates="classification_traces")
 
 
 class EmailFeedback(Base):
@@ -733,17 +778,69 @@ class ResumeDraft(Base):
     application: Mapped["Application | None"] = relationship("Application")
 
 
+class ActionCandidate(Base):
+    __tablename__ = "action_candidates"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "source_type",
+            "source_id",
+            "action_type",
+            "dedupe_key",
+            name="uq_action_candidates_source_action_dedupe",
+        ),
+        Index("ix_action_candidates_user_status", "user_id", "status", "created_at"),
+        Index("ix_action_candidates_user_dedupe", "user_id", "dedupe_key"),
+        Index("ix_action_candidates_action_status", "action_type", "status", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    source_type: Mapped[str] = mapped_column(Text, nullable=False)
+    source_id: Mapped[str] = mapped_column(Text, nullable=False)
+    action_type: Mapped[str] = mapped_column(Text, nullable=False)
+    target_entity_type: Mapped[str] = mapped_column(Text, nullable=False)
+    target_entity_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    target_fingerprint: Mapped[str] = mapped_column(Text, nullable=False)
+    dedupe_key: Mapped[str] = mapped_column(Text, nullable=False)
+    duplicate_type: Mapped[str] = mapped_column(Text, default="none")
+    duplicate_matches_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    policy_decision: Mapped[str] = mapped_column(Text, default="propose")
+    status: Mapped[str] = mapped_column(Text, default="proposed")
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    requires_confirmation: Mapped[bool] = mapped_column(Boolean, default=True)
+    evidence_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    alerts: Mapped[list["Alert"]] = relationship("Alert", back_populates="action_candidate")
+    recommended_actions: Mapped[list["RecommendedAction"]] = relationship(
+        "RecommendedAction",
+        back_populates="action_candidate",
+    )
+
+
 class Alert(Base):
     __tablename__ = "alerts"
+    __table_args__ = (
+        Index("ux_alerts_user_dedupe_status", "user_id", "dedupe_key", "suppression_status", unique=True),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
     user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
+    action_candidate_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("action_candidates.id", ondelete="SET NULL"), nullable=True)
     alert_type: Mapped[str] = mapped_column(Text, nullable=False)
     title: Mapped[str] = mapped_column(Text, nullable=False)
     body: Mapped[str | None] = mapped_column(Text, nullable=True)
     action_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    dedupe_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    suppression_status: Mapped[str] = mapped_column(Text, default="active")
+    duplicate_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    duplicate_matches_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
     read: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    action_candidate: Mapped["ActionCandidate | None"] = relationship("ActionCandidate", back_populates="alerts")
 
 
 class ExtractionReport(Base):
@@ -1042,6 +1139,7 @@ class RecommendedAction(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    action_candidate_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("action_candidates.id", ondelete="SET NULL"), nullable=True)
     profile_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("research_profiles.id", ondelete="CASCADE"), nullable=True)
     signal_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("opportunity_signals.id", ondelete="SET NULL"), nullable=True)
     brief_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("opportunity_briefs.id", ondelete="SET NULL"), nullable=True)
@@ -1051,11 +1149,19 @@ class RecommendedAction(Base):
     title: Mapped[str] = mapped_column(Text, nullable=False)
     body: Mapped[str | None] = mapped_column(Text, nullable=True)
     payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    dedupe_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    duplicate_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    duplicate_matches_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
     priority: Mapped[int] = mapped_column(Integer, default=50)
     status: Mapped[str] = mapped_column(Text, default="open")
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    action_candidate: Mapped["ActionCandidate | None"] = relationship(
+        "ActionCandidate",
+        back_populates="recommended_actions",
+    )
 
 
 class ResearchFeedback(Base):

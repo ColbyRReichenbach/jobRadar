@@ -104,3 +104,63 @@ async def test_alert_not_found(client):
     import uuid
     resp = await client.patch(f"/api/alerts/{uuid.uuid4()}", headers=AUTH_HEADER)
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_create_user_alert_suppresses_duplicate_dedupe_key(db_session):
+    from sqlalchemy import select
+
+    from backend.models import Alert
+    from backend.services.alerts import create_user_alert
+    from tests.conftest import TEST_USER_ID
+
+    first = await create_user_alert(
+        db_session,
+        user_id=TEST_USER_ID,
+        alert_type="network_contact",
+        title="Suggested contact",
+        dedupe_key="test-user:notify:network_contact:contact:email:taylor@example.com",
+    )
+    second = await create_user_alert(
+        db_session,
+        user_id=TEST_USER_ID,
+        alert_type="network_contact",
+        title="Suggested contact again",
+        dedupe_key="test-user:notify:network_contact:contact:email:taylor@example.com",
+    )
+    await db_session.commit()
+
+    alerts = list((await db_session.execute(select(Alert))).scalars().all())
+    assert first is not None
+    assert second is None
+    assert len(alerts) == 1
+    assert alerts[0].dedupe_key == "test-user:notify:network_contact:contact:email:taylor@example.com"
+    assert alerts[0].suppression_status == "active"
+
+
+@pytest.mark.asyncio
+async def test_alert_dedupe_key_is_database_enforced(db_session):
+    from sqlalchemy.exc import IntegrityError
+
+    from backend.models import Alert
+    from tests.conftest import TEST_USER_ID
+
+    db_session.add_all(
+        [
+            Alert(
+                user_id=TEST_USER_ID,
+                alert_type="network_contact",
+                title="Suggested contact",
+                dedupe_key="test-user:notify:network_contact:contact:email:db-enforced@example.com",
+            ),
+            Alert(
+                user_id=TEST_USER_ID,
+                alert_type="network_contact",
+                title="Suggested contact duplicate",
+                dedupe_key="test-user:notify:network_contact:contact:email:db-enforced@example.com",
+            ),
+        ]
+    )
+    with pytest.raises(IntegrityError):
+        await db_session.commit()
+    await db_session.rollback()

@@ -7,6 +7,8 @@ import uuid as _uuid
 from sqlalchemy import select
 
 from backend.models import Company, RecommendedAction, ResearchEvidenceItem, ResearchReport, ResearchReportSection, ResearchRun
+from backend.services.action_candidates import ActionCandidateSpec, create_or_update_action_candidate
+from backend.services.dedupe_gate import evaluate_action_dedupe
 from backend.services.research_radar.lineage import record_radar_report_artifact
 from backend.services.search.indexer import index_record
 
@@ -99,15 +101,58 @@ async def persist_report_node(state):
                 company_id = company.id
         payload = dict(action.get("payload", {}))
         payload["report_id"] = str(report.id)
+        dedupe_decision = await evaluate_action_dedupe(
+            db,
+            user_id=state["user_id"],
+            action_type="review_radar_opportunity",
+            payload={
+                **payload,
+                "profile_id": state["profile_id"],
+                "signal_id": action.get("signal_id") or payload.get("signal_id"),
+                "title": action["title"],
+                "source_url": action_url,
+                "recommended_action_type": action["action_type"],
+            },
+        )
+        candidate = await create_or_update_action_candidate(
+            db,
+            ActionCandidateSpec(
+                user_id=state["user_id"],
+                source_type="research_report",
+                source_id=str(report.id),
+                action_type="review_radar_opportunity",
+                target_entity_type=dedupe_decision.target_entity_type,
+                target_entity_id=str(action.get("signal_id") or payload.get("signal_id")) if action.get("signal_id") or payload.get("signal_id") else None,
+                target_fingerprint=dedupe_decision.target_fingerprint,
+                dedupe_key=dedupe_decision.dedupe_key,
+                duplicate_type=dedupe_decision.duplicate_type,
+                duplicate_matches_json=dedupe_decision.matches,
+                policy_decision=dedupe_decision.policy_decision,
+                confidence=report.overall_confidence,
+                requires_confirmation=True,
+                evidence_json={
+                    "report_id": str(report.id),
+                    "run_id": str(run.id),
+                    "action_title": action["title"],
+                    "payload": payload,
+                },
+            ),
+        )
+        if dedupe_decision.duplicate_type == "hard":
+            continue
         db.add(
             RecommendedAction(
                 user_id=state["user_id"],
+                action_candidate_id=candidate.id,
                 profile_id=state["profile_id"],
                 company_id=company_id,
                 action_type=action["action_type"],
                 title=action["title"],
                 body=action.get("body"),
                 payload=payload,
+                dedupe_key=dedupe_decision.dedupe_key,
+                duplicate_reason=dedupe_decision.reason,
+                duplicate_matches_json=dedupe_decision.matches,
                 priority=action.get("priority", 50),
             )
         )

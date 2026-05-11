@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 
+from backend.services.action_candidates import build_action_dedupe_key, fingerprint_from_parts
 from backend.services.alerts import create_user_alert
 
 
@@ -24,6 +25,12 @@ async def emit_alerts(state):
             title=f"Radar report ready: {state['tracker']['name']}",
             body=final_report.get("summary_markdown"),
             action_url=_alert_action_url("/radar", profile_id=str(state["profile_id"]), report_id=report_id),
+            dedupe_key=build_action_dedupe_key(
+                user_id=state["user_id"],
+                action_type="notify:research_report_ready",
+                target_entity_type="research_report",
+                target_fingerprint=fingerprint_from_parts("research_report", report_id),
+            ),
         )
     return {}
 

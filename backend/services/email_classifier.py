@@ -49,6 +49,7 @@ async def classify_email(
     sender: str,
     sender_email: str = "",
     ai_enabled: bool = True,
+    raw_candidate_urls: tuple[str, ...] = (),
 ) -> dict:
     mode = os.getenv("GMAIL_CLASSIFIER_MODE", "hybrid_dry_run").strip().lower()
     if mode in {"hybrid_dry_run", "hybrid", "hybrid_no_model"}:
@@ -59,6 +60,7 @@ async def classify_email(
             sender_email=sender_email,
             ai_enabled=ai_enabled,
             mode=mode,
+            raw_candidate_urls=raw_candidate_urls,
         )
     return await _classify_email_legacy(
         subject=subject,
@@ -145,6 +147,7 @@ async def _classify_email_hybrid_mode(
     sender_email: str,
     ai_enabled: bool,
     mode: str,
+    raw_candidate_urls: tuple[str, ...] = (),
 ) -> dict:
     from backend.services.gmail_intelligence.orchestrator import analyze_email
     from backend.services.gmail_intelligence.types import EmailCandidate
@@ -156,14 +159,21 @@ async def _classify_email_hybrid_mode(
             body=body,
             sender=sender,
             sender_email=sender_email,
+            raw_candidate_urls=raw_candidate_urls,
         ),
         ai_enabled=allow_model,
         ai_consent=ai_enabled,
     )
     result = analysis.result
+    preflight_status = None
+    if analysis.llm_preflight:
+        preflight_status = analysis.llm_preflight.block_reason or (
+            "allowed" if analysis.llm_preflight.should_call_llm else "not_called"
+        )
     return {
         "classification": result.classification,
         "confidence": result.confidence,
+        "confidence_band": result.confidence_band,
         "company_name": result.company_name,
         "sender_role": result.sender_role,
         "key_sentence": result.key_sentence,
@@ -182,6 +192,26 @@ async def _classify_email_hybrid_mode(
         "ambiguity_reasons": result.ambiguity_reasons,
         "fallback_reason": result.fallback_reason,
         "redaction_counts": result.redaction_counts,
+        "threshold_version": analysis.thresholds.version,
+        "policy_version": analysis.thresholds.version,
+        "candidate_source_url_count": len(raw_candidate_urls),
+        "preflight_status": preflight_status,
+        "score_summary": {
+            "job_signal_score": analysis.scores.job_signal_score,
+            "noise_score": analysis.scores.noise_score,
+            "top_route": analysis.scores.top_route,
+            "top_route_score": analysis.scores.top_route_score,
+            "second_route_score": analysis.scores.second_route_score,
+            "route_margin": analysis.scores.route_margin,
+            "top_subtype": analysis.scores.top_subtype,
+            "top_subtype_score": analysis.scores.top_subtype_score,
+            "second_subtype_score": analysis.scores.second_subtype_score,
+            "subtype_margin": analysis.scores.subtype_margin,
+            "top_category": analysis.scores.top_category,
+            "top_score": analysis.scores.top_score,
+            "second_score": analysis.scores.second_score,
+            "category_margin": analysis.scores.margin,
+        },
     }
 
 

@@ -4,6 +4,7 @@ import os
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models import Alert, NotificationPreference, User
@@ -50,6 +51,10 @@ async def create_user_alert(
     title: str,
     body: str | None = None,
     action_url: str | None = None,
+    dedupe_key: str | None = None,
+    action_candidate_id=None,
+    duplicate_reason: str | None = None,
+    duplicate_matches_json: list[dict] | None = None,
     notification_pref: NotificationPreference | None = None,
     respect_preferences: bool = True,
 ) -> Alert | None:
@@ -66,15 +71,44 @@ async def create_user_alert(
     if not await _radar_alert_volume_allows(db, user_id=user_id, alert_type=alert_type):
         return None
 
+    if dedupe_key:
+        existing = (
+            await db.execute(
+                select(Alert.id).where(
+                    Alert.user_id == user_id,
+                    Alert.dedupe_key == dedupe_key,
+                    Alert.suppression_status == "active",
+                ).limit(1)
+            )
+        ).scalar_one_or_none()
+        if existing:
+            return None
+
     alert = Alert(
         user_id=user_id,
+        action_candidate_id=action_candidate_id,
         alert_type=alert_type,
         title=title,
         body=body,
         action_url=action_url,
+        dedupe_key=dedupe_key,
+        duplicate_reason=duplicate_reason,
+        duplicate_matches_json=duplicate_matches_json,
     )
+    if dedupe_key:
+        return await _add_keyed_alert(db, alert)
     db.add(alert)
     return alert
+
+
+async def _add_keyed_alert(db: AsyncSession, alert: Alert) -> Alert | None:
+    try:
+        async with db.begin_nested():
+            db.add(alert)
+            await db.flush()
+        return alert
+    except IntegrityError:
+        return None
 
 
 async def create_admin_operational_alert(
@@ -109,18 +143,22 @@ async def create_admin_operational_alert(
             Alert.created_at >= since,
         ]
         if dedupe_key:
-            filters.append(Alert.action_url == dedupe_key)
+            filters.append(Alert.dedupe_key == dedupe_key)
         existing = (await db.execute(select(Alert.id).where(*filters).limit(1))).scalar_one_or_none()
         if existing:
             continue
-        db.add(
-            Alert(
-                user_id=admin.id,
-                alert_type=alert_type,
-                title=title,
-                body=body,
-                action_url=dedupe_key or action_url,
-            )
+        alert = Alert(
+            user_id=admin.id,
+            alert_type=alert_type,
+            title=title,
+            body=body,
+            action_url=dedupe_key or action_url,
+            dedupe_key=dedupe_key,
         )
+        created_alert = await _add_keyed_alert(db, alert) if dedupe_key else None
+        if dedupe_key and created_alert is None:
+            continue
+        if not dedupe_key:
+            db.add(alert)
         created += 1
     return created

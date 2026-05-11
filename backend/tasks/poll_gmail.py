@@ -80,6 +80,7 @@ async def _poll_gmail_async():
     from backend.services.source_intelligence.discovery import process_stored_links_for_source_discovery
     from backend.services.source_intelligence.link_store import store_many_user_application_links
     from backend.services.source_intelligence.url_classifier import extract_urls_from_gmail_payload
+    from backend.services.email_classification_traces import create_email_classification_trace
     from backend.services.email_matcher import (
         STATUS_UPDATES,
         email_already_processed,
@@ -176,9 +177,17 @@ async def _poll_gmail_async():
                     sender=sender_name,
                     sender_email=sender_email,
                     ai_enabled=ai_enabled,
+                    raw_candidate_urls=tuple(raw_candidate_urls),
                 )
 
                 if not should_store_classifier_result(classification):
+                    await create_email_classification_trace(
+                        db,
+                        user_id=user.id,
+                        classification=classification,
+                        gmail_message_id=msg_id,
+                        candidate_source_url_count=len(raw_candidate_urls),
+                    )
                     continue
 
                 company_info = get_company_info(sender_email, include_logo=False)
@@ -229,6 +238,14 @@ async def _poll_gmail_async():
                 )
                 db.add(event)
                 await db.flush()
+                await create_email_classification_trace(
+                    db,
+                    user_id=user.id,
+                    classification=classification,
+                    email_event=event,
+                    gmail_message_id=msg_id,
+                    candidate_source_url_count=len(raw_candidate_urls),
+                )
                 if raw_candidate_urls:
                     try:
                         async with db.begin_nested():
