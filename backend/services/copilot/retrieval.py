@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.services.copilot.config import max_context_docs, max_context_tokens
 from backend.services.copilot.schemas import CopilotCitation
+from backend.services.retrieval.shadow import retrieval_shadow_enabled, run_retrieval_shadow_comparison
 from backend.services.search.indexer import search_user_documents
+
+
+logger = logging.getLogger(__name__)
 
 
 def _rough_token_count(text: str) -> int:
@@ -29,6 +34,21 @@ async def retrieve_copilot_context(
         source_types=source_types,
         limit=max_context_docs(),
     )
+    if retrieval_shadow_enabled("copilot"):
+        try:
+            async with db.begin_nested():
+                await run_retrieval_shadow_comparison(
+                    db,
+                    user_id=user_id,
+                    query=query,
+                    source_types=source_types,
+                    surface="copilot",
+                    limit=max_context_docs(),
+                    source_results=results,
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("copilot retrieval shadow comparison failed: %s", exc)
+
     citations: list[CopilotCitation] = []
     token_budget = max_context_tokens()
     used_tokens = 0
