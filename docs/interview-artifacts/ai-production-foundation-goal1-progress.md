@@ -78,9 +78,45 @@ Follow-up validation:
 - `python3 -m py_compile` on changed model/service/migration files -> passed.
 - `git diff --check -- <review-fix files>` -> no whitespace errors.
 
+## Phase 1 Adoption Progress
+
+Date: 2026-05-12
+
+Implemented after the Goal 1 foundation pass:
+
+- Refactored `/api/jobs`, `/api/jobs/duplicates/check`, and `/api/contacts/duplicates/check` to call the shared `DedupeGate` for duplicate decisions while preserving the existing response shapes and messages.
+- Refactored Gmail-derived application, network-contact, and interview acceptance paths to evaluate shared duplicate decisions and persist `ActionCandidate` rows with accepted or linked-existing terminal status.
+- Refactored `POST /api/interviews/from-email/{email_id}` to use the shared interview duplicate gate and candidate service.
+- Linked Gmail `network_contact` alerts to proposed `ActionCandidate` rows, including duplicate reason/matches metadata, and suppress hard duplicate contact alerts when the shared gate finds an existing contact.
+- Updated Gmail sync reset to delete email-event action candidates along with Gmail-synced email rows, alerts, source links, and search documents.
+- Refactored Google Calendar interview sync to evaluate `schedule_interview` duplicate decisions, link same-time/same-interviewer calendar events to existing interviews, and create calendar-event action candidates.
+- Added a calendar sync guard for soft interview duplicates: same-application/same-time events now write a `pending_review` action candidate and do not create or mutate an interview until reviewed.
+- Linked calendar interview alerts to the calendar sync action candidate and carried duplicate metadata through the alert row.
+- Preserved soft-duplicate policy metadata on accepted Gmail/network/interview candidates instead of overwriting every accepted non-link path as a plain proposal.
+- Left Radar recommendation persistence on the existing Goal 1 shared `ActionCandidate`/`DedupeGate` path; Radar recommendation rows remain linked to `action_candidate_id`.
+
+Phase 1 adoption changed files:
+
+- `backend/main.py`
+- `backend/services/calendar_sync.py`
+- `backend/services/dedupe_gate.py`
+- `tests/test_email_suggestions.py`
+- `tests/test_gmail_sync.py`
+- `tests/test_interviews.py`
+- `tests/test_network.py`
+- `docs/interview-artifacts/ai-production-foundation-goal1-progress.md`
+
+Phase 1 validation:
+
+- `pytest -q tests/test_email_suggestions.py tests/test_network.py tests/test_interviews.py tests/test_gmail_sync.py tests/test_duplicates.py tests/test_action_foundation.py tests/test_alerts.py` -> 68 passed, 1 Python-version warning from `google.api_core`.
+- `RADAR_ENABLED=true RADAR_RESEARCH_ENABLED=true pytest -q tests/test_notifications.py tests/test_research_radar_graph.py tests/test_opportunity_radar.py tests/test_source_discovery.py tests/test_copilot_schema.py` -> 52 passed, 1 dev Redis warning.
+- `git diff --check` -> no whitespace errors.
+- `python3 -m compileall backend/main.py backend/services/calendar_sync.py backend/services/dedupe_gate.py` -> passed.
+
 ## Remaining Limitations
 
-- The shared `DedupeGate` mirrors existing job/contact/interview logic, but those endpoints have not been fully refactored to call it yet.
-- Alert `action_candidate_id` is nullable and only populated where a caller creates a candidate; this slice links Radar recommendations to candidates, while Gmail/calendar alerts currently receive stable dedupe keys only.
+- Manual user-created jobs, contacts, and interviews remain normal CRUD rows. Job create and duplicate-check endpoints now use shared duplicate decisions, but shared candidate tracking is applied to AI/Gmail/calendar/Radar action-producing flows, not every direct user edit.
+- `Alert.action_candidate_id` remains nullable. Gmail network-contact alerts and calendar interview alerts now link to candidates; ordinary email-update alerts and Radar report-ready alerts still use stable dedupe keys without a single candidate link.
+- Calendar sync candidates use the target fingerprint from the schedule-interview decision. If the same calendar event materially changes time/interviewer/application, it can create a new candidate for the new target state while preserving the old terminal candidate row.
 - The generated runtime-count artifact is a local SQLite snapshot, not production evidence. It shows the new tables as missing until migration `051` is applied to that database.
-- No production migration was run during the initial goal pass. Apply Alembic migration `051_action_candidates_traces` before relying on the new tables/columns outside local tests.
+- No production migration was run during these local passes. Apply Alembic migration `051_action_candidates_traces` before relying on the new tables/columns outside local tests.
