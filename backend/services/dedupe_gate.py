@@ -340,15 +340,19 @@ async def _dedupe_interview(db: AsyncSession, *, user_id: uuid.UUID, payload: di
     scheduled_at = _parse_datetime(payload.get("scheduled_at"))
     interviewer_email = _normalize_contact_email(payload.get("interviewer_email"))
     application_id = _uuid_text(payload.get("application_id"))
+    exclude_interview_id = uuid.UUID(str(payload["exclude_interview_id"])) if payload.get("exclude_interview_id") else None
     target_fingerprint = fingerprint_from_parts("interview", application_id, _iso(scheduled_at), interviewer_email)
     if scheduled_at and interviewer_email:
+        conditions = [
+            Interview.user_id == user_id,
+            Interview.scheduled_at == scheduled_at,
+            Interview.interviewer_email == interviewer_email,
+        ]
+        if exclude_interview_id:
+            conditions.append(Interview.id != exclude_interview_id)
         hard = (
             await db.execute(
-                select(Interview).where(
-                    Interview.user_id == user_id,
-                    Interview.scheduled_at == scheduled_at,
-                    Interview.interviewer_email == interviewer_email,
-                )
+                select(Interview).where(*conditions)
             )
         ).scalar_one_or_none()
         if hard:
@@ -363,12 +367,15 @@ async def _dedupe_interview(db: AsyncSession, *, user_id: uuid.UUID, payload: di
             )
 
     if scheduled_at and application_id:
+        conditions = [
+            Interview.user_id == user_id,
+            Interview.application_id == uuid.UUID(application_id),
+            Interview.scheduled_at == scheduled_at,
+        ]
+        if exclude_interview_id:
+            conditions.append(Interview.id != exclude_interview_id)
         result = await db.execute(
-            select(Interview).where(
-                Interview.user_id == user_id,
-                Interview.application_id == uuid.UUID(application_id),
-                Interview.scheduled_at == scheduled_at,
-            )
+            select(Interview).where(*conditions)
         )
         soft_matches = [_interview_match(row) for row in result.scalars().all()]
         if soft_matches:

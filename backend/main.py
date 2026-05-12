@@ -57,6 +57,7 @@ from backend.metrics import (
     set_source_review_queue_size,
 )
 from backend.models import (
+    ActionCandidate,
     Alert,
     Application,
     ApplicationSourceLink,
@@ -106,7 +107,13 @@ from backend.models import (
 )
 from backend.services.alerts import create_user_alert
 from backend.services.ai_orchestrator import get_metrics_snapshot
-from backend.services.action_candidates import build_action_dedupe_key, fingerprint_from_parts
+from backend.services.action_candidates import (
+    ActionCandidateSpec,
+    build_action_dedupe_key,
+    create_or_update_action_candidate,
+    fingerprint_from_parts,
+)
+from backend.services.dedupe_gate import DedupeDecision, evaluate_action_dedupe
 from backend.services.email_classification_traces import create_email_classification_trace
 from backend.monitoring import configure_sentry
 from backend.services.hunter import find_contacts, generate_linkedin_search_url
@@ -1319,6 +1326,91 @@ def _alert_dedupe_key(user_id: _uuid.UUID, alert_type: str, target_entity_type: 
     )
 
 
+def _dedupe_match_ids(decision: DedupeDecision, entity_type: str) -> list[_uuid.UUID]:
+    ids: list[_uuid.UUID] = []
+    for match in decision.matches:
+        if match.get("entity_type") != entity_type or not match.get("id"):
+            continue
+        try:
+            ids.append(_uuid.UUID(str(match["id"])))
+        except ValueError:
+            continue
+    return ids
+
+
+def _first_dedupe_match_id(decision: DedupeDecision, entity_type: str) -> _uuid.UUID | None:
+    ids = _dedupe_match_ids(decision, entity_type)
+    return ids[0] if ids else None
+
+
+async def _serialize_application_dedupe_matches(
+    db: AsyncSession,
+    *,
+    user_id: _uuid.UUID,
+    decision: DedupeDecision,
+) -> list[dict]:
+    ids = _dedupe_match_ids(decision, "application")
+    if not ids:
+        return []
+    result = await db.execute(select(Application).where(Application.user_id == user_id, Application.id.in_(ids)))
+    by_id = {app_row.id: app_row for app_row in result.scalars().all()}
+    return [_serialize_app(by_id[item_id]) for item_id in ids if item_id in by_id]
+
+
+async def _serialize_contact_dedupe_matches(
+    db: AsyncSession,
+    *,
+    user_id: _uuid.UUID,
+    decision: DedupeDecision,
+) -> list[dict]:
+    ids = _dedupe_match_ids(decision, "contact")
+    if not ids:
+        return []
+    result = await db.execute(
+        select(Contact)
+        .options(selectinload(Contact.application), selectinload(Contact.company_ref))
+        .where(Contact.user_id == user_id, Contact.id.in_(ids))
+    )
+    by_id = {contact.id: contact for contact in result.scalars().all()}
+    return [_serialize_contact(by_id[item_id]) for item_id in ids if item_id in by_id]
+
+
+async def _record_action_candidate_from_decision(
+    db: AsyncSession,
+    *,
+    user_id: _uuid.UUID,
+    source_type: str,
+    source_id: str,
+    decision: DedupeDecision,
+    target_entity_id: str | None = None,
+    status: str | None = None,
+    policy_decision: str | None = None,
+    confidence: float | None = None,
+    requires_confirmation: bool = True,
+    evidence_json: dict | None = None,
+):
+    return await create_or_update_action_candidate(
+        db,
+        ActionCandidateSpec(
+            user_id=user_id,
+            source_type=source_type,
+            source_id=source_id,
+            action_type=decision.action_type,
+            target_entity_type=decision.target_entity_type,
+            target_entity_id=target_entity_id,
+            target_fingerprint=decision.target_fingerprint,
+            dedupe_key=decision.dedupe_key,
+            duplicate_type=decision.duplicate_type,
+            duplicate_matches_json=decision.matches,
+            policy_decision=policy_decision or decision.policy_decision,
+            status=status,
+            confidence=confidence,
+            requires_confirmation=requires_confirmation,
+            evidence_json=evidence_json,
+        ),
+    )
+
+
 def _email_alert_type(email_type: str | None, classification: str | None) -> str:
     if email_type == "conversation":
         return "conversation_message"
@@ -1567,11 +1659,24 @@ async def parse_job(request: Request, req: JobParseRequest):
 @app.post("/api/jobs", status_code=201)
 async def create_application(payload: ApplicationCreate, auth: dict = Depends(verify_api_key), db: AsyncSession = Depends(get_db)):
     user_id = _require_any_user_id(auth)
-    existing_job, normalized_job_url = await _find_job_url_duplicate_for_user(db, user_id, payload.job_url)
+    dedupe_decision = await evaluate_action_dedupe(
+        db,
+        user_id=user_id,
+        action_type="add_job_to_pipeline",
+        payload={
+            "company": payload.company,
+            "role_title": payload.role_title,
+            "job_url": payload.job_url,
+            "location": payload.location,
+        },
+    )
+    normalized_job_url = _normalize_job_url(payload.job_url)
 
     # Check for duplicate job_url
-    if existing_job:
-        raise HTTPException(status_code=409, detail={"message": "Already tracked", "existing": _serialize_app(existing_job)})
+    if dedupe_decision.duplicate_type == "hard":
+        matches = await _serialize_application_dedupe_matches(db, user_id=user_id, decision=dedupe_decision)
+        existing_job = matches[0] if matches else None
+        raise HTTPException(status_code=409, detail={"message": "Already tracked", "existing": existing_job})
 
     new_app = Application(
         user_id=user_id,
@@ -1676,40 +1781,31 @@ async def check_job_duplicates(
     auth: dict = Depends(verify_api_key),
 ):
     user_id = _require_user_id(auth)
+    decision = await evaluate_action_dedupe(
+        db,
+        user_id=user_id,
+        action_type="add_job_to_pipeline",
+        payload={
+            "company": payload.company,
+            "role_title": payload.role_title,
+            "job_url": payload.job_url,
+            "location": payload.location,
+        },
+    )
+    matches = await _serialize_application_dedupe_matches(db, user_id=user_id, decision=decision)
 
-    exact, normalized_job_url = await _find_job_url_duplicate_for_user(db, user_id, payload.job_url)
-    if exact:
+    if decision.duplicate_type == "hard":
         return {
             "duplicate_type": "hard",
             "message": "This job URL is already in your pipeline.",
-            "matches": [_serialize_app(exact)],
+            "matches": matches,
         }
 
-    company_key = _normalize_match_text(payload.company)
-    role_key = _normalize_match_text(payload.role_title)
-    location_key = _normalize_match_text(payload.location)
-
-    stmt = select(Application).where(Application.user_id == user_id)
-    result = await db.execute(stmt)
-    matches = []
-    for app_row in result.scalars().all():
-        if exact is not None and app_row.id == exact.id:
-            continue
-        if normalized_job_url and _normalize_job_url(app_row.job_url) == normalized_job_url:
-            continue
-        if _normalize_match_text(app_row.company) != company_key:
-            continue
-        if _normalize_match_text(app_row.role_title) != role_key:
-            continue
-        if location_key and _normalize_match_text(app_row.location) not in {"", location_key}:
-            continue
-        matches.append(_serialize_app(app_row))
-
-    if matches:
+    if decision.duplicate_type == "soft":
         return {
             "duplicate_type": "soft",
             "message": "We found a similar role already in your pipeline. Review before saving a duplicate.",
-            "matches": matches[:5],
+            "matches": matches,
         }
 
     return {
@@ -2084,51 +2180,30 @@ async def check_contact_duplicates(
     auth: dict = Depends(verify_api_key),
 ):
     user_id = _require_user_id(auth)
-    exclude_contact_id = _uuid.UUID(payload.contact_id) if payload.contact_id else None
-    email_value = _normalize_contact_email(str(payload.email) if payload.email else None)
-    normalized_name = _normalize_match_text(payload.name)
-
-    stmt = select(Contact).where(Contact.user_id == user_id)
-    result = await db.execute(stmt)
-    separate_pairs_result = await db.execute(
-        select(ContactDistinctDecision.email_a, ContactDistinctDecision.email_b).where(
-            ContactDistinctDecision.user_id == user_id
-        )
+    decision = await evaluate_action_dedupe(
+        db,
+        user_id=user_id,
+        action_type="add_network_contact",
+        payload={
+            "contact_id": payload.contact_id,
+            "name": payload.name,
+            "email": str(payload.email) if payload.email else None,
+        },
     )
-    separate_pairs = {
-        tuple(sorted((email_a, email_b)))
-        for email_a, email_b in separate_pairs_result.all()
-        if email_a and email_b
-    }
+    matches = await _serialize_contact_dedupe_matches(db, user_id=user_id, decision=decision)
 
-    hard_matches = []
-    soft_matches = []
-    for contact in result.scalars().all():
-        if exclude_contact_id and contact.id == exclude_contact_id:
-            continue
-        serialized = _serialize_contact(contact)
-        contact_email = _normalize_contact_email(contact.email)
-        if email_value and contact_email == email_value:
-            hard_matches.append(serialized)
-            continue
-        if normalized_name and _normalize_match_text(contact.name) == normalized_name:
-            decision_pair = _sorted_contact_email_pair(email_value, contact_email)
-            if decision_pair and decision_pair in separate_pairs:
-                continue
-            soft_matches.append(serialized)
-
-    if hard_matches:
+    if decision.duplicate_type == "hard":
         return {
             "duplicate_type": "hard",
             "message": "A contact with this email already exists.",
-            "matches": hard_matches[:5],
+            "matches": matches,
         }
 
-    if soft_matches:
+    if decision.duplicate_type == "soft":
         return {
             "duplicate_type": "soft",
             "message": "We found another contact with this name. Review before saving.",
-            "matches": soft_matches[:5],
+            "matches": matches,
         }
 
     return {
@@ -2716,12 +2791,24 @@ async def accept_application_suggestion(
     if len(events) != len(set(email_uuids)):
         raise HTTPException(status_code=404, detail="One or more source emails were not found.")
 
+    dedupe_decision = await evaluate_action_dedupe(
+        db,
+        user_id=user_id,
+        action_type="add_job_to_pipeline",
+        payload={
+            "company": payload.company,
+            "role_title": payload.role_title,
+            "job_url": payload.job_url,
+            "location": payload.location,
+        },
+    )
     normalized_job_url = _normalize_job_url(payload.job_url)
     app_row = None
     if normalized_job_url:
         app_row, normalized_job_url = await _find_job_url_duplicate_for_user(db, user_id, normalized_job_url)
     if not app_row:
         app_row = await _find_application_by_company_role(db, user_id, payload.company, payload.role_title)
+    linked_existing_application = app_row is not None
 
     if app_row:
         if payload.status and app_row.status != payload.status:
@@ -2791,6 +2878,26 @@ async def accept_application_suggestion(
             latest_email_at = event.received_at
     if latest_email_at:
         app_row.last_email_at = latest_email_at
+
+    await _record_action_candidate_from_decision(
+        db,
+        user_id=user_id,
+        source_type="email_application_suggestion",
+        source_id=payload.suggestion_key,
+        decision=dedupe_decision,
+        target_entity_id=str(app_row.id),
+        status="linked_existing" if linked_existing_application else "accepted",
+        policy_decision="link_existing" if linked_existing_application else None,
+        confidence=sum(float(event.confidence or 0) for event in events) / len(events) if events else None,
+        requires_confirmation=False,
+        evidence_json={
+            "email_ids": [str(email_id) for email_id in email_uuids],
+            "suggestion_key": payload.suggestion_key,
+            "company": payload.company,
+            "role_title": payload.role_title,
+            "job_url_present": bool(payload.job_url),
+        },
+    )
 
     await _upsert_application_suggestion_decision(
         db,
@@ -3803,26 +3910,51 @@ async def sync_gmail(
             )
 
             if should_alert_network_contact:
-                await create_user_alert(
+                network_dedupe_decision = await evaluate_action_dedupe(
                     db,
                     user_id=user_id,
-                    alert_type="network_contact",
-                    title=f"Suggested contact: {sender_name or sender_email_addr}",
-                    body="Review this conversation before adding the sender to your network.",
-                    action_url=_alert_action_url(
-                        "/conversations",
-                        tab="conversations",
-                        email_id=str(email_event.id),
-                        thread_id=email_event.thread_id or None,
-                    ),
-                    dedupe_key=_alert_dedupe_key(
-                        user_id,
-                        "network_contact",
-                        "contact",
-                        fingerprint_from_parts("email", sender_email_addr),
-                    ),
-                    notification_pref=notification_pref,
+                    action_type="add_network_contact",
+                    payload={"name": sender_name, "email": sender_email_addr},
                 )
+                if network_dedupe_decision.duplicate_type != "hard":
+                    network_action_candidate = await _record_action_candidate_from_decision(
+                        db,
+                        user_id=user_id,
+                        source_type="email_event",
+                        source_id=str(email_event.id),
+                        decision=network_dedupe_decision,
+                        confidence=classification.get("confidence"),
+                        requires_confirmation=True,
+                        evidence_json={
+                            "email_id": str(email_event.id),
+                            "thread_id": email_event.thread_id,
+                            "sender_email": sender_email_addr,
+                            "source": "gmail_network_alert",
+                        },
+                    )
+                    await create_user_alert(
+                        db,
+                        user_id=user_id,
+                        alert_type="network_contact",
+                        title=f"Suggested contact: {sender_name or sender_email_addr}",
+                        body="Review this conversation before adding the sender to your network.",
+                        action_url=_alert_action_url(
+                            "/conversations",
+                            tab="conversations",
+                            email_id=str(email_event.id),
+                            thread_id=email_event.thread_id or None,
+                        ),
+                        dedupe_key=_alert_dedupe_key(
+                            user_id,
+                            "network_contact",
+                            "contact",
+                            fingerprint_from_parts("email", sender_email_addr),
+                        ),
+                        action_candidate_id=network_action_candidate.id,
+                        duplicate_reason=network_dedupe_decision.reason,
+                        duplicate_matches_json=network_dedupe_decision.matches,
+                        notification_pref=notification_pref,
+                    )
 
         new_count += 1
         emails_synced.append({
@@ -3876,6 +4008,17 @@ async def reset_gmail_sync_state(
         EmailEvent.user_id == user_id,
         EmailEvent.gmail_message_id.isnot(None),
     )
+    gmail_email_id_texts = [
+        str(email_id)
+        for email_id in (
+            await db.execute(
+                select(EmailEvent.id).where(
+                    EmailEvent.user_id == user_id,
+                    EmailEvent.gmail_message_id.isnot(None),
+                )
+            )
+        ).scalars().all()
+    ]
     gmail_private_link_ids = select(UserApplicationLink.id).where(
         UserApplicationLink.user_id == user_id,
         UserApplicationLink.email_event_id.in_(gmail_email_ids),
@@ -3920,6 +4063,13 @@ async def reset_gmail_sync_state(
                 Alert.action_url.like("%email_id=%"),
             )
         ),
+        "action_candidates": await count_rows(
+            select(func.count(ActionCandidate.id)).where(
+                ActionCandidate.user_id == user_id,
+                ActionCandidate.source_type == "email_event",
+                ActionCandidate.source_id.in_(gmail_email_id_texts),
+            )
+        ),
     }
 
     await db.execute(
@@ -3951,6 +4101,13 @@ async def reset_gmail_sync_state(
         delete(Alert).where(
             Alert.user_id == user_id,
             Alert.action_url.like("%email_id=%"),
+        )
+    )
+    await db.execute(
+        delete(ActionCandidate).where(
+            ActionCandidate.user_id == user_id,
+            ActionCandidate.source_type == "email_event",
+            ActionCandidate.source_id.in_(gmail_email_id_texts),
         )
     )
     await db.execute(delete(EmailSyncAudit).where(EmailSyncAudit.user_id == user_id))
@@ -4058,6 +4215,9 @@ async def sync_calendar(
                 if item.get("status") not in {"created", "updated"}:
                     continue
                 status_label = "added to your calendar" if item.get("status") == "created" else "updated on your calendar"
+                action_candidate_id = None
+                if item.get("action_candidate_id"):
+                    action_candidate_id = _uuid.UUID(str(item["action_candidate_id"]))
                 await create_user_alert(
                     db,
                     user_id=current_user.id,
@@ -4079,6 +4239,9 @@ async def sync_calendar(
                             item.get("scheduled_at"),
                         ),
                     ),
+                    action_candidate_id=action_candidate_id,
+                    duplicate_reason=item.get("duplicate_reason"),
+                    duplicate_matches_json=item.get("duplicate_matches"),
                     notification_pref=notification_pref,
                 )
         if result.get("synced") and current_user.notifications_started_at is not None:
@@ -5062,6 +5225,15 @@ async def accept_network_suggestion(
     if not should_create_network_contact(event.sender or "", email_addr):
         raise HTTPException(status_code=400, detail="Email sender is not a contact suggestion")
 
+    inferred = build_inferred_contact_from_email_event(event)
+    display_name = inferred["name"] or event.sender
+    dedupe_decision = await evaluate_action_dedupe(
+        db,
+        user_id=user_id,
+        action_type="add_network_contact",
+        payload={"name": display_name, "email": email_addr},
+    )
+
     existing = (
         await db.execute(
             select(Contact)
@@ -5070,14 +5242,43 @@ async def accept_network_suggestion(
             .limit(1)
         )
     ).scalar_one_or_none()
+    if not existing and dedupe_decision.duplicate_type == "hard":
+        duplicate_contact_id = _first_dedupe_match_id(dedupe_decision, "contact")
+        if duplicate_contact_id:
+            existing = (
+                await db.execute(
+                    select(Contact)
+                    .options(selectinload(Contact.application), selectinload(Contact.company_ref))
+                    .where(Contact.user_id == user_id, Contact.id == duplicate_contact_id)
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
     if existing:
-        return _serialize_contact(existing)
+        await _record_action_candidate_from_decision(
+            db,
+            user_id=user_id,
+            source_type="email_event",
+            source_id=str(event.id),
+            decision=dedupe_decision,
+            target_entity_id=str(existing.id),
+            status="linked_existing",
+            policy_decision="link_existing",
+            confidence=event.confidence,
+            requires_confirmation=False,
+            evidence_json={
+                "email_id": str(event.id),
+                "sender_email": email_addr,
+                "source": "network_suggestion_accept",
+            },
+        )
+        response = _serialize_contact(existing)
+        await db.commit()
+        return response
 
-    inferred = build_inferred_contact_from_email_event(event)
     contact = Contact(
         user_id=user_id,
         application_id=event.application_id,
-        name=inferred["name"] or event.sender,
+        name=display_name,
         title=inferred["title"],
         email=email_addr,
         company_name=inferred["company"] or event.company_name,
@@ -5103,6 +5304,24 @@ async def accept_network_suggestion(
     ).scalar_one_or_none()
     if ignored:
         await db.delete(ignored)
+
+    await _record_action_candidate_from_decision(
+        db,
+        user_id=user_id,
+        source_type="email_event",
+        source_id=str(event.id),
+        decision=dedupe_decision,
+        target_entity_id=str(contact.id),
+        status="accepted",
+        policy_decision=dedupe_decision.policy_decision,
+        confidence=event.confidence,
+        requires_confirmation=False,
+        evidence_json={
+            "email_id": str(event.id),
+            "sender_email": email_addr,
+            "source": "network_suggestion_accept",
+        },
+    )
 
     from backend.services.search.indexer import index_record
     await index_record(db, contact)
@@ -5773,21 +5992,64 @@ async def create_interview_from_email(
             detail="Choose a date and time before adding this interview to your calendar.",
         )
 
-    interview = Interview(
-        application_id=event.application_id,
+    dedupe_decision = await evaluate_action_dedupe(
+        db,
         user_id=user_id,
-        interview_type="phone",
-        scheduled_at=scheduled_at,
-        duration_minutes=duration_minutes,
-        interviewer_name=event.sender,
-        interviewer_email=event.sender_email,
-        location_or_link=location_or_link,
-        notes=f"Created from email: {event.subject}",
+        action_type="schedule_interview",
+        payload={
+            "scheduled_at": scheduled_at,
+            "interviewer_email": event.sender_email,
+            "application_id": event.application_id,
+        },
     )
-    db.add(interview)
-    await db.flush()
+    duplicate_interview = None
+    duplicate_interview_id = _first_dedupe_match_id(dedupe_decision, "interview")
+    if dedupe_decision.duplicate_type == "hard" and duplicate_interview_id:
+        duplicate_interview = (
+            await db.execute(
+                select(Interview).options(selectinload(Interview.application)).where(
+                    Interview.id == duplicate_interview_id,
+                    Interview.user_id == user_id,
+                )
+            )
+        ).scalar_one_or_none()
+
+    if duplicate_interview:
+        interview = duplicate_interview
+    else:
+        interview = Interview(
+            application_id=event.application_id,
+            user_id=user_id,
+            interview_type="phone",
+            scheduled_at=scheduled_at,
+            duration_minutes=duration_minutes,
+            interviewer_name=event.sender,
+            interviewer_email=event.sender_email,
+            location_or_link=location_or_link,
+            notes=f"Created from email: {event.subject}",
+        )
+        db.add(interview)
+        await db.flush()
     event.resolved = True
     event.collapsed = True
+    await _record_action_candidate_from_decision(
+        db,
+        user_id=user_id,
+        source_type="email_event",
+        source_id=str(eid),
+        decision=dedupe_decision,
+        target_entity_id=str(interview.id),
+        status="linked_existing" if duplicate_interview else "accepted",
+        policy_decision="link_existing" if duplicate_interview else dedupe_decision.policy_decision,
+        confidence=event.confidence,
+        requires_confirmation=False,
+        evidence_json={
+            "email_id": str(eid),
+            "application_id": str(event.application_id) if event.application_id else None,
+            "subject": event.subject,
+            "source": "interview_from_email",
+        },
+    )
     await _upsert_interview_suggestion_decision(
         db,
         user_id=user_id,
@@ -5907,14 +6169,24 @@ async def accept_interview_suggestion(
             status_code=400,
             detail="Choose a date and time before adding this interview to your calendar.",
         )
+    dedupe_decision = await evaluate_action_dedupe(
+        db,
+        user_id=user_id,
+        action_type="schedule_interview",
+        payload={
+            "scheduled_at": values["scheduled_at"],
+            "interviewer_email": values["interviewer_email"],
+            "application_id": application_id,
+        },
+    )
     duplicate_interview = None
-    if values["scheduled_at"] and values["interviewer_email"]:
+    duplicate_interview_id = _first_dedupe_match_id(dedupe_decision, "interview")
+    if dedupe_decision.duplicate_type == "hard" and duplicate_interview_id:
         duplicate_interview = (
             await db.execute(
                 select(Interview).options(selectinload(Interview.application)).where(
+                    Interview.id == duplicate_interview_id,
                     Interview.user_id == user_id,
-                    Interview.scheduled_at == values["scheduled_at"],
-                    Interview.interviewer_email == values["interviewer_email"],
                 )
             )
         ).scalar_one_or_none()
@@ -5940,6 +6212,24 @@ async def accept_interview_suggestion(
         event.application_id = application_id
     event.resolved = True
     event.collapsed = True
+    await _record_action_candidate_from_decision(
+        db,
+        user_id=user_id,
+        source_type="email_event",
+        source_id=str(eid),
+        decision=dedupe_decision,
+        target_entity_id=str(interview.id),
+        status="linked_existing" if duplicate_interview else "accepted",
+        policy_decision="link_existing" if duplicate_interview else dedupe_decision.policy_decision,
+        confidence=event.confidence,
+        requires_confirmation=False,
+        evidence_json={
+            "email_id": str(eid),
+            "application_id": str(application_id) if application_id else None,
+            "subject": event.subject,
+            "source": "interview_suggestion_accept",
+        },
+    )
     await _upsert_interview_suggestion_decision(
         db,
         user_id=user_id,

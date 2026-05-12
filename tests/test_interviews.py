@@ -146,7 +146,7 @@ async def test_delete_interview(client):
 @pytest.mark.asyncio
 async def test_interview_from_email(client, db_session):
     """POST /api/interviews/from-email/{email_id} creates from email."""
-    from backend.models import EmailEvent
+    from backend.models import ActionCandidate, EmailEvent
 
     email = EmailEvent(
         subject="Interview scheduled - January 15, 2026 at 2:00 PM",
@@ -167,6 +167,11 @@ async def test_interview_from_email(client, db_session):
     data = resp.json()
     assert data["interviewer_email"] == "recruiter@company.com"
     assert "Created from email" in data["notes"]
+
+    candidate = (await db_session.execute(select(ActionCandidate))).scalar_one()
+    assert candidate.action_type == "schedule_interview"
+    assert candidate.status == "accepted"
+    assert candidate.target_entity_id == data["id"]
 
 
 @pytest.mark.asyncio
@@ -234,7 +239,7 @@ async def test_extract_interview_datetime_requires_actual_time():
 @pytest.mark.asyncio
 async def test_calendar_sync_creates_and_updates_interview(client, db_session):
     """POST /api/calendar/sync upserts interview events from Google Calendar."""
-    from backend.models import Alert, Application, Company, GmailToken, Interview, User
+    from backend.models import ActionCandidate, Alert, Application, Company, GmailToken, Interview, User
 
     company = Company(domain="matchco.com", name="MatchCo")
     db_session.add(company)
@@ -331,6 +336,160 @@ async def test_calendar_sync_creates_and_updates_interview(client, db_session):
     assert alerts[1].action_url == f"/calendar?interview_id={interview.id}"
     assert alerts[0].alert_type == "interview_request"
     assert alerts[1].alert_type == "interview_request"
+    assert alerts[0].action_candidate_id is not None
+    assert alerts[1].action_candidate_id is not None
+
+    candidates = list((await db_session.execute(select(ActionCandidate).order_by(ActionCandidate.created_at.asc()))).scalars().all())
+    assert len(candidates) == 2
+    assert {candidate.id for candidate in candidates} == {alerts[0].action_candidate_id, alerts[1].action_candidate_id}
+    assert all(candidate.action_type == "schedule_interview" for candidate in candidates)
+    assert all(candidate.target_entity_id == str(interview.id) for candidate in candidates)
+
+
+@pytest.mark.asyncio
+async def test_calendar_sync_links_duplicate_interview_by_time_and_interviewer(client, db_session):
+    from backend.models import ActionCandidate, GmailToken, Interview, User
+
+    existing = Interview(
+        user_id=TEST_USER_ID,
+        interview_type="phone",
+        scheduled_at=datetime(2026, 3, 20, 15, 0, tzinfo=timezone.utc),
+        duration_minutes=30,
+        interviewer_name="Recruiter",
+        interviewer_email="recruiter@matchco.com",
+    )
+    token = GmailToken(
+        user_id=TEST_USER_ID,
+        access_token=encrypt_gmail_token("access-token"),
+        refresh_token=encrypt_gmail_token("refresh-token"),
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+    )
+    db_session.add_all([existing, token])
+    await db_session.commit()
+
+    user_result = await db_session.execute(select(User).where(User.id == TEST_USER_ID))
+    user = user_result.scalar_one()
+    user.calendar_connected = True
+    await db_session.commit()
+
+    calendar_service = MagicMock()
+    calendar_service.events.return_value.list.return_value.execute.return_value = {
+        "items": [
+            {
+                "id": "calendar-event-duplicate-1",
+                "summary": "Phone Interview with MatchCo",
+                "description": "Recruiter call",
+                "start": {"dateTime": "2026-03-20T15:00:00+00:00"},
+                "end": {"dateTime": "2026-03-20T15:45:00+00:00"},
+                "attendees": [
+                    {"email": "test-user@apptrail.test", "self": True},
+                    {"email": "recruiter@matchco.com", "displayName": "Recruiter"},
+                ],
+            }
+        ]
+    }
+
+    with patch("googleapiclient.discovery.build", return_value=calendar_service):
+        response = await client.post("/api/calendar/sync", headers=AUTH_HEADER)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["created"] == 0
+    assert payload["updated"] == 1
+    assert payload["synced"][0]["interview_id"] == str(existing.id)
+    assert payload["synced"][0]["action_candidate_id"] is not None
+
+    interviews = list((await db_session.execute(select(Interview))).scalars().all())
+    assert len(interviews) == 1
+    await db_session.refresh(interviews[0])
+    assert interviews[0].calendar_event_id == "calendar-event-duplicate-1"
+    assert interviews[0].duration_minutes == 45
+
+    candidate = (await db_session.execute(select(ActionCandidate))).scalar_one()
+    assert candidate.status == "linked_existing"
+    assert candidate.policy_decision == "link_existing"
+    assert candidate.duplicate_type == "hard"
+    assert candidate.target_entity_id == str(existing.id)
+
+
+@pytest.mark.asyncio
+async def test_calendar_sync_soft_duplicate_requires_review(client, db_session):
+    from backend.models import ActionCandidate, Application, Company, GmailToken, Interview, User
+
+    company = Company(domain="matchco.com", name="MatchCo")
+    db_session.add(company)
+    await db_session.commit()
+    await db_session.refresh(company)
+
+    app = Application(
+        user_id=TEST_USER_ID,
+        company="MatchCo",
+        role_title="Engineer",
+        company_id=company.id,
+    )
+    existing = Interview(
+        user_id=TEST_USER_ID,
+        application=app,
+        interview_type="phone",
+        scheduled_at=datetime(2026, 3, 20, 15, 0, tzinfo=timezone.utc),
+        duration_minutes=30,
+        interviewer_name="Original Recruiter",
+        interviewer_email="original@matchco.com",
+    )
+    token = GmailToken(
+        user_id=TEST_USER_ID,
+        access_token=encrypt_gmail_token("access-token"),
+        refresh_token=encrypt_gmail_token("refresh-token"),
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+    )
+    db_session.add_all([app, existing, token])
+    await db_session.commit()
+
+    user_result = await db_session.execute(select(User).where(User.id == TEST_USER_ID))
+    user = user_result.scalar_one()
+    user.calendar_connected = True
+    await db_session.commit()
+
+    calendar_service = MagicMock()
+    calendar_service.events.return_value.list.return_value.execute.return_value = {
+        "items": [
+            {
+                "id": "calendar-event-soft-duplicate-1",
+                "summary": "Phone Interview with MatchCo",
+                "description": "Recruiter call",
+                "start": {"dateTime": "2026-03-20T15:00:00+00:00"},
+                "end": {"dateTime": "2026-03-20T15:45:00+00:00"},
+                "attendees": [
+                    {"email": "test-user@apptrail.test", "self": True},
+                    {"email": "new-recruiter@matchco.com", "displayName": "New Recruiter"},
+                ],
+            }
+        ]
+    }
+
+    with patch("googleapiclient.discovery.build", return_value=calendar_service):
+        response = await client.post("/api/calendar/sync", headers=AUTH_HEADER)
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["created"] == 0
+    assert payload["updated"] == 0
+    assert payload["skipped"] == 1
+    assert payload["synced"][0]["status"] == "pending_review"
+    assert payload["synced"][0]["interview_id"] is None
+    assert payload["synced"][0]["duplicate_reason"] == "same_application_and_time"
+
+    interviews = list((await db_session.execute(select(Interview))).scalars().all())
+    assert len(interviews) == 1
+    assert interviews[0].calendar_event_id is None
+    assert interviews[0].duration_minutes == 30
+
+    candidate = (await db_session.execute(select(ActionCandidate))).scalar_one()
+    assert candidate.status == "pending_review"
+    assert candidate.policy_decision == "require_review"
+    assert candidate.requires_confirmation is True
+    assert candidate.duplicate_type == "soft"
+    assert candidate.target_entity_id is None
 
 
 @pytest.mark.asyncio

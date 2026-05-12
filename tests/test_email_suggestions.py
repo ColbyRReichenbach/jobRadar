@@ -8,7 +8,7 @@ from tests.conftest import AUTH_HEADER
 
 @pytest.mark.asyncio
 async def test_application_suggestion_accept_links_source_emails(client, db_session):
-    from backend.models import Application, ApplicationSuggestionDecision, EmailEvent
+    from backend.models import ActionCandidate, Application, ApplicationSuggestionDecision, EmailEvent
 
     email = EmailEvent(
         sender="Acme Recruiting",
@@ -55,10 +55,15 @@ async def test_application_suggestion_accept_links_source_emails(client, db_sess
     app = (await db_session.execute(select(Application))).scalar_one()
     refreshed_email = email
     decision = (await db_session.execute(select(ApplicationSuggestionDecision))).scalar_one()
+    candidate = (await db_session.execute(select(ActionCandidate))).scalar_one()
     assert refreshed_email.application_id == app.id
     assert refreshed_email.resolved is True
     assert decision.decision == "accepted"
     assert decision.application_id == app.id
+    assert candidate.action_type == "add_job_to_pipeline"
+    assert candidate.target_entity_id == str(app.id)
+    assert candidate.status == "accepted"
+    assert candidate.requires_confirmation is False
 
     after_resp = await client.get("/api/application-suggestions", headers=AUTH_HEADER)
     assert after_resp.status_code == 200
@@ -102,7 +107,7 @@ async def test_application_suggestion_dismiss_is_persistent(client, db_session):
 
 @pytest.mark.asyncio
 async def test_interview_suggestion_accept_creates_calendar_item(client, db_session):
-    from backend.models import EmailEvent, Interview, InterviewSuggestionDecision
+    from backend.models import ActionCandidate, EmailEvent, Interview, InterviewSuggestionDecision
 
     email = EmailEvent(
         sender="Jane Recruiter",
@@ -141,10 +146,63 @@ async def test_interview_suggestion_accept_creates_calendar_item(client, db_sess
     interview = (await db_session.execute(select(Interview))).scalar_one()
     refreshed_email = email
     decision = (await db_session.execute(select(InterviewSuggestionDecision))).scalar_one()
+    candidate = (await db_session.execute(select(ActionCandidate))).scalar_one()
     assert refreshed_email.resolved is True
     assert decision.decision == "accepted"
     assert decision.interview_id == interview.id
+    assert candidate.action_type == "schedule_interview"
+    assert candidate.target_entity_id == str(interview.id)
+    assert candidate.status == "accepted"
+    assert candidate.requires_confirmation is False
     assert (await client.get("/api/interview-suggestions", headers=AUTH_HEADER)).json() == []
+
+
+@pytest.mark.asyncio
+async def test_interview_suggestion_accept_links_duplicate_interview(client, db_session):
+    from backend.models import ActionCandidate, EmailEvent, Interview, InterviewSuggestionDecision
+
+    scheduled_at = datetime(2026, 1, 15, 14, 0, tzinfo=timezone.utc)
+    existing = Interview(
+        user_id=None,
+        interview_type="phone",
+        scheduled_at=scheduled_at,
+        duration_minutes=30,
+        interviewer_name="Jane Recruiter",
+        interviewer_email="jane@bankco.com",
+    )
+    email = EmailEvent(
+        sender="Jane Recruiter",
+        sender_email="jane@bankco.com",
+        sender_domain="bankco.com",
+        subject="Interview scheduled - January 15, 2026 at 2:00 PM",
+        body="Your interview is scheduled for January 15, 2026 at 2:00 PM for 45 minutes.",
+        classification="interview_request",
+        company_name="BankCo",
+        confidence=0.9,
+        received_at=datetime(2026, 1, 10, 9, 0, tzinfo=timezone.utc),
+    )
+    db_session.add_all([existing, email])
+    await db_session.commit()
+    await db_session.refresh(existing)
+    await db_session.refresh(email)
+
+    accept_resp = await client.post(
+        f"/api/interview-suggestions/{email.id}/accept",
+        headers=AUTH_HEADER,
+        json={},
+    )
+
+    assert accept_resp.status_code == 201
+    assert accept_resp.json()["id"] == str(existing.id)
+    interviews = list((await db_session.execute(select(Interview))).scalars().all())
+    assert len(interviews) == 1
+    decision = (await db_session.execute(select(InterviewSuggestionDecision))).scalar_one()
+    candidate = (await db_session.execute(select(ActionCandidate))).scalar_one()
+    assert decision.interview_id == existing.id
+    assert candidate.status == "linked_existing"
+    assert candidate.policy_decision == "link_existing"
+    assert candidate.duplicate_type == "hard"
+    assert candidate.target_entity_id == str(existing.id)
 
 
 @pytest.mark.asyncio

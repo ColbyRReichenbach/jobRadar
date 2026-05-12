@@ -183,7 +183,9 @@ async def test_network_excludes_inbox_updates_even_if_human(client, db_session):
 
 @pytest.mark.asyncio
 async def test_network_requires_acceptance_for_conversation_senders(client, db_session):
-    from backend.models import EmailEvent
+    from sqlalchemy import select
+
+    from backend.models import ActionCandidate, Contact, EmailEvent
 
     db_session.add(
         EmailEvent(
@@ -213,6 +215,13 @@ async def test_network_requires_acceptance_for_conversation_senders(client, db_s
 
     network_resp = await client.get("/api/network", headers=AUTH_HEADER)
     assert "jamie@example.com" in {contact["email"] for contact in network_resp.json()}
+
+    contact = (await db_session.execute(select(Contact).where(Contact.email == "jamie@example.com"))).scalar_one()
+    candidate = (await db_session.execute(select(ActionCandidate))).scalar_one()
+    assert candidate.action_type == "add_network_contact"
+    assert candidate.target_entity_id == str(contact.id)
+    assert candidate.status == "accepted"
+    assert candidate.requires_confirmation is False
 
 
 @pytest.mark.asyncio

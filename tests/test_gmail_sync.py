@@ -115,6 +115,7 @@ async def test_gmail_sync_allows_large_dry_run_scan_limits(client, db_session):
 @pytest.mark.asyncio
 async def test_gmail_sync_reset_clears_current_user_gmail_state(client, db_session):
     from backend.models import (
+        ActionCandidate,
         Alert,
         EmailEvent,
         EmailSyncAudit,
@@ -172,6 +173,15 @@ async def test_gmail_sync_reset_clears_current_user_gmail_state(client, db_sessi
             title="Interview request",
             action_url=f"/emails?email_id={email.id}",
         ),
+        ActionCandidate(
+            user_id=TEST_USER_ID,
+            source_type="email_event",
+            source_id=str(email.id),
+            action_type="schedule_interview",
+            target_entity_type="interview",
+            target_fingerprint="interview:reset-msg-1",
+            dedupe_key="reset-action-candidate",
+        ),
     ])
     await db_session.commit()
 
@@ -187,8 +197,9 @@ async def test_gmail_sync_reset_clears_current_user_gmail_state(client, db_sessi
     assert deleted["source_discovery_events"] == 1
     assert deleted["search_documents"] == 1
     assert deleted["email_alerts"] == 1
+    assert deleted["action_candidates"] == 1
 
-    for model in [EmailEvent, EmailSyncAudit, UserApplicationLink, SourceDiscoveryEvent, SearchDocument, Alert]:
+    for model in [EmailEvent, EmailSyncAudit, UserApplicationLink, SourceDiscoveryEvent, SearchDocument, Alert, ActionCandidate]:
         result = await db_session.execute(select(model))
         assert result.scalars().all() == []
 
@@ -509,7 +520,7 @@ async def test_gmail_sync_does_not_hard_block_real_employer_domains(client, db_s
 
 @pytest.mark.asyncio
 async def test_gmail_sync_creates_actionable_alerts_for_new_conversation(client, db_session):
-    from backend.models import Alert, EmailEvent, GmailToken, User
+    from backend.models import ActionCandidate, Alert, EmailEvent, GmailToken, User
 
     token = GmailToken(
         user_id=TEST_USER_ID,
@@ -588,6 +599,13 @@ async def test_gmail_sync_creates_actionable_alerts_for_new_conversation(client,
     network_alert = next(alert for alert in alerts if alert.alert_type == "network_contact")
     assert network_alert.action_url == f"/conversations?tab=conversations&email_id={event.id}&thread_id=thread-convo-1"
     assert "Suggested contact: Jamie Recruiter" in network_alert.title
+    assert network_alert.action_candidate_id is not None
+
+    candidate = (await db_session.execute(select(ActionCandidate))).scalar_one()
+    assert network_alert.action_candidate_id == candidate.id
+    assert candidate.action_type == "add_network_contact"
+    assert candidate.status == "proposed"
+    assert candidate.requires_confirmation is True
 
 
 @pytest.mark.asyncio

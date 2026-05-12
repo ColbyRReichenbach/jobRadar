@@ -9,6 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models import Application, Company, Interview
+from backend.services.action_candidates import ActionCandidateSpec, create_or_update_action_candidate
+from backend.services.dedupe_gate import DedupeDecision, evaluate_action_dedupe
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +76,17 @@ def _parse_event_datetime(value: str | None) -> datetime | None:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=timezone.utc)
     return parsed
+
+
+def _first_interview_match_id(decision: DedupeDecision) -> uuid.UUID | None:
+    for match in decision.matches:
+        if match.get("entity_type") != "interview" or not match.get("id"):
+            continue
+        try:
+            return uuid.UUID(str(match["id"]))
+        except (TypeError, ValueError):
+            continue
+    return None
 
 
 def _extract_external_attendees(event: dict, user_email: str | None) -> tuple[str | None, str | None]:
@@ -177,6 +190,7 @@ async def sync_calendar_events(
     created = 0
     updated = 0
     skipped = 0
+    candidates_written = 0
     synced: list[dict] = []
 
     for event in events:
@@ -209,9 +223,80 @@ async def sync_calendar_events(
         existing_result = await db.execute(existing_stmt)
         interview = existing_result.scalar_one_or_none()
         sync_status = "skipped"
+        linked_existing_interview = False
+        dedupe_payload = {
+            "scheduled_at": scheduled_at,
+            "interviewer_email": interviewer_email,
+            "application_id": application_id,
+        }
+        if interview:
+            dedupe_payload["exclude_interview_id"] = str(interview.id)
+        dedupe_decision = await evaluate_action_dedupe(
+            db,
+            user_id=user_id,
+            action_type="schedule_interview",
+            payload=dedupe_payload,
+        )
+
+        if not interview and dedupe_decision.duplicate_type == "hard":
+            duplicate_interview_id = _first_interview_match_id(dedupe_decision)
+            if duplicate_interview_id:
+                duplicate_result = await db.execute(
+                    select(Interview).where(
+                        Interview.id == duplicate_interview_id,
+                        Interview.user_id == user_id,
+                    )
+                )
+                interview = duplicate_result.scalar_one_or_none()
+                linked_existing_interview = interview is not None
+
+        if dedupe_decision.duplicate_type == "soft":
+            candidate = await create_or_update_action_candidate(
+                db,
+                ActionCandidateSpec(
+                    user_id=user_id,
+                    source_type="calendar_event",
+                    source_id=event_id,
+                    action_type=dedupe_decision.action_type,
+                    target_entity_type=dedupe_decision.target_entity_type,
+                    target_entity_id=str(interview.id) if interview else None,
+                    target_fingerprint=dedupe_decision.target_fingerprint,
+                    dedupe_key=dedupe_decision.dedupe_key,
+                    duplicate_type=dedupe_decision.duplicate_type,
+                    duplicate_matches_json=dedupe_decision.matches,
+                    policy_decision=dedupe_decision.policy_decision,
+                    status="pending_review",
+                    requires_confirmation=True,
+                    evidence_json={
+                        "calendar_event_id": event_id,
+                        "summary": summary,
+                        "scheduled_at": scheduled_at.isoformat() if scheduled_at else None,
+                        "source": "calendar_sync",
+                    },
+                ),
+            )
+            candidates_written += 1
+            skipped += 1
+            synced.append(
+                {
+                    "event_id": event_id,
+                    "interview_id": str(interview.id) if interview else None,
+                    "summary": summary,
+                    "scheduled_at": scheduled_at.isoformat() if scheduled_at else None,
+                    "interview_type": interview_type,
+                    "status": "pending_review",
+                    "action_candidate_id": str(candidate.id),
+                    "duplicate_reason": dedupe_decision.reason,
+                    "duplicate_matches": dedupe_decision.matches,
+                }
+            )
+            continue
 
         if interview:
             changed = False
+            if linked_existing_interview and not interview.calendar_event_id:
+                interview.calendar_event_id = event_id
+                changed = True
             if interview.interview_type != interview_type:
                 interview.interview_type = interview_type
                 changed = True
@@ -242,6 +327,9 @@ async def sync_calendar_events(
             if changed:
                 updated += 1
                 sync_status = "updated"
+            elif linked_existing_interview:
+                skipped += 1
+                sync_status = "linked_existing"
             else:
                 skipped += 1
                 continue
@@ -263,6 +351,31 @@ async def sync_calendar_events(
             created += 1
             sync_status = "created"
 
+        candidate = await create_or_update_action_candidate(
+            db,
+            ActionCandidateSpec(
+                user_id=user_id,
+                source_type="calendar_event",
+                source_id=event_id,
+                action_type=dedupe_decision.action_type,
+                target_entity_type=dedupe_decision.target_entity_type,
+                target_entity_id=str(interview.id),
+                target_fingerprint=dedupe_decision.target_fingerprint,
+                dedupe_key=dedupe_decision.dedupe_key,
+                duplicate_type=dedupe_decision.duplicate_type,
+                duplicate_matches_json=dedupe_decision.matches,
+                policy_decision="link_existing" if linked_existing_interview else dedupe_decision.policy_decision,
+                status="linked_existing" if linked_existing_interview else "accepted",
+                requires_confirmation=False,
+                evidence_json={
+                    "calendar_event_id": event_id,
+                    "summary": summary,
+                    "scheduled_at": scheduled_at.isoformat() if scheduled_at else None,
+                    "source": "calendar_sync",
+                },
+            ),
+        )
+        candidates_written += 1
         synced.append(
             {
                 "event_id": event_id,
@@ -271,10 +384,13 @@ async def sync_calendar_events(
                 "scheduled_at": scheduled_at.isoformat() if scheduled_at else None,
                 "interview_type": interview_type,
                 "status": sync_status,
+                "action_candidate_id": str(candidate.id),
+                "duplicate_reason": dedupe_decision.reason,
+                "duplicate_matches": dedupe_decision.matches,
             }
         )
 
-    if created or updated:
+    if created or updated or candidates_written:
         await db.commit()
 
     logger.info(
