@@ -44,7 +44,17 @@ def _opensearch_backend() -> OpenSearchSearchBackend:
 
 async def index_record(db: AsyncSession, record: Any) -> SearchDocument:
     document = build_search_document(record)
-    return await _postgres_backend().index_document(db, document)
+    search_document = await _postgres_backend().index_document(db, document)
+    try:
+        from backend.services.retrieval.indexer import index_knowledge_document
+
+        await index_knowledge_document(db, document, search_document=search_document)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "knowledge_document_indexing_skipped",
+            extra={"error_type": type(exc).__name__, "source_type": document.source_type},
+        )
+    return search_document
 
 
 async def index_records(db: AsyncSession, records: list[Any]) -> list[SearchDocument]:
@@ -61,12 +71,22 @@ async def delete_indexed_record(
     source_type: str,
     source_id: uuid.UUID,
 ) -> bool:
-    return await _postgres_backend().delete_document(
+    deleted = await _postgres_backend().delete_document(
         db,
         user_id=user_id,
         source_type=source_type,
         source_id=source_id,
     )
+    try:
+        from backend.services.retrieval.indexer import delete_knowledge_document
+
+        await delete_knowledge_document(db, user_id=user_id, source_type=source_type, source_id=source_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "knowledge_document_delete_skipped",
+            extra={"error_type": type(exc).__name__, "source_type": source_type},
+        )
+    return deleted
 
 
 async def search_user_documents(

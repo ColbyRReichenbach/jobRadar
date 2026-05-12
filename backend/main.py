@@ -70,6 +70,7 @@ from backend.models import (
     Contact,
     ContactDistinctDecision,
     DataConsent,
+    DocumentChunk,
     EmailEvent,
     EmailFeedback,
     EmailSyncAudit,
@@ -101,6 +102,7 @@ from backend.models import (
     SourceVerificationRun,
     User,
     UserApplicationLink,
+    UserKnowledgeDocument,
     UserProfile,
     UserRoleInterest,
     WarmConnection,
@@ -4057,6 +4059,20 @@ async def reset_gmail_sync_state(
                 SearchDocument.source_id.in_(gmail_email_ids),
             )
         ),
+        "knowledge_documents": await count_rows(
+            select(func.count(UserKnowledgeDocument.id)).where(
+                UserKnowledgeDocument.user_id == user_id,
+                UserKnowledgeDocument.source_type == "email",
+                UserKnowledgeDocument.source_id.in_(gmail_email_ids),
+            )
+        ),
+        "document_chunks": await count_rows(
+            select(func.count(DocumentChunk.id)).where(
+                DocumentChunk.user_id == user_id,
+                DocumentChunk.source_type == "email",
+                DocumentChunk.source_id.in_(gmail_email_ids),
+            )
+        ),
         "email_alerts": await count_rows(
             select(func.count(Alert.id)).where(
                 Alert.user_id == user_id,
@@ -4088,6 +4104,20 @@ async def reset_gmail_sync_state(
         delete(UserApplicationLink).where(
             UserApplicationLink.user_id == user_id,
             UserApplicationLink.email_event_id.in_(gmail_email_ids),
+        )
+    )
+    await db.execute(
+        delete(DocumentChunk).where(
+            DocumentChunk.user_id == user_id,
+            DocumentChunk.source_type == "email",
+            DocumentChunk.source_id.in_(gmail_email_ids),
+        )
+    )
+    await db.execute(
+        delete(UserKnowledgeDocument).where(
+            UserKnowledgeDocument.user_id == user_id,
+            UserKnowledgeDocument.source_type == "email",
+            UserKnowledgeDocument.source_id.in_(gmail_email_ids),
         )
     )
     await db.execute(

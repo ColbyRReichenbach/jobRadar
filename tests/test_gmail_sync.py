@@ -119,9 +119,11 @@ async def test_gmail_sync_reset_clears_current_user_gmail_state(client, db_sessi
         Alert,
         EmailEvent,
         EmailSyncAudit,
+        DocumentChunk,
         SearchDocument,
         SourceDiscoveryEvent,
         UserApplicationLink,
+        UserKnowledgeDocument,
     )
 
     email = EmailEvent(
@@ -167,6 +169,27 @@ async def test_gmail_sync_reset_clears_current_user_gmail_state(client, db_sessi
             search_text="Interview request",
             content_hash="a" * 64,
         ),
+        UserKnowledgeDocument(
+            user_id=TEST_USER_ID,
+            source_type="email",
+            source_id=email.id,
+            title="Interview request",
+            content="Interview request",
+            content_hash="b" * 64,
+            chunks=[
+                DocumentChunk(
+                    user_id=TEST_USER_ID,
+                    source_type="email",
+                    source_id=email.id,
+                    chunk_index=0,
+                    content="Interview request",
+                    token_count=2,
+                    char_start=0,
+                    char_end=17,
+                    content_hash="c" * 64,
+                )
+            ],
+        ),
         Alert(
             user_id=TEST_USER_ID,
             alert_type="interview_request",
@@ -196,10 +219,22 @@ async def test_gmail_sync_reset_clears_current_user_gmail_state(client, db_sessi
     assert deleted["user_application_links"] == 1
     assert deleted["source_discovery_events"] == 1
     assert deleted["search_documents"] == 1
+    assert deleted["knowledge_documents"] == 1
+    assert deleted["document_chunks"] == 1
     assert deleted["email_alerts"] == 1
     assert deleted["action_candidates"] == 1
 
-    for model in [EmailEvent, EmailSyncAudit, UserApplicationLink, SourceDiscoveryEvent, SearchDocument, Alert, ActionCandidate]:
+    for model in [
+        EmailEvent,
+        EmailSyncAudit,
+        UserApplicationLink,
+        SourceDiscoveryEvent,
+        SearchDocument,
+        UserKnowledgeDocument,
+        DocumentChunk,
+        Alert,
+        ActionCandidate,
+    ]:
         result = await db_session.execute(select(model))
         assert result.scalars().all() == []
 

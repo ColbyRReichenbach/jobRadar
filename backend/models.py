@@ -1204,6 +1204,91 @@ class SearchDocument(Base):
     indexed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
 
+class UserKnowledgeDocument(Base):
+    __tablename__ = "user_knowledge_documents"
+    __table_args__ = (
+        UniqueConstraint("user_id", "source_type", "source_id", name="uq_user_knowledge_documents_user_source"),
+        Index("ix_user_knowledge_documents_user_type_indexed", "user_id", "source_type", "indexed_at"),
+        Index("ix_user_knowledge_documents_source", "source_type", "source_id"),
+        Index("ix_user_knowledge_documents_search_document", "search_document_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    search_document_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("search_documents.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    source_type: Mapped[str] = mapped_column(Text, nullable=False)
+    source_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    subtitle: Mapped[str | None] = mapped_column(Text, nullable=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    source_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    indexed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    chunks: Mapped[list["DocumentChunk"]] = relationship(
+        "DocumentChunk",
+        back_populates="document",
+        cascade="all, delete-orphan",
+    )
+
+
+class DocumentChunk(Base):
+    __tablename__ = "document_chunks"
+    __table_args__ = (
+        UniqueConstraint("document_id", "chunk_index", name="uq_document_chunks_document_index"),
+        Index("ix_document_chunks_user_document", "user_id", "document_id"),
+        Index("ix_document_chunks_user_source", "user_id", "source_type", "source_id"),
+        Index("ix_document_chunks_content_hash", "content_hash"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("user_knowledge_documents.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    source_type: Mapped[str] = mapped_column(Text, nullable=False)
+    source_id: Mapped[uuid.UUID] = mapped_column(nullable=False)
+    chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    token_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    char_start: Mapped[int] = mapped_column(Integer, nullable=False)
+    char_end: Mapped[int] = mapped_column(Integer, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    document: Mapped["UserKnowledgeDocument"] = relationship("UserKnowledgeDocument", back_populates="chunks")
+
+
+class RetrievalTrace(Base):
+    __tablename__ = "retrieval_traces"
+    __table_args__ = (
+        Index("ix_retrieval_traces_user_created", "user_id", "created_at"),
+        Index("ix_retrieval_traces_surface_created", "surface", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=_new_uuid)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    surface: Mapped[str] = mapped_column(Text, default="retrieval")
+    query: Mapped[str] = mapped_column(Text, nullable=False)
+    normalized_query: Mapped[str] = mapped_column(Text, nullable=False)
+    retriever_version: Mapped[str] = mapped_column(Text, nullable=False)
+    source_types: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    filters_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    candidate_count: Mapped[int] = mapped_column(Integer, default=0)
+    returned_count: Mapped[int] = mapped_column(Integer, default=0)
+    selected_chunk_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    scores_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    latency_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    status: Mapped[str] = mapped_column(Text, default="ok")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
 class CopilotConversation(Base):
     __tablename__ = "copilot_conversations"
     __table_args__ = (
