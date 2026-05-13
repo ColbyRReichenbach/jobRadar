@@ -132,7 +132,7 @@ For policy details, see:
 
 - [docs/README.md](docs/README.md): documentation map and retention policy
 - [TECHNICAL.md](TECHNICAL.md): architecture, tradeoffs, and implementation details
-- [docs/production-readiness-audit.md](docs/production-readiness-audit.md): latest launch-readiness audit with blocking and non-blocking production gaps
+- [docs/production-readiness-audit.md](docs/production-readiness-audit.md): dated launch-readiness audit and remediation record
 - [SECURITY.md](SECURITY.md): auth, secrets, consent, extension security, and operational safeguards
 - [docs/deployment-checklist.md](docs/deployment-checklist.md): deployment and rollout checklist
 - [docs/privacy-policy.md](docs/privacy-policy.md): product privacy policy

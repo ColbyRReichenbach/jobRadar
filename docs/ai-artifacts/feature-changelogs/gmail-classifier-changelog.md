@@ -412,11 +412,13 @@ Even with consent, the system should avoid sending content to the LLM when local
 
 The first lane comparison used `evals/email_classifier/email_classifier_synthetic_v1.jsonl` with 150 synthetic, sanitized examples. This is not statistical proof of production quality. It is a controlled architecture probe: can the current LLM path handle clean taxonomy cases, and what does that cost in latency, money, and privacy exposure?
 
-Generated artifacts:
+Local generated artifact paths:
 
-- [Rules-only synthetic baseline](../generated/2026-05-06_gmail-classifier-artifact-eval_email-classifier-synthetic-v1_fallback-rules_rules-v1/report.md)
-- [Live LLM synthetic baseline](../generated/2026-05-06_gmail-classifier-live-llm-artifact-eval_email-classifier-synthetic-v1_gpt-4o-mini_v3/report.md)
-- [Rules vs live LLM lane comparison](../generated/2026-05-06_gmail-classifier-lane-comparison_email-classifier-synthetic-v1_fallback-rules-vs-gpt-4o-mini_rules-v1-vs-v3/report.md)
+- `docs/ai-artifacts/generated/2026-05-06_gmail-classifier-artifact-eval_email-classifier-synthetic-v1_fallback-rules_rules-v1/report.md`
+- `docs/ai-artifacts/generated/2026-05-06_gmail-classifier-live-llm-artifact-eval_email-classifier-synthetic-v1_gpt-4o-mini_v3/report.md`
+- `docs/ai-artifacts/generated/2026-05-06_gmail-classifier-lane-comparison_email-classifier-synthetic-v1_fallback-rules-vs-gpt-4o-mini_rules-v1-vs-v3/report.md`
+
+Generated report bundles are intentionally local/ignored unless a release explicitly publishes them.
 
 Measured result:
 
@@ -544,9 +546,9 @@ EmailCandidate
   -> optional redacted LLM adjudication when ambiguous
 ```
 
-Generated artifact:
+Local generated artifact path:
 
-- [Hybrid rules/NLP/LLM synthetic lane](../generated/2026-05-06_gmail-classifier-hybrid-artifact-eval_email-classifier-synthetic-v1_hybrid-rules-nlp-llm_classifier-thresholds-v1/report.md)
+- `docs/ai-artifacts/generated/2026-05-06_gmail-classifier-hybrid-artifact-eval_email-classifier-synthetic-v1_hybrid-rules-nlp-llm_classifier-thresholds-v1/report.md`
 
 Measured result after calibration:
 
@@ -609,9 +611,9 @@ The preflight enforces:
 | Leak detection | Generated preflight prompts are checked for raw email addresses, phone numbers, raw URLs, private URL tokens, and fixture-specific forbidden terms. |
 | Bounded execution | The preflight itself makes zero model calls; the future adjudicator remains a single JSON task with deterministic fallback. |
 
-Generated artifact:
+Local generated artifact path:
 
-- [Gmail classifier LLM preflight eval](../generated/2026-05-06_gmail-classifier-llm-preflight-eval_gmail-llm-preflight-synthetic-v1_no-model-preflight_classifier-thresholds-v1/report.md)
+- `docs/ai-artifacts/generated/2026-05-06_gmail-classifier-llm-preflight-eval_gmail-llm-preflight-synthetic-v1_no-model-preflight_classifier-thresholds-v1/report.md`
 
 Measured preflight result:
 

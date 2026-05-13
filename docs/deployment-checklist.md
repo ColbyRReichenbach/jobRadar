@@ -281,7 +281,7 @@ Production promotion requires:
 3. Set `AI_TRACE_FULL_PAYLOADS_ENABLED=false` and `AI_FULL_TRACE_EXPORT_ENABLED=false` unless full trace access is actively approved.
 4. Lower `COPILOT_DAILY_COST_CAP_CENTS_PER_USER` and `COPILOT_GLOBAL_DAILY_COST_CAP_CENTS` if spend rises unexpectedly.
 5. Set `SEARCH_BACKEND=postgres` if OpenSearch degrades and the Postgres fallback is acceptable.
-6. Confirm admin telemetry still shows model-call, token, cost, fallback, and failure data once Admin AI Ops is implemented.
+6. Confirm Admin AI Ops still shows model-call, token, cost, fallback, and failure data.
 7. Re-enable only after targeted AI feature tests, security tests, and post-deploy smoke checks pass.
 
 ### Secret Rotation

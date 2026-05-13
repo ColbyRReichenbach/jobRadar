@@ -1,7 +1,7 @@
 # AI Feature Production Spec: Final Verified Architecture
 
 Date: 2026-05-11
-System: AppTrail / JobRadar AI platform
+System: AppTrail AI platform
 Source documents: `ai-feature-production-spec.md` and `ai-feature-production-spec-gap-review.md`
 Evidence posture: current-state claims in this document are limited to code-inspected behavior and local artifact counts that were verified during review. Production targets are explicitly marked as proposed architecture.
 
@@ -28,7 +28,7 @@ The important correction is that every stage needs a promotion checkpoint. The s
 
 ## Product Scope
 
-AppTrail / JobRadar is not one AI feature. The product spans:
+AppTrail is not one AI feature. The product spans:
 
 - Job/application tracking from dashboard and browser extension captures.
 - Gmail ingestion, classification, application linking, interview suggestions, and network-contact suggestions.
@@ -101,15 +101,15 @@ Verified current behavior:
 - The default env example is `GMAIL_CLASSIFIER_MODE=hybrid_dry_run`; dry-run does not call the model.
 - Gmail preflight performs prompt-injection checks, redaction, prompt-size checks, and prompt leak checks before LLM adjudication.
 - Gmail sync extracts raw URLs before body parsing and stores sanitized/source links after classification.
-- Search is user-scoped and source-level, not chunk-level.
-- The default search backend is SQL `LIKE` retrieval with hand scoring.
+- Search is user-scoped. Product search still uses source-level lexical `SearchDocument` retrieval, and the retrieval foundation now also has `UserKnowledgeDocument`, `DocumentChunk`, and `RetrievalTrace` tables/services for chunk-level lexical eval and shadow tracing.
+- The default product search backend is SQL `LIKE` retrieval with hand scoring.
 - The OpenSearch adapter is a placeholder and raises unavailable errors without a concrete client.
 - Copilot retrieves `SearchDocument` context, builds a retrieved-context-only prompt, validates citation IDs, stores assistant messages, and supports thumbs feedback.
 - Copilot validates that cited document IDs were retrieved for the user; it does not prove semantic support for every claim.
 - Resume tailoring sees current resume text, job description, target company/role, and parsed skills. It does not use project/repo evidence.
 - Radar has a graph pipeline with persisted steps, source/evidence/report persistence, cost tracking, and a verifier node.
 - Radar public web search currently uses broad web search/fetching rather than source-registry-first retrieval.
-- Job/contact/interview duplicate checks exist, but they are endpoint-specific rather than unified behind a shared action-candidate layer.
+- `ActionCandidate` and shared dedupe services exist and are used by several AI/Gmail/calendar/Radar action-producing paths. Some direct user CRUD flows still use normal product writes rather than action-candidate tracking.
 - Source intelligence has useful primitives: `CompanyJobSource`, `JobPosting`, `SourceDiscoveryEvent`, `ApplicationSourceLink`, source verification, and ATS/source adapters.
 
 ## Production Principles
@@ -205,9 +205,9 @@ Each promotion should include:
 | --- | --- | --- |
 | Intent classifier | Route user/system input into type/subtype/action intent. | Partly implemented for Gmail; Copilot router evals exist but production routing is limited. |
 | Entity normalizer | Canonicalize job URLs, company names/domains, contacts, emails, interviews, skills, source docs. | Implemented in pockets; not unified. |
-| Dedupe gate | Prevent repeated jobs, contacts, interviews, alerts, reports, recommendations. | Endpoint-specific; shared gate proposed. |
-| Evidence store | Persist documents, chunks, citations, metadata, provenance, ownership. | `SearchDocument`, Radar source/evidence tables, job-source records exist; chunked RAG proposed. |
-| Hybrid retriever | Combine lexical, vector, metadata filters, freshness, trust, reranking. | Proposed; current search is source-level lexical. |
+| Dedupe gate | Prevent repeated jobs, contacts, interviews, alerts, reports, recommendations. | Shared action/dedupe services exist for AI/Gmail/calendar/Radar action-producing flows; not every direct CRUD path is action-candidate backed. |
+| Evidence store | Persist documents, chunks, citations, metadata, provenance, ownership. | `SearchDocument`, `UserKnowledgeDocument`, `DocumentChunk`, `RetrievalTrace`, Radar source/evidence tables, and job-source records exist. |
+| Hybrid retriever | Combine lexical, vector, metadata filters, freshness, trust, reranking. | Lexical source and chunk retrieval exist; embeddings/vector/reranking are still proposed and gated. |
 | Generation layer | Produce structured outputs with evidence IDs and validation constraints. | Implemented in pockets. |
 | Validation layer | Reject unsupported claims, unsafe output, malformed actions, cross-user leakage. | Partly implemented; claim-level validation proposed. |
 | Feedback layer | Capture accept, dismiss, thumbs, corrections, edits, labels. | Tables/endpoints exist in several areas; sparse data. |
@@ -439,10 +439,10 @@ Strengths:
 
 Current limitations:
 
-- No unified `ActionCandidate` model/service.
-- Dedupe is scattered across jobs, contacts, links, interviews, alerts, and Radar recommendations.
-- Alerts have no general dedupe key or action-candidate link.
-- Correct classifications can still create duplicate or noisy user-facing behavior.
+- `ActionCandidate` and shared dedupe services now exist and are used by several AI/Gmail/calendar/Radar action-producing flows.
+- Direct user CRUD flows are still normal product writes, not uniformly represented as action candidates.
+- Some alerts and recommendations still rely on stable dedupe keys without a single candidate link.
+- Correct classifications can still create noisy user-facing behavior if entity matching, dedupe, and policy gates are not applied on the path that creates the action.
 
 ### Production Target
 
@@ -509,12 +509,12 @@ Strengths:
 
 Current limitations:
 
-- No chunking.
-- No embeddings or vector search.
+- Chunk-level lexical retrieval exists for eval/shadow work, but it is not promoted as the default product retrieval path.
+- No embeddings or vector search are enabled.
 - No BM25.
 - No reranking.
 - No query decomposition.
-- No retrieval trace storage.
+- Retrieval traces exist for chunk retrieval and shadow comparisons, but product routing is still gated by eval results.
 - OpenSearch adapter is a placeholder, not a working production backend.
 - Search corpus is small and should not be treated as mature RAG.
 
@@ -535,13 +535,12 @@ query
 Implementation path:
 
 1. Keep Postgres lexical search as fallback.
-2. Add `DocumentChunk`.
-3. Add chunking and indexing.
-4. Add retrieval traces.
-5. Add embeddings for chunks.
-6. Add BM25 or OpenSearch lexical scoring.
-7. Add hybrid merge and reranking.
-8. Gate high-risk generation on retrieval evals.
+2. Use the existing `UserKnowledgeDocument`, `DocumentChunk`, chunking, and `RetrievalTrace` foundation for eval and shadow comparisons.
+3. Promote chunk retrieval only after evals show better recall/citation quality on real labels.
+4. Add embeddings for chunks.
+5. Add BM25 or OpenSearch lexical scoring.
+6. Add hybrid merge and reranking.
+7. Gate high-risk generation on retrieval evals.
 
 Retrieval metrics:
 
@@ -759,7 +758,7 @@ Current limitations:
 - Existing job-source intelligence is not yet the primary Radar source layer.
 - Evidence ranking is not yet a robust deterministic trust/freshness/entity-match model.
 - Verification is report-level or run-level, not true claim-by-claim support validation.
-- Radar actions are not routed through a shared `ActionCandidate` and dedupe layer.
+- Radar recommendation persistence now uses the shared `ActionCandidate` service in at least one production path, but Radar is not yet fully source-registry-first or claim-level verified.
 
 ### Source-Registry-First Architecture
 
@@ -1067,29 +1066,35 @@ Goals:
 
 Deliverables:
 
-- `EmailClassificationTrace` or equivalent fields.
-- `ActionCandidate` model/service.
-- `DedupeGate` service.
-- Gmail action extraction produces candidates.
-- Contact/job/interview duplicate checks reused through shared service.
+- Existing `EmailClassificationTrace` model/service maintained and covered by tests.
+- Existing `ActionCandidate` model/service maintained and covered by tests.
+- Existing `DedupeGate` service maintained and extended only where it preserves UX behavior.
+- Gmail/calendar/Radar action-producing flows continue creating candidates where supported.
+- Direct contact/job/interview CRUD dedupe is evaluated for shared-service reuse without forcing unrelated UX changes.
 
 ### Phase 2: Build User Knowledge Retrieval Foundation
 
 Goals:
 
-- Introduce user knowledge documents and chunks.
+- Use the existing user knowledge documents and chunks foundation.
 - Index resume/profile/application/project/email/radar/job-source records.
-- Add retrieval traces.
+- Use existing retrieval traces for eval and debugging.
 - Keep Postgres lexical as fallback.
 
-Deliverables:
+Implemented foundation:
 
-- `UserKnowledgeDocument`.
-- `DocumentChunk`.
-- Chunking pipeline.
-- Retrieval trace model.
+- Existing `UserKnowledgeDocument`.
+- Existing `DocumentChunk`.
+- Existing chunking pipeline.
+- Existing `RetrievalTrace` model.
+- Existing lexical retrieval eval harness.
+
+Remaining gated work:
+
+- Broader indexing for resume/profile/application/project/radar/job-source records.
 - Initial embedding pipeline.
-- Retrieval eval harness.
+- Hybrid retrieval interface.
+- Product promotion artifact proving chunk/hybrid retrieval improves quality before routing user-facing answers through it.
 
 ### Phase 3: Source-Registry Radar
 
@@ -1187,7 +1192,7 @@ Bottom line:
 ```text
 Current system:
   strong beta scaffold with deterministic Gmail NLP,
-  source-level lexical retrieval,
+  source-level product retrieval plus lexical chunk eval/shadow infrastructure,
   read-only Copilot,
   early Radar graph orchestration,
   source-intelligence primitives,
@@ -1203,4 +1208,3 @@ Production target:
   reproducible eval artifacts,
   and real feedback-driven promotion.
 ```
-

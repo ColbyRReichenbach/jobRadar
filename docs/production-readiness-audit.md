@@ -4,6 +4,8 @@ Audit date: 2026-04-24
 Remediation pass: 2026-04-24
 AI feature hardening pass: 2026-04-24
 
+Current status note (2026-05-13): this is a dated readiness audit and remediation record, not a fresh full release certification. The original findings are preserved for traceability. Current code has a single Alembic head at `052_retrieval_foundation`; `/api/ai/metrics` is admin-gated; `/metrics` is protected in production unless `METRICS_BEARER_TOKEN` is configured; application job URLs and Gmail message ids are user-scoped unique constraints. Use `docs/deployment-checklist.md` for the current deployment gate.
+
 ## Verdict
 
 The codebase is substantially closer to production-ready after the remediation pass, but a broad production launch still requires infrastructure configuration and a real deployment rehearsal.
@@ -216,7 +218,7 @@ Required fix:
 
 ## Follow-Up Verification Snapshot
 
-Commands run on 2026-04-30:
+Commands run on 2026-04-30. These are historical results from that remediation pass, not current release-certification results:
 
 | Check | Result |
 | --- | --- |
@@ -224,7 +226,7 @@ Commands run on 2026-04-30:
 | `npm run lint` in `dashboardv2` | Passed |
 | `npm run build` in `dashboardv2` | Passed |
 | `npm run test:smoke` in `dashboardv2` | Passed: 9 tests |
-| `alembic heads` | Passed: `040 (head)` |
+| `alembic heads` | Passed: `040 (head)` at the time; current head is `052_retrieval_foundation` |
 | `python3 -m compileall -q backend` | Passed |
 | `python3 -m pip_audit -r requirements.txt` | Passed: no known vulnerabilities |
 | `npm audit --omit=dev --audit-level=high` | Passed: 0 vulnerabilities |
@@ -265,7 +267,7 @@ Implemented:
 
 ## Verification Snapshot
 
-Commands run during this audit:
+Commands run during the original audit. These are historical results, not current release-certification results:
 
 | Check | Result |
 | --- | --- |
@@ -276,8 +278,8 @@ Commands run during this audit:
 | `npm run lint` in `dashboardv2` | Passed |
 | `npm run build` in `dashboardv2` | Passed |
 | `npm run test:smoke` in `dashboardv2` | Passed: 8 tests |
-| `alembic heads` | Passed: `040 (head)` |
-| Empty local Postgres `alembic upgrade head` | Passed through `040` |
+| `alembic heads` | Passed: `040 (head)` at the time; current head is `052_retrieval_foundation` |
+| Empty local Postgres `alembic upgrade head` | Passed through then-current `040` |
 | `npm audit --omit=dev --audit-level=high` | Passed: 0 vulnerabilities |
 | `python3 -m pip_audit -r requirements.txt` | Passed: no known vulnerabilities |
 | `git diff --check` | Passed |
@@ -508,7 +510,9 @@ Acceptance criteria:
 
 ### P1-2: Metrics And AI Metrics Are Too Exposed
 
-Evidence:
+Status: resolved by the remediation pass. The original evidence is retained below for audit traceability; current code gates `/api/ai/metrics` with `require_admin_user` and blocks public `/metrics` in production unless a bearer token is configured.
+
+Original evidence:
 
 - `/metrics` is unauthenticated.
 - `/api/ai/metrics` is available to any authenticated user and appears to expose global AI usage metrics.
@@ -530,7 +534,9 @@ Acceptance criteria:
 
 ### P1-3: Multi-Tenant Data Model Has Global Uniqueness Where User Scope Is Expected
 
-Evidence:
+Status: resolved by the remediation pass. Current `Application` uses `UniqueConstraint("user_id", "job_url")`, and `EmailEvent` uses `UniqueConstraint("user_id", "gmail_message_id")`. The original evidence is retained below for audit traceability.
+
+Original evidence:
 
 - `Application.job_url` is globally unique while application create/update logic is user-scoped.
 - This can prevent two users from saving the same job posting URL.

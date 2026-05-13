@@ -60,9 +60,9 @@ No AI summary was generated. Deterministic metric tables below are the source of
 
 ## Supporting Artifacts
 
-- [Classifier eval dataset](evals/email_classifier/email_classifier_v1.jsonl)
-- [Labeling guidelines](evals/labeling-guidelines.md)
-- [Dataset governance](evals/dataset-governance.md)
+- [Classifier eval dataset](../../evals/email_classifier/email_classifier_v1.jsonl)
+- [Labeling guidelines](../../evals/labeling-guidelines.md)
+- [Dataset governance](../../evals/dataset-governance.md)
 
 ## Notes
 

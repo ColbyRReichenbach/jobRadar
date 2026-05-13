@@ -4,6 +4,8 @@ Date: 2026-05-11
 Source plan: `docs/ai-artifacts/ai-feature-production-spec-final.md`
 Supporting review: `docs/ai-artifacts/ai-feature-production-spec-gap-review.md`
 
+Status: this file is retained as goal-planning history. Goal 1 and the retrieval foundation/eval/shadow work that followed it are now implemented; use the progress logs in this folder for completed scope and validation.
+
 ## Purpose
 
 This file turns the finalized AI production plan into a realistic Codex `/goal` command.
@@ -23,7 +25,7 @@ goals = true
 
 Then paste the command below into Codex.
 
-## Recommended `/goal` Command
+## Historical Goal 1 `/goal` Command
 
 ```text
 /goal Implement the first production-foundation slice from docs/ai-artifacts/ai-feature-production-codex-goal.md. Read docs/ai-artifacts/ai-feature-production-spec-final.md and docs/ai-artifacts/ai-feature-production-spec-gap-review.md first. Complete only Goal 1: classifier traces, action-candidate and dedupe scaffolding, alert/recommendation dedupe metadata where safe, and validation artifacts. Preserve existing user-facing behavior unless a change is required for duplicate suppression. Stop when the checkpoints in this goal file are complete, relevant tests pass, and a short progress log records changed files, validation commands, and remaining limitations. Pause before any irreversible migration, broad scraping/RAG implementation, autonomous state mutation, or decision that needs production data not available locally.
@@ -260,11 +262,11 @@ Goal 1 is done when:
 - Relevant tests pass or blockers are documented.
 - The final progress log lists changed files, commands run, limitations, and the next recommended goal.
 
-## Future `/goal` Commands
+## Later `/goal` Commands
 
-Use these only after Goal 1 is complete and reviewed.
+Goal 1 and the retrieval foundation/eval/shadow goals are complete. The Goal 2 command below is retained for traceability, not as the next recommended command.
 
-### Goal 2: Retrieval Foundation
+### Goal 2: Retrieval Foundation - Completed
 
 ```text
 /goal Implement Phase 2 from docs/ai-artifacts/ai-feature-production-spec-final.md: add user knowledge documents, document chunks, retrieval traces, and a local lexical fallback eval harness. Do not add embeddings or reranking until chunking and trace tests pass. Stop when source-level search behavior is preserved, chunk indexing is tested, retrieval traces are persisted, and recall/citation eval artifacts can be generated locally.

@@ -4,9 +4,11 @@ Date: 2026-05-11
 Reviewed file: `docs/ai-artifacts/ai-feature-production-spec.md`
 Review standard: code-verified only. I did not accept implementation claims without checking current repository files or local artifacts.
 
+Status note: this was a point-in-time review of the original spec before the production-foundation and retrieval-foundation follow-up work. Later code added `ActionCandidate`, shared dedupe services, `UserKnowledgeDocument`, `DocumentChunk`, and `RetrievalTrace`; see the Goal 1, 2A, 2B, and 2C progress logs for the current implementation deltas.
+
 ## Scope Of Product
 
-JobRadar/AppTrail is not one AI feature. The current product scope spans:
+AppTrail is not one AI feature. The current product scope spans:
 
 - Job/application pipeline tracking from dashboard and browser extension captures.
 - Gmail ingestion, classification, application linking, interview suggestions, and network-contact suggestions.
@@ -26,12 +28,12 @@ Verified as true:
 - Gmail classification is a hybrid deterministic NLP system with optional LLM adjudication in `hybrid` mode. The default env example is `GMAIL_CLASSIFIER_MODE=hybrid_dry_run`, and dry-run does not use the model.
 - Gmail preflight performs prompt-injection checks, redaction, prompt-size checks, and leak checks before adjudication.
 - Gmail sync extracts raw URLs before body parsing and stores sanitized/source links after classification.
-- Search is user-scoped and source-level, not chunk-level.
+- Product search is user-scoped and still source-level by default; chunk-level lexical retrieval, traces, eval gates, and shadow tracing now exist as a gated retrieval foundation.
 - The default search backend is SQL `LIKE` retrieval with hand scoring. OpenSearch is a placeholder adapter that raises unavailable errors.
 - Copilot retrieves `SearchDocument` context, builds a retrieved-context-only prompt, validates returned citation IDs, stores assistant messages, and supports thumbs feedback.
 - Resume tailoring sees only current resume text, job description, target company/role, and parsed skills. It has a skill-addition validator, but no bullet-level evidence grounding.
 - Radar has a LangGraph-style pipeline with persisted steps, source/evidence/report persistence, LLM-call cost tracking, and a verifier node.
-- Job/contact/interview duplicate checks exist, but they are endpoint-specific rather than unified behind one shared action-candidate layer.
+- Job/contact/interview duplicate checks previously existed only in endpoint-specific paths. The follow-up implementation added shared action-candidate and dedupe services for several AI/Gmail/calendar/Radar action-producing flows; direct user CRUD flows are still not uniformly action-candidate backed.
 - Eval file line counts in the spec match the checked files: 12 real email classifier examples, 150 synthetic email examples, 25 synthetic Gmail preflight cases, 4 real/50 synthetic Copilot questions, 8 real/198 synthetic Copilot router examples, 6 real/85 synthetic search queries, 6 real/120 synthetic Radar evidence examples, and 8 small real red-team rows plus 50 synthetic red-team rows.
 
 Not verified:
@@ -65,7 +67,7 @@ Local DB counts are not production quality metrics. They can support product nar
 ### 2. The Spec Overstates Search Maturity
 
 Gap:
-The Search section correctly says current retrieval is simple, but the presence of an OpenSearch backend can read as more mature than it is. The adapter is explicitly a placeholder and raises unavailable errors when used without a concrete client. There is no `DocumentChunk`, embedding vector, BM25, reranker, query planner, or retrieval trace model.
+The Search section correctly says current retrieval is simple, but the presence of an OpenSearch backend can read as more mature than it is. The adapter is explicitly a placeholder and raises unavailable errors when used without a concrete client. Follow-up work added `DocumentChunk`, `UserKnowledgeDocument`, lexical chunk retrieval, and `RetrievalTrace`, but there is still no embedding vector, BM25, reranker, or query planner in the promoted product path.
 
 Fix:
 Rewrite current state as:
@@ -77,9 +79,8 @@ The OpenSearch adapter is a future integration placeholder, not a working produc
 
 Implementation fixes:
 
-- Add `DocumentChunk` or equivalent chunk table.
-- Add chunking and embedding jobs.
-- Add `RetrievalTrace` rows storing query, filters, candidates, scores, selected context, and downstream model call.
+- Use the existing `UserKnowledgeDocument`, `DocumentChunk`, chunking, and `RetrievalTrace` foundation for local eval and shadow comparisons.
+- Add embedding jobs only after lexical chunk retrieval improves real-label retrieval quality.
 - Keep Postgres lexical retrieval as fallback.
 - Only enable hybrid retrieval for Copilot/Radar after recall@k and citation precision improve on real evals.
 
@@ -89,7 +90,7 @@ With the current corpus and lexical scoring, Copilot and Radar cannot be expecte
 ### 3. Action Generation And Dedupe Are Still Fragmented
 
 Gap:
-The spec correctly proposes `ActionCandidate`, but the current app does not have that model/service. Alerts are created directly, `RecommendedAction` is Radar-oriented, and duplicate logic lives in separate job/contact/interview endpoint paths. `Alert` has no `dedupe_key`, `source_id`, `action_candidate_id`, suppression status, or duplicate-match metadata.
+The spec correctly proposed `ActionCandidate`. Follow-up work added the model/service plus alert/recommendation dedupe metadata, but the current app still does not route every product write through one action-candidate policy. Some alerts and recommendations still rely on stable dedupe keys without a single candidate link, and direct user CRUD flows remain normal product writes.
 
 Current examples:
 
@@ -137,13 +138,13 @@ Gap:
 The Gmail architecture summary is mostly accurate, but it should be sharper:
 
 - Default `hybrid_dry_run` does not call the LLM; only `hybrid` allows preflight-gated adjudication when `ai_enabled` is true.
-- The classifier returns route/subtype/decision metadata, but `EmailEvent` only persists legacy fields such as `classification`, `email_type`, `confidence`, `summary`, and `key_sentence`. Route/subtype are preserved in feedback rows and eval artifacts, not on the primary email event.
+- The classifier returns route/subtype/decision metadata. `EmailEvent` still persists legacy classification fields such as `classification`, `email_type`, `confidence`, `summary`, and `key_sentence`; detailed route/subtype/confidence/preflight metadata is persisted in `EmailClassificationTrace`.
 - Gmail sync extracts raw candidate URLs before classification, but the classifier candidate object only receives subject/body/sender/sender_email. Href-only URLs can be stored later, but they do not directly inform classifier features.
 - Opportunity discovery and action review routes are intentionally not stored as `EmailEvent` rows yet.
 
 Fix:
 
-- Add `EmailClassificationTrace` or extend `EmailEvent` with route, subtype, route confidence, subtype confidence, classifier mode, decision path, threshold version, matched features, and status-update policy.
+- Continue using `EmailClassificationTrace` for route, subtype, route confidence, subtype confidence, classifier mode, decision path, threshold version, matched features, and status-update policy.
 - Extend `EmailCandidate` with extracted URLs, link classifications, and maybe sanitized source-link metadata.
 - Keep route-first classification as the framing, but state clearly that production promotion from dry-run to `hybrid` requires real-label review and cost/safety gates.
 
@@ -275,10 +276,10 @@ Replace or add these statements:
 - Replace "Recent local database snapshot" with "Prior local snapshot, not reproduced in this review" unless a generated count artifact is attached.
 - State "OpenSearch adapter is a placeholder; production search is not implemented."
 - State "Copilot validates citation IDs, not semantic support for each claim."
-- State "Gmail route/subtype metadata is returned and used in eval/feedback, but not fully persisted on `EmailEvent`."
+- State "Gmail route/subtype metadata is persisted through `EmailClassificationTrace`; `EmailEvent` still keeps legacy classification fields."
 - State "Default Gmail mode is `hybrid_dry_run`; production LLM adjudication requires setting `GMAIL_CLASSIFIER_MODE=hybrid`."
 - State "Repo ingestion is a later controlled ingestion project, not a near-term resume-tailoring dependency."
-- State "ActionCandidate and DocumentChunk are proposed models; they do not exist in current code."
+- State "`ActionCandidate`, `UserKnowledgeDocument`, `DocumentChunk`, and `RetrievalTrace` now exist; embeddings, reranking, claim-level support validation, and source-registry-first Radar are still gated future work."
 
 ## Promotion Checkpoints And Radar Architecture
 
@@ -420,7 +421,7 @@ Production Radar should therefore make confidence and source coverage visible. I
 The spec has a strong production AI architecture, but it should be more explicit about what is already implemented versus what is proposed. The biggest overclaims are reproducible local counts, search backend maturity, action/dedupe centralization, claim-level grounding, and near-term resume repo ingestion. The safest refreshed framing is:
 
 ```text
-Current system: strong beta scaffold with deterministic Gmail NLP, source-level lexical retrieval, read-only Copilot, early Radar graph orchestration, and governance primitives.
+Current system: strong beta scaffold with deterministic Gmail NLP, source-level product retrieval plus lexical chunk eval/shadow infrastructure, read-only Copilot, early Radar graph orchestration, and governance primitives.
 
-Production target: shared action candidates, entity normalization, dedupe gates, chunked hybrid retrieval, claim-level validation, reproducible eval artifacts, and real feedback-driven promotion.
+Production target: broader action-candidate coverage, entity normalization, dedupe gates, promoted hybrid retrieval, claim-level validation, reproducible eval artifacts, and real feedback-driven promotion.
 ```

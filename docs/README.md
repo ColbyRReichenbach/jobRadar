@@ -11,7 +11,7 @@ These docs describe the product or operational posture as it should be understoo
 - [`../SECURITY.md`](../SECURITY.md): auth, secrets, consent, extension security, and safeguards.
 - [`deployment-checklist.md`](deployment-checklist.md): deployment and rollout checklist.
 - [`privacy-policy.md`](privacy-policy.md): product privacy policy.
-- [`production-readiness-audit.md`](production-readiness-audit.md): latest launch-readiness audit.
+- [`production-readiness-audit.md`](production-readiness-audit.md): dated launch-readiness audit and remediation record.
 
 ## Product Design And Implementation Specs
 
