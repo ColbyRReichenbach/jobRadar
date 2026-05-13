@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="340" viewBox="0 0 900 340" role="img" aria-label="LR route accuracy lift disappears under source shift">
+  <rect width="100%" height="100%" fill="#ffffff"/>
+  <text x="20" y="34" font-size="22" font-weight="700" fill="#102027">LR route accuracy lift disappears under source shift</text>
+  <line x1="545.0" y1="54" x2="545.0" y2="312" stroke="#607d8b" stroke-width="1.5"/>
+  <text x="537.0" y="58" text-anchor="end" font-size="12" fill="#607d8b">LR worse</text>
+  <text x="553.0" y="58" font-size="12" fill="#607d8b">LR better</text>
+  <text x="20" y="90" font-size="14" fill="#263238">Random split</text><rect x="545.0" y="72" width="284.3" height="24" fill="#00897b" rx="4"/><text x="837.3" y="89" text-anchor="start" font-size="13" fill="#263238">+17.3 pts</text><text x="20" y="138" font-size="14" fill="#263238">Sender-domain grouped</text><rect x="545.0" y="120" width="178.5" height="24" fill="#00897b" rx="4"/><text x="731.5" y="137" text-anchor="start" font-size="13" fill="#263238">+10.9 pts</text><text x="20" y="186" font-size="14" fill="#263238">Source/account grouped</text><rect x="245.0" y="168" width="300.0" height="24" fill="#ef5350" rx="4"/><text x="395.0" y="185" text-anchor="middle" font-size="13" font-weight="700" fill="#ffffff">-18.3 pts</text>
+</svg>
