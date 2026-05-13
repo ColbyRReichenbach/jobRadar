@@ -126,23 +126,16 @@ test-results/
 .playwright/
 
 # ─── Audit ───────────────────────────────────────────────────────────────────
-audit/.gmail_token.json
-audit/real_email_audit.csv
-audit/raw_emails_batch1.json
-audit/synthetic_email_audit_*.csv
-audit/__pycache__/
-audit/runs/
+# Private local audit workspaces and raw Gmail-derived outputs stay local.
+audit/
 
 # Generated eval/artifact outputs stay local; source datasets, runners, and
 # changelog docs are committed separately.
 docs/ai-artifacts/generated/**
 !docs/ai-artifacts/generated/
 !docs/ai-artifacts/generated/.gitkeep
-# Legacy local artifact path kept ignored for existing workspaces.
-docs/interview-artifacts/generated/**
-docs/interview-artifacts/**/*.html
-docs/interview-artifacts/**/*.pdf
-docs/interview-artifacts/**/*production-decision-report.txt
+# Legacy local/private article and artifact workspace kept ignored.
+docs/interview-artifacts/**
 
 # Rendered reports are local/share artifacts; commit Markdown/source scripts
 # instead so PDFs/HTML can be regenerated without bloating the repo.
