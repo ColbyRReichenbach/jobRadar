@@ -130,17 +130,21 @@ For policy details, see:
 
 ## Active Documentation
 
+- [docs/README.md](docs/README.md): documentation map and retention policy
 - [TECHNICAL.md](TECHNICAL.md): architecture, tradeoffs, and implementation details
-- [docs/radar-research-spec.md](docs/radar-research-spec.md): full implementation spec for the next Radar research system
-- [docs/production-readiness-audit.md](docs/production-readiness-audit.md): current launch-readiness audit with blocking and non-blocking production gaps
+- [docs/production-readiness-audit.md](docs/production-readiness-audit.md): latest launch-readiness audit with blocking and non-blocking production gaps
 - [SECURITY.md](SECURITY.md): auth, secrets, consent, extension security, and operational safeguards
 - [docs/deployment-checklist.md](docs/deployment-checklist.md): deployment and rollout checklist
 - [docs/privacy-policy.md](docs/privacy-policy.md): product privacy policy
+- [docs/radar-research-spec.md](docs/radar-research-spec.md): Radar research implementation spec
+- [docs/source-intelligence-job-search-spec.md](docs/source-intelligence-job-search-spec.md): source intelligence and direct job-search reliability spec
 - [extension/store/listing.md](extension/store/listing.md): Chrome Web Store listing copy
 - [extension/store/SUBMISSION_GUIDE.md](extension/store/SUBMISSION_GUIDE.md): extension submission workflow
 - [extension/store/privacy-fields.md](extension/store/privacy-fields.md): Chrome Web Store privacy and permission form copy
 - [extension/store/beta-scope.md](extension/store/beta-scope.md): controlled extension beta scope
 - [backend/PROMPT_REGISTRY.md](backend/PROMPT_REGISTRY.md): internal prompt registry generated from code
+- [evals/](evals/): sanitized eval datasets and labeling guidelines
+- [docs/ai-artifacts/](docs/ai-artifacts/): AI evaluation, governance, and model-risk artifacts
 - [docs/archive/README.md](docs/archive/README.md): historical plans, audits, and retired working docs
 
 ## Extension Release Checks

@@ -33,15 +33,15 @@ Regenerate a report from structured JSON:
 ```bash
 scripts/generate_ai_report.py \\
   --input path/to/report-input.json \\
-  --output-dir docs/interview-artifacts/generated
+  --output-dir docs/ai-artifacts/generated
 ```
 
 Regenerate this index:
 
 ```bash
 scripts/regenerate_ai_progress_index.py \\
-  --generated-dir docs/interview-artifacts/generated \\
-  --output docs/interview-artifacts/ai-system-progress-over-time.md
+  --generated-dir docs/ai-artifacts/generated \\
+  --output docs/ai-artifacts/ai-system-progress-over-time.md
 ```
 
 Deterministic metric tables are the source of truth. Optional AI summaries must be generated only from `metadata.json`, `metrics.json`, `token_breakdown.json`, `cost_breakdown.json`, `latency_metrics.json`, and explicit notes.
@@ -79,7 +79,7 @@ def render_progress_index(generated_dir: Path | str, output_path: Path | str) ->
     lines = [
         "# AI System Progress Over Time",
         "",
-        "This index is generated from immutable report folders under `docs/interview-artifacts/generated`.",
+        "This index is generated from immutable report folders under `docs/ai-artifacts/generated`.",
         "",
         "| Date | Report | Type | Dataset | Model | Prompt | Decision |",
         "| --- | --- | --- | --- | --- | --- | --- |",

@@ -68,7 +68,7 @@ def main() -> None:
     parser.add_argument("--generated-at", help="ISO timestamp for deterministic report generation")
     parser.add_argument("--git-sha", default=None, help="Git SHA to place in report metadata")
     parser.add_argument("--release-version", default="local", help="Release/version label")
-    parser.add_argument("--output-dir", default="docs/interview-artifacts/generated", help="Generated report directory")
+    parser.add_argument("--output-dir", default="docs/ai-artifacts/generated", help="Generated report directory")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite an existing generated report folder")
     parser.add_argument("--ai-summary", default=None, help="Optional summary generated only from computed inputs")
     args = parser.parse_args()

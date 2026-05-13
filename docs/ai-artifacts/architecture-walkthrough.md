@@ -27,7 +27,7 @@ Evidence status: Describes current implementation shape and explicitly labels fu
 
 ## Data Contracts
 
-The frontend uses typed API clients for Admin AI Ops. The backend returns structured objects for telemetry, runs, artifacts, experiments, model cards, promotion reports, and access logs. Hardcoded values are limited to tests and static interview artifacts.
+The frontend uses typed API clients for Admin AI Ops. The backend returns structured objects for telemetry, runs, artifacts, experiments, model cards, promotion reports, and access logs. Hardcoded values are limited to tests and static evaluation artifacts.
 
 ## Search And Retrieval
 

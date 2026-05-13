@@ -29,7 +29,7 @@ flowchart TD
 Use this convention for generated feature artifacts:
 
 ```text
-docs/interview-artifacts/generated/
+docs/ai-artifacts/generated/
   YYYY-MM-DD_<feature>_<dataset>_<variant>_<version>/
     report.md
     metadata.json
@@ -70,15 +70,15 @@ Current generated-report helper:
 ```bash
 scripts/generate_ai_report.py \
   --input path/to/report-input.json \
-  --output-dir docs/interview-artifacts/generated
+  --output-dir docs/ai-artifacts/generated
 ```
 
 Current index helper:
 
 ```bash
 scripts/regenerate_ai_progress_index.py \
-  --generated-dir docs/interview-artifacts/generated \
-  --output docs/interview-artifacts/ai-system-progress-over-time.md
+  --generated-dir docs/ai-artifacts/generated \
+  --output docs/ai-artifacts/ai-system-progress-over-time.md
 ```
 
 Suite wrapper:
@@ -124,7 +124,7 @@ Use the default seed profile for smaller hand-reviewed regression artifacts.
 The suite wrapper records command status in:
 
 ```text
-docs/interview-artifacts/generated/feature-artifact-suite-summary.json
+docs/ai-artifacts/generated/feature-artifact-suite-summary.json
 ```
 
 ## Feature Artifact Plans

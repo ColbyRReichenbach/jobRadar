@@ -30,7 +30,7 @@ async def test_record_ai_artifact_links_generated_output_to_model_call(db_sessio
         artifact_type="research_report",
         artifact_ref_id=report_id,
         title="AI Hiring Report",
-        path="docs/interview-artifacts/generated/2026-05-02/report.md",
+        path="docs/ai-artifacts/generated/2026-05-02/report.md",
         metadata={"refresh_token": "secret", "dataset_version": "radar-v1"},
     )
     await db_session.commit()

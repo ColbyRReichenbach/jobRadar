@@ -224,7 +224,7 @@ def build_lane_comparison_payload(
             {"label": "Rules-only artifact", "path": str(rules_dir)},
             {"label": "Live LLM artifact", "path": str(live_dir)},
             {"label": "Classifier eval dataset", "path": "evals/email_classifier/email_classifier_synthetic_v1.jsonl"},
-            {"label": "Feature changelog", "path": "docs/interview-artifacts/feature-changelogs/gmail-classifier-changelog.md"},
+            {"label": "Feature changelog", "path": "docs/ai-artifacts/feature-changelogs/gmail-classifier-changelog.md"},
         ],
         "notes": [
             "Synthetic data is useful for obvious architecture failures and cost/latency comparison, not for final statistical confidence.",

@@ -86,7 +86,7 @@ Every feature rework should generate the same categories of artifacts:
 Recommended generated directory layout:
 
 ```text
-docs/interview-artifacts/generated/
+docs/ai-artifacts/generated/
   YYYY-MM-DD_<feature>_<dataset>_<variant>_<version>/
     report.md
     metadata.json

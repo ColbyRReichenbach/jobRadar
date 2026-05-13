@@ -4,7 +4,7 @@ from pathlib import Path
 
 from backend.services.reports.progress_index import discover_generated_reports, render_progress_index, write_progress_index
 
-ARTIFACT_ROOT = Path("docs/interview-artifacts")
+ARTIFACT_ROOT = Path("docs/ai-artifacts")
 INDEX = ARTIFACT_ROOT / "ai-system-progress-over-time.md"
 
 
@@ -74,9 +74,6 @@ def test_progress_index_links_to_every_static_artifact():
         "architecture-walkthrough.md",
         "demo-script.md",
         "known-ai-limitations-and-deferred-controls.md",
-        "generated/2026-05-02-cost-scaling-projection.md",
-        "generated/2026-05-02-governance-snapshot.md",
-        "generated/2026-05-02-risk-controls-snapshot.md",
     }
     assert expected.issubset(linked_paths)
 
@@ -90,3 +87,4 @@ def test_progress_index_labels_projection_and_claim_discipline():
     assert "Projection" in text
     assert "must not claim live enterprise traffic" in text
     assert "Reading Order" in text
+    assert "Generated report bundles" in text

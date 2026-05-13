@@ -65,6 +65,6 @@ The following are intentionally not claimed as complete:
 - million-user load validation
 - provider-level disaster recovery tests
 
-## Interview Story
+## Product Evidence
 
 The product is a job-search intelligence platform, but the engineering story is production AI governance: every model call is measured, every generated artifact has lineage, and every model or prompt change has a review path.

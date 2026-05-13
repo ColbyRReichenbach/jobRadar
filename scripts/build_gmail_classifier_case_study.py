@@ -9,9 +9,9 @@ from pathlib import Path
 from typing import Any
 
 
-OUTPUT_REPORT = Path("docs/interview-artifacts/gmail-classifier-ml-vs-heuristics-case-study.md")
-OUTPUT_LINKEDIN = Path("docs/interview-artifacts/gmail-classifier-linkedin-post.md")
-CHART_DIR = Path("docs/interview-artifacts/gmail-classifier-case-study-assets")
+OUTPUT_REPORT = Path("docs/ai-artifacts/gmail-classifier-ml-vs-heuristics-case-study.md")
+OUTPUT_LINKEDIN = Path("docs/ai-artifacts/gmail-classifier-linkedin-post.md")
+CHART_DIR = Path("docs/ai-artifacts/gmail-classifier-case-study-assets")
 
 PRIOR_LABELS = Path("audit/runs/gmail_combined_real_baseline_3acct_2026-05-07T00-22-23Z/labels/label_queue_priority.csv")
 CURRENT_LABELS = Path("audit/runs/gmail_labeling_sample/2026-05-12T20-40-container/label_queue_priority_policy_corrected.csv")

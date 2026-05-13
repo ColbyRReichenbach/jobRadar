@@ -65,7 +65,7 @@ Runtime counts must come from a generated artifact that includes:
   missing-table warnings
 ```
 
-Local database counts are useful for interview context, but they are not production quality metrics.
+Local database counts are useful for local review context, but they are not production quality metrics.
 
 ### Eval And Label Counts
 
@@ -1164,7 +1164,7 @@ Deliverables:
 - AI governance dashboard.
 - Sanitized public changelog export.
 
-## Interview Narrative
+## Product Narrative
 
 Concise explanation:
 

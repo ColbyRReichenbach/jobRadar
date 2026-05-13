@@ -16,7 +16,12 @@ These files still have historical value, but they were cluttering the top-level 
 The active documentation set now lives in:
 
 - [README.md](../../README.md)
+- [docs/README.md](../README.md)
 - [TECHNICAL.md](../../TECHNICAL.md)
 - [SECURITY.md](../../SECURITY.md)
 - [deployment-checklist.md](../deployment-checklist.md)
 - [privacy-policy.md](../privacy-policy.md)
+
+## Archive Rule
+
+Move a document here when it is still useful as history but should not be read as the current source of truth. Examples include completed branch plans, superseded product specs, old audits, one-off execution checklists, and tool-specific notes from earlier build phases.

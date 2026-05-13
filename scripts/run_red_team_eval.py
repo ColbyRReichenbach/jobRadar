@@ -19,8 +19,8 @@ from backend.services.red_team import DEFAULT_RED_TEAM_PATHS, run_red_team_eval,
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run AppTrail Copilot red-team eval.")
     parser.add_argument("--dataset", action="append", type=Path, help="JSONL red-team dataset path. May be repeated.")
-    parser.add_argument("--report", default="docs/interview-artifacts/red-team-eval.md")
-    parser.add_argument("--metrics", default="docs/interview-artifacts/generated/red-team-eval-v1-metrics.json")
+    parser.add_argument("--report", default="docs/ai-artifacts/red-team-eval.md")
+    parser.add_argument("--metrics", default="docs/ai-artifacts/generated/red-team-eval-v1-metrics.json")
     args = parser.parse_args()
 
     result = run_red_team_eval(args.dataset or DEFAULT_RED_TEAM_PATHS)

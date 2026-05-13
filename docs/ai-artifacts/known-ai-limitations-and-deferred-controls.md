@@ -8,7 +8,7 @@ This page documents what AppTrail's AI platform is allowed to claim today, what 
 - Search should default to Postgres in local development and CI.
 - OpenSearch is an enterprise-readiness adapter, not a required dependency for local or CI execution.
 - Model calls in CI must use deterministic fixtures or mocked providers.
-- Generated reports are interview and QA artifacts; runtime code must not depend on generated demo reports.
+- Generated reports are evaluation and QA artifacts; runtime code must not depend on generated demo reports.
 - Demo datasets must be sanitized and must not contain real personal email bodies, OAuth payloads, refresh tokens, API keys, or unrelated user data.
 
 ## Controls Required Before Public Demo

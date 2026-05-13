@@ -20,10 +20,10 @@ from typing import Callable, Iterable, Sequence
 ROOT_DIR = Path(__file__).resolve().parents[1]
 
 
-DEFAULT_GENERATED_DIR = Path("docs/interview-artifacts/generated")
-DEFAULT_INDEX_OUTPUT = Path("docs/interview-artifacts/ai-system-progress-over-time.md")
+DEFAULT_GENERATED_DIR = Path("docs/ai-artifacts/generated")
+DEFAULT_INDEX_OUTPUT = Path("docs/ai-artifacts/ai-system-progress-over-time.md")
 DEFAULT_SUMMARY_OUTPUT = DEFAULT_GENERATED_DIR / "feature-artifact-suite-summary.json"
-DEFAULT_RADAR_FIXTURE = Path("docs/interview-artifacts/fixtures/radar-lineage-payload.json")
+DEFAULT_RADAR_FIXTURE = Path("docs/ai-artifacts/fixtures/radar-lineage-payload.json")
 SEED_DATASETS = {
     "gmail_dataset": Path("evals/email_classifier/email_classifier_v1.jsonl"),
     "copilot_router_dataset": Path("evals/copilot/copilot_router_v1.jsonl"),

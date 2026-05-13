@@ -329,7 +329,7 @@ radar_failure_summary_after.json
 Generated report bundle:
 
 ```text
-docs/interview-artifacts/generated/
+docs/ai-artifacts/generated/
   YYYY-MM-DD_radar-source-grounded_radar-evidence-v1_source-quality-gate_v1/
 ```
 

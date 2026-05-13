@@ -249,8 +249,8 @@ def render_red_team_report(result: RedTeamResult) -> str:
 def write_red_team_outputs(
     result: RedTeamResult,
     *,
-    report_path: Path | str = Path("docs/interview-artifacts/red-team-eval.md"),
-    metrics_path: Path | str = Path("docs/interview-artifacts/generated/red-team-eval-v1-metrics.json"),
+    report_path: Path | str = Path("docs/ai-artifacts/red-team-eval.md"),
+    metrics_path: Path | str = Path("docs/ai-artifacts/generated/red-team-eval-v1-metrics.json"),
 ) -> tuple[Path, Path]:
     report_target = Path(report_path)
     metrics_target = Path(metrics_path)

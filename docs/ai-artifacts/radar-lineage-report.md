@@ -22,11 +22,11 @@ Reproduce the sample:
 
 ```bash
 scripts/run_radar_lineage_report.py \
-  --input-json docs/interview-artifacts/fixtures/radar-lineage-payload.json \
+  --input-json docs/ai-artifacts/fixtures/radar-lineage-payload.json \
   --generated-at 2026-05-02T12:00:00Z \
   --git-sha working-tree \
   --release-version radar-lineage-demo \
-  --output-dir docs/interview-artifacts/generated \
+  --output-dir docs/ai-artifacts/generated \
   --overwrite
 ```
 

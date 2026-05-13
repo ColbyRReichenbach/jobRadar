@@ -17,7 +17,7 @@ from backend.services.evals.artifact_packager import load_payload, write_feature
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", required=True, help="Structured feature artifact payload JSON")
-    parser.add_argument("--output-dir", default="docs/interview-artifacts/generated")
+    parser.add_argument("--output-dir", default="docs/ai-artifacts/generated")
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
 

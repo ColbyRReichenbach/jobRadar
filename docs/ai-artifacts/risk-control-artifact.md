@@ -52,6 +52,6 @@ Sensitive keys are sanitized before metadata persistence. Admin views also redac
 - Load and queue backpressure tests are still required before enterprise-scale claims.
 - Automated model promotion is intentionally deferred.
 
-## Interview Story
+## Product Evidence
 
 The risk posture is not "the model is smart." The risk posture is "the model is boxed in by backend data access, logged every time it runs, redacted by default, and reviewed before variants are promoted."

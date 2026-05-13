@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run deterministic search eval and write interview artifacts."""
+"""Run deterministic search eval and write AI evaluation artifacts."""
 
 from __future__ import annotations
 
@@ -25,8 +25,8 @@ def main() -> None:
     parser.add_argument("--documents", default=str(DEFAULT_DOCUMENTS_PATH))
     parser.add_argument("--queries", default=str(DEFAULT_QUERIES_PATH))
     parser.add_argument("--baselines", default=str(DEFAULT_BASELINES_PATH))
-    parser.add_argument("--report", default="docs/interview-artifacts/search-eval.md")
-    parser.add_argument("--metrics", default="docs/interview-artifacts/generated/search-eval-v1-metrics.json")
+    parser.add_argument("--report", default="docs/ai-artifacts/search-eval.md")
+    parser.add_argument("--metrics", default="docs/ai-artifacts/generated/search-eval-v1-metrics.json")
     args = parser.parse_args()
 
     result = run_search_eval(

@@ -67,7 +67,7 @@ def build_artifact_payload(eval_result: dict[str, Any]) -> dict[str, Any]:
         },
         "supporting_artifacts": [
             {"label": "Radar evidence eval dataset", "path": eval_result["dataset_path"]},
-            {"label": "Feature changelog", "path": "docs/interview-artifacts/feature-changelogs/radar-research-changelog.md"},
+            {"label": "Feature changelog", "path": "docs/ai-artifacts/feature-changelogs/radar-research-changelog.md"},
         ],
         "notes": [
             eval_result["decision_note"],
@@ -79,7 +79,7 @@ def build_artifact_payload(eval_result: dict[str, Any]) -> dict[str, Any]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", type=Path, default=Path("evals/radar/radar_evidence_quality_v1.jsonl"))
-    parser.add_argument("--output-dir", type=Path, default=Path("docs/interview-artifacts/generated"))
+    parser.add_argument("--output-dir", type=Path, default=Path("docs/ai-artifacts/generated"))
     parser.add_argument("--payload-output", type=Path)
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()

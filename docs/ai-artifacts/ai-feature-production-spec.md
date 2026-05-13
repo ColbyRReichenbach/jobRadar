@@ -6,7 +6,7 @@ Evidence status: Current-state notes are based on code inspection and local data
 
 ## Purpose
 
-This spec explains how the current AI features work today and how to evolve them into production-grade AI systems. It is written for interview preparation and implementation planning.
+This spec explains how the current AI features work today and how to evolve them into production-grade AI systems. It is written for implementation planning and AI-system review.
 
 The core production thesis:
 
@@ -951,8 +951,8 @@ Primary files and models:
 - `backend/services/admin_ai.py`
 - `backend/services/reports/*`
 - `backend/services/evals/*`
-- `docs/interview-artifacts/*`
-- `docs/interview-artifacts/feature-changelogs/*`
+- `docs/ai-artifacts/*`
+- `docs/ai-artifacts/feature-changelogs/*`
 
 The codebase already has several governance primitives:
 
@@ -975,7 +975,7 @@ Current strengths:
 - Prompt versions exist in task configs and model-call rows.
 - Promotion report and model-card concepts already exist.
 - Admin AI services can aggregate calls, artifacts, experiments, and promotion reports.
-- Interview artifact docs already capture eval, risk, cost, governance, and changelog narratives.
+- AI artifact docs already capture eval, risk, cost, governance, and changelog narratives.
 - The Gmail classifier changelog shows the strongest version of this workflow: observed eval failures led to a route-first classifier architecture instead of generic prompt tweaking.
 
 Current gaps:
@@ -1092,7 +1092,7 @@ Recommended artifact types:
 Recommended artifact layout:
 
 ```text
-docs/interview-artifacts/generated/
+docs/ai-artifacts/generated/
   YYYY-MM-DD-task-change-summary.md
   YYYY-MM-DD-task-change-summary.json
 
@@ -1173,7 +1173,7 @@ This changelog layer is also useful externally. Sanitized public versions can be
 
 - Product build-in-public posts.
 - Technical blog posts.
-- Interview artifacts.
+- AI artifacts.
 - Investor/customer updates.
 - Community feedback requests.
 
@@ -1259,7 +1259,7 @@ Platform-wide metrics:
 - Time from observed failure to documented decision.
 - Number of regressions with RCA completed.
 
-Interview framing:
+Product framing:
 
 > It does not matter if a model appears to get better if we cannot explain why, reproduce the run, identify regressions, or roll it back. Production AI needs transparent artifacts: prompt registry, model cards, eval reports, promotion reports, safety decisions, and trend dashboards. That turns model iteration into an auditable engineering workflow rather than ad hoc prompt tweaking.
 
@@ -1412,7 +1412,7 @@ Deliverables:
 - Sanitized public changelog export for build-in-public posts and technical writeups.
 - Production dashboards for quality, cost, latency, and safety.
 
-## Interview Narrative
+## Product Narrative
 
 Use this concise explanation:
 

@@ -12,12 +12,12 @@ AppTrail is not a single-screen job tracker. It is a connected system with three
 
 At the time of writing, the codebase includes:
 
-- 121 API endpoints
-- 34 SQLAlchemy models
-- 35 Alembic migrations
-- 35 service modules
-- 5 Celery task modules
-- 47 test files
+- 177 backend route declarations
+- 68 SQLAlchemy models
+- 52 Alembic migrations
+- 139 backend service modules
+- 10 Celery task modules with 13 task declarations
+- 118 backend/product test files
 
 ## Architecture
 
@@ -184,17 +184,20 @@ That matters because browser extensions fail at the edges if they only handle th
 
 ### Current posture
 
-AppTrail uses LLM-backed features where free-form interpretation helps the workflow and keeps deterministic logic where rules are better.
+AppTrail uses deterministic logic where product side effects must be tightly controlled and reserves model calls for bounded interpretation tasks.
 
 That is the right tradeoff.
 
-The product currently uses OpenAI for:
+The product can use OpenAI for:
 
-- email classification
+- ambiguous Gmail classification adjudication after local preflight/redaction
 - draft generation
 - resume parsing
 - resume tailoring
+- Radar research synthesis and verification when research mode is enabled
 - legacy compatibility extraction paths
+
+The Gmail classifier is deliberately not "LLM first." Local route/subtype scoring runs before any model call, and the LLM path is limited to ambiguous, preflight-safe cases.
 
 ### Orchestration
 
@@ -246,7 +249,7 @@ That deployment story is boring in the best way. It uses familiar, replaceable i
 
 ## Testing And Quality
 
-The repo currently has 47 test files, and the current working suite is green. The coverage spans:
+The repo currently has 118 product/backend test files. The coverage spans:
 
 - auth and redirect behavior
 - API key flows
@@ -261,7 +264,7 @@ The important point is not the raw count. It is that the project tests workflow 
 
 ## What This Demonstrates
 
-If I were reviewing this project as hiring material, the strongest signals would be:
+From a product-engineering standpoint, the strongest parts of the implementation are:
 
 - full-stack product ownership across browser, backend, workers, and UI
 - pragmatic architecture decisions instead of fashionable ones

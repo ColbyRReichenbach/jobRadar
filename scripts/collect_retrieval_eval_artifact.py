@@ -14,7 +14,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Write the local retrieval foundation eval artifact.")
     parser.add_argument(
         "--output",
-        default="docs/interview-artifacts/generated/local-retrieval-eval.json",
+        default="docs/ai-artifacts/generated/local-retrieval-eval.json",
         help="Output JSON path.",
     )
     args = parser.parse_args()

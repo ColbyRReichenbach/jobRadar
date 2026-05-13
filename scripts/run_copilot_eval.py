@@ -19,8 +19,8 @@ from backend.services.evals.assistant_eval import run_copilot_eval, write_copilo
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run AppTrail Copilot eval.")
     parser.add_argument("--dataset", default="evals/copilot/copilot_questions_v1.jsonl")
-    parser.add_argument("--report", default="docs/interview-artifacts/copilot-eval.md")
-    parser.add_argument("--metrics", default="docs/interview-artifacts/generated/copilot-eval-v1-metrics.json")
+    parser.add_argument("--report", default="docs/ai-artifacts/copilot-eval.md")
+    parser.add_argument("--metrics", default="docs/ai-artifacts/generated/copilot-eval-v1-metrics.json")
     args = parser.parse_args()
 
     result = run_copilot_eval(Path(args.dataset))

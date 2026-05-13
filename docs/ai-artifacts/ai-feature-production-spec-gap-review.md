@@ -1,7 +1,7 @@
 # AI Feature Production Spec Gap Review
 
 Date: 2026-05-11
-Reviewed file: `docs/interview-artifacts/ai-feature-production-spec.md`
+Reviewed file: `docs/ai-artifacts/ai-feature-production-spec.md`
 Review standard: code-verified only. I did not accept implementation claims without checking current repository files or local artifacts.
 
 ## Scope Of Product
@@ -17,7 +17,7 @@ JobRadar/AppTrail is not one AI feature. The current product scope spans:
 - Source intelligence around job URLs, private links, career pages, ATS providers, and source verification.
 - AI governance primitives: model-call ledger, safety decisions, experiments, promotion reports, model cards, feedback, and generated eval artifacts.
 
-The spec's core thesis is directionally right: production AI should classify intent, normalize entities, dedupe, retrieve evidence, validate outputs, collect feedback, and make model/retriever changes auditable. The main problem is that several sections blur implemented state, aspirational architecture, and unverifiable local counts. That should be tightened before using this as an interview or planning artifact.
+The spec's core thesis is directionally right: production AI should classify intent, normalize entities, dedupe, retrieve evidence, validate outputs, collect feedback, and make model/retriever changes auditable. The main problem is that several sections blur implemented state, aspirational architecture, and unverifiable local counts. That should be tightened before using this as an product or planning artifact.
 
 ## Verification Summary
 
@@ -60,7 +60,7 @@ Replace the static count table with a generated artifact that includes:
 Until that exists, phrase the table as "unverified prior snapshot" or remove it.
 
 Limitation:
-Local DB counts are not production quality metrics. They can support interview storytelling, but they should not be used as evidence of production adoption or model quality.
+Local DB counts are not production quality metrics. They can support product narrative, but they should not be used as evidence of production adoption or model quality.
 
 ### 2. The Spec Overstates Search Maturity
 

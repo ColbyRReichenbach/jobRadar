@@ -1682,7 +1682,7 @@ email_classifier_latency_after.json
 Generated report bundle:
 
 ```text
-docs/interview-artifacts/generated/
+docs/ai-artifacts/generated/
   YYYY-MM-DD_email-classifier-hybrid_email-classifier-v1_rules-nlp-llm_v1/
 ```
 
@@ -1722,7 +1722,7 @@ Minimum viable eval:
 Current artifact:
 
 ```text
-docs/interview-artifacts/generated/2026-05-06_gmail-classifier-llm-preflight-eval_gmail-llm-preflight-synthetic-v1_no-model-preflight_classifier-thresholds-v1/
+docs/ai-artifacts/generated/2026-05-06_gmail-classifier-llm-preflight-eval_gmail-llm-preflight-synthetic-v1_no-model-preflight_classifier-thresholds-v1/
 ```
 
 Changes:

@@ -24,7 +24,7 @@ from backend.database_url import normalize_asyncpg_database_url
 from backend.services.runtime_count_artifacts import collect_runtime_table_counts, database_source_label
 
 
-DEFAULT_OUTPUT = Path("docs/interview-artifacts/generated/local-runtime-counts.json")
+DEFAULT_OUTPUT = Path("docs/ai-artifacts/generated/local-runtime-counts.json")
 
 
 def _git_sha() -> str:

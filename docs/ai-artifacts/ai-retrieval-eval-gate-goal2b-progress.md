@@ -27,7 +27,7 @@ This goal did not change Copilot, Radar, search API, or production retrieval rou
   - unsupported-source behavior
   - user-isolation failures
 - Added `scripts/collect_retrieval_eval_gate_artifact.py`.
-- Generated `docs/interview-artifacts/generated/local-retrieval-eval-gate.json` locally. This generated file is ignored by git, matching the existing generated artifact convention.
+- Generated `docs/ai-artifacts/generated/local-retrieval-eval-gate.json` locally. This generated file is ignored by git, matching the existing generated artifact convention.
 
 ## Follow-Up Review Fixes
 
@@ -42,16 +42,16 @@ After review, three eval-correctness issues were fixed:
 - `backend/services/retrieval/eval_gate.py`
 - `scripts/collect_retrieval_eval_gate_artifact.py`
 - `tests/test_retrieval_eval_gate.py`
-- `docs/interview-artifacts/ai-retrieval-eval-gate-goal2b-progress.md`
+- `docs/ai-artifacts/ai-retrieval-eval-gate-goal2b-progress.md`
 
 Generated locally but ignored:
 
-- `docs/interview-artifacts/generated/local-retrieval-eval-gate.json`
+- `docs/ai-artifacts/generated/local-retrieval-eval-gate.json`
 
 ## Validation
 
 - `pytest -q tests/test_retrieval_eval_gate.py` -> 3 passed.
-- `python3 scripts/collect_retrieval_eval_gate_artifact.py --output docs/interview-artifacts/generated/local-retrieval-eval-gate.json` -> wrote the local retrieval eval gate artifact.
+- `python3 scripts/collect_retrieval_eval_gate_artifact.py --output docs/ai-artifacts/generated/local-retrieval-eval-gate.json` -> wrote the local retrieval eval gate artifact.
 - `pytest -q tests/test_retrieval_eval_gate.py tests/test_retrieval_foundation.py tests/test_search_indexing.py tests/test_search_user_isolation.py tests/test_search_security.py tests/test_search_eval.py tests/test_copilot_api.py tests/test_copilot_security.py tests/test_copilot_abuse_controls.py tests/test_copilot_eval.py tests/test_copilot_schema.py` -> 37 passed.
 - `RADAR_ENABLED=true RADAR_RESEARCH_ENABLED=true pytest -q tests/evals/research_radar/test_eval_harness.py tests/test_research_radar_graph.py tests/test_research_radar_user_context.py tests/test_research_radar_observability.py tests/test_opportunity_radar.py tests/test_radar_lineage.py tests/test_radar_quality_metrics.py tests/test_source_discovery.py` -> 47 passed, 1 dev Redis warning.
 - `python3 -m compileall backend/services/retrieval/eval_gate.py scripts/collect_retrieval_eval_gate_artifact.py` -> passed.

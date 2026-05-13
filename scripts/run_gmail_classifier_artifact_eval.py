@@ -207,7 +207,7 @@ def build_artifact_payload(
         "supporting_artifacts": [
             {"label": "Classifier eval dataset", "path": str(dataset_path)},
             {"label": "Dataset governance", "path": "evals/dataset-governance.md"},
-            {"label": "Feature changelog", "path": "docs/interview-artifacts/feature-changelogs/gmail-classifier-changelog.md"},
+            {"label": "Feature changelog", "path": "docs/ai-artifacts/feature-changelogs/gmail-classifier-changelog.md"},
         ],
         "notes": [
             eval_result["decision_note"],
@@ -226,7 +226,7 @@ def build_artifact_payload(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", type=Path, default=Path("evals/email_classifier/email_classifier_v1.jsonl"))
-    parser.add_argument("--output-dir", type=Path, default=Path("docs/interview-artifacts/generated"))
+    parser.add_argument("--output-dir", type=Path, default=Path("docs/ai-artifacts/generated"))
     parser.add_argument("--payload-output", type=Path)
     parser.add_argument(
         "--variant",

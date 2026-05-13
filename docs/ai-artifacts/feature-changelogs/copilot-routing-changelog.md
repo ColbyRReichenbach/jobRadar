@@ -320,7 +320,7 @@ copilot_failure_summary_after.json
 Generated report bundle:
 
 ```text
-docs/interview-artifacts/generated/
+docs/ai-artifacts/generated/
   YYYY-MM-DD_copilot-router_copilot-router-v1_route-tools_v1/
 ```
 

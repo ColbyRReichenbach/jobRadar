@@ -535,7 +535,7 @@ Build now:
 - Copilot routing for a small number of high-value read-only product routes: Radar diagnostics, report questions, job search/source status, application follow-ups, Gmail sync diagnostics, source privacy, and settings help.
 - Typed route/tool outputs and citation validation for Copilot instead of one generic answer prompt for every request.
 - DB-backed eval events extracted from sanitized production behavior, with weak labels from feedback and admin/source state.
-- Generated eval report bundles that reuse the existing `scripts/generate_ai_report.py`, `docs/interview-artifacts/generated/*`, and AI progress index pattern.
+- Generated eval report bundles that reuse the existing `scripts/generate_ai_report.py`, `docs/ai-artifacts/generated/*`, and AI progress index pattern.
 - Lexical and metadata retrieval improvements first, with semantic expansion where it is cheap and inspectable.
 - Rule-based entity extraction for companies, roles, dates, locations, providers, job IDs, deadlines, and recruiters before introducing a heavier NER model.
 
@@ -1270,7 +1270,7 @@ The eval layer should produce artifacts, not just dashboard numbers. This repo a
 
 - file fixtures under `evals/`
 - failure taxonomy docs such as `evals/copilot/failure-taxonomy.md`
-- generated report bundles under `docs/interview-artifacts/generated/`
+- generated report bundles under `docs/ai-artifacts/generated/`
 - report generation through `scripts/generate_ai_report.py`
 - index regeneration through `scripts/regenerate_ai_progress_index.py`
 - persistent artifact lineage through `AiArtifact`
@@ -1311,7 +1311,7 @@ optional model_card_update.md
 Report bundles should follow the existing generated artifact convention:
 
 ```text
-docs/interview-artifacts/generated/
+docs/ai-artifacts/generated/
   YYYY-MM-DD_<report-type>_<dataset-version>_<model-or-variant>_<prompt-or-code-version>/
     report.md
     metadata.json
@@ -1752,7 +1752,7 @@ Acceptance:
 - At least Copilot answer, Radar evidence, Radar report, Gmail classifier, job search, and source privacy event types exist.
 - Admin can inspect sanitized events and add labels.
 - Each eval run can produce a machine-readable metrics file, human-readable report, failure summary, and case-result artifact.
-- Generated artifacts can be linked from `docs/interview-artifacts/ai-system-progress-over-time.md`.
+- Generated artifacts can be linked from `docs/ai-artifacts/ai-system-progress-over-time.md`.
 
 ### Phase 1A: Gmail Classifier Hybrid Pipeline
 
@@ -1899,7 +1899,7 @@ AI_EVAL_ARTIFACT_GENERATION_ENABLED=true
 - [ ] Frozen datasets exist for Radar evidence, Radar report quality, Copilot routing, Copilot grounding, source privacy, and job search relevance.
 - [ ] Model/prompt/router changes can run against frozen evals before promotion.
 - [ ] Eval runs produce `metrics.json`, `failure_summary.json`, `case_results.jsonl`, `report.md`, and DB `ai_eval_runs`/`ai_eval_case_results` records.
-- [ ] Eval artifacts are linked through `AiArtifact` and can be indexed in `docs/interview-artifacts/ai-system-progress-over-time.md`.
+- [ ] Eval artifacts are linked through `AiArtifact` and can be indexed in `docs/ai-artifacts/ai-system-progress-over-time.md`.
 - [ ] Failed eval cases are assigned root cause and fix categories before being closed.
 - [ ] Advanced ML additions such as embeddings, rerankers, learned routers, or fine-tuning are adopted only after they beat deterministic/lexical baselines on frozen evals.
 - [ ] No raw Gmail bodies, private URLs, credentials, candidate IDs, or tokenized links appear in eval tables, logs, admin views, or prompt artifacts.

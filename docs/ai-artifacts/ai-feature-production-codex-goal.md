@@ -1,8 +1,8 @@
 # Codex Goal: AI Production Foundation
 
 Date: 2026-05-11
-Source plan: `docs/interview-artifacts/ai-feature-production-spec-final.md`
-Supporting review: `docs/interview-artifacts/ai-feature-production-spec-gap-review.md`
+Source plan: `docs/ai-artifacts/ai-feature-production-spec-final.md`
+Supporting review: `docs/ai-artifacts/ai-feature-production-spec-gap-review.md`
 
 ## Purpose
 
@@ -26,7 +26,7 @@ Then paste the command below into Codex.
 ## Recommended `/goal` Command
 
 ```text
-/goal Implement the first production-foundation slice from docs/interview-artifacts/ai-feature-production-codex-goal.md. Read docs/interview-artifacts/ai-feature-production-spec-final.md and docs/interview-artifacts/ai-feature-production-spec-gap-review.md first. Complete only Goal 1: classifier traces, action-candidate and dedupe scaffolding, alert/recommendation dedupe metadata where safe, and validation artifacts. Preserve existing user-facing behavior unless a change is required for duplicate suppression. Stop when the checkpoints in this goal file are complete, relevant tests pass, and a short progress log records changed files, validation commands, and remaining limitations. Pause before any irreversible migration, broad scraping/RAG implementation, autonomous state mutation, or decision that needs production data not available locally.
+/goal Implement the first production-foundation slice from docs/ai-artifacts/ai-feature-production-codex-goal.md. Read docs/ai-artifacts/ai-feature-production-spec-final.md and docs/ai-artifacts/ai-feature-production-spec-gap-review.md first. Complete only Goal 1: classifier traces, action-candidate and dedupe scaffolding, alert/recommendation dedupe metadata where safe, and validation artifacts. Preserve existing user-facing behavior unless a change is required for duplicate suppression. Stop when the checkpoints in this goal file are complete, relevant tests pass, and a short progress log records changed files, validation commands, and remaining limitations. Pause before any irreversible migration, broad scraping/RAG implementation, autonomous state mutation, or decision that needs production data not available locally.
 ```
 
 ## Goal 1 Objective
@@ -46,8 +46,8 @@ existing signals
 
 ## Required Context To Read First
 
-- `docs/interview-artifacts/ai-feature-production-spec-final.md`
-- `docs/interview-artifacts/ai-feature-production-spec-gap-review.md`
+- `docs/ai-artifacts/ai-feature-production-spec-final.md`
+- `docs/ai-artifacts/ai-feature-production-spec-gap-review.md`
 - `backend/services/email_classifier.py`
 - `backend/services/gmail_intelligence/orchestrator.py`
 - `backend/services/gmail_intelligence/feature_extractor.py`
@@ -267,29 +267,29 @@ Use these only after Goal 1 is complete and reviewed.
 ### Goal 2: Retrieval Foundation
 
 ```text
-/goal Implement Phase 2 from docs/interview-artifacts/ai-feature-production-spec-final.md: add user knowledge documents, document chunks, retrieval traces, and a local lexical fallback eval harness. Do not add embeddings or reranking until chunking and trace tests pass. Stop when source-level search behavior is preserved, chunk indexing is tested, retrieval traces are persisted, and recall/citation eval artifacts can be generated locally.
+/goal Implement Phase 2 from docs/ai-artifacts/ai-feature-production-spec-final.md: add user knowledge documents, document chunks, retrieval traces, and a local lexical fallback eval harness. Do not add embeddings or reranking until chunking and trace tests pass. Stop when source-level search behavior is preserved, chunk indexing is tested, retrieval traces are persisted, and recall/citation eval artifacts can be generated locally.
 ```
 
 ### Goal 3: Source-Registry Radar
 
 ```text
-/goal Implement Phase 3 from docs/interview-artifacts/ai-feature-production-spec-final.md: make Radar prefer verified CompanyJobSource and JobPosting records before broad web fallback, add source trust/freshness scoring, and route Radar alerts through the shared action/dedupe layer. Stop when tests prove verified sources are selected first, broad search fallback is explicitly marked lower confidence, and duplicate Radar alerts are suppressed or linked.
+/goal Implement Phase 3 from docs/ai-artifacts/ai-feature-production-spec-final.md: make Radar prefer verified CompanyJobSource and JobPosting records before broad web fallback, add source trust/freshness scoring, and route Radar alerts through the shared action/dedupe layer. Stop when tests prove verified sources are selected first, broad search fallback is explicitly marked lower confidence, and duplicate Radar alerts are suppressed or linked.
 ```
 
 ### Goal 4: Evidence-Grounded Resume Tailoring
 
 ```text
-/goal Implement Phase 4 from docs/interview-artifacts/ai-feature-production-spec-final.md: add manual project facts, convert them into searchable evidence, and require evidence IDs for new resume bullets. Do not ingest arbitrary repos. Stop when unsupported resume claims are rejected, evidence-backed bullets are tested, and resume eval artifacts report unsupported-claim rate.
+/goal Implement Phase 4 from docs/ai-artifacts/ai-feature-production-spec-final.md: add manual project facts, convert them into searchable evidence, and require evidence IDs for new resume bullets. Do not ingest arbitrary repos. Stop when unsupported resume claims are rejected, evidence-backed bullets are tested, and resume eval artifacts report unsupported-claim rate.
 ```
 
 ### Goal 5: Production Copilot Grounding
 
 ```text
-/goal Implement Phase 5 from docs/interview-artifacts/ai-feature-production-spec-final.md: add Copilot intent routing, source-specific retrieval planning, claim extraction, and citation-support validation. Keep Copilot read-only except for explicit ActionCandidate proposals. Stop when unsupported factual claims are detected, citation support is measured, and leakage/prompt-injection tests pass.
+/goal Implement Phase 5 from docs/ai-artifacts/ai-feature-production-spec-final.md: add Copilot intent routing, source-specific retrieval planning, claim extraction, and citation-support validation. Keep Copilot read-only except for explicit ActionCandidate proposals. Stop when unsupported factual claims are detected, citation support is measured, and leakage/prompt-injection tests pass.
 ```
 
 ### Goal 6: Continuous Improvement Loop
 
 ```text
-/goal Implement Phase 6 from docs/interview-artifacts/ai-feature-production-spec-final.md: connect feedback, eval datasets, shadow runs, promotion reports, prompt registry entries, and model cards into a reproducible governance loop. Stop when AI-relevant changes can generate comparable artifacts with git SHA, dataset versions, model/prompt/retriever versions, metrics, costs, safety summaries, and promote/reject decisions.
+/goal Implement Phase 6 from docs/ai-artifacts/ai-feature-production-spec-final.md: connect feedback, eval datasets, shadow runs, promotion reports, prompt registry entries, and model cards into a reproducible governance loop. Stop when AI-relevant changes can generate comparable artifacts with git SHA, dataset versions, model/prompt/retriever versions, metrics, costs, safety summaries, and promote/reject decisions.
 ```

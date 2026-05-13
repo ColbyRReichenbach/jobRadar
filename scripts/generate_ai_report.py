@@ -17,7 +17,7 @@ from backend.services.reports.report_writer import write_report_from_json
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", required=True, help="Path to structured report JSON input")
-    parser.add_argument("--output-dir", default="docs/interview-artifacts/generated", help="Generated report output directory")
+    parser.add_argument("--output-dir", default="docs/ai-artifacts/generated", help="Generated report output directory")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite an existing generated report folder")
     args = parser.parse_args()
 

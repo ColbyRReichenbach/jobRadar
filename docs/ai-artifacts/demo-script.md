@@ -1,7 +1,7 @@
 # Demo Script
 
 Date: 2026-05-02
-Audience: Data Science / AI platform interview
+Audience: Product and AI platform review
 Target length: 8 to 10 minutes
 
 ## 1. Problem

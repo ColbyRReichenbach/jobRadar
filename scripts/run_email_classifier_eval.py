@@ -20,8 +20,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", default="evals/email_classifier/email_classifier_v1.jsonl")
     parser.add_argument("--metrics-output", default="evals/email_classifier/email_classifier_v1.metrics.json")
-    parser.add_argument("--report-output", default="docs/interview-artifacts/email-classifier-eval.md")
-    parser.add_argument("--generated-dir", default="docs/interview-artifacts/generated")
+    parser.add_argument("--report-output", default="docs/ai-artifacts/email-classifier-eval.md")
+    parser.add_argument("--generated-dir", default="docs/ai-artifacts/generated")
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
 

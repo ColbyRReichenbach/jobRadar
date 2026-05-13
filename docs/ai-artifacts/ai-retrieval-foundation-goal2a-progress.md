@@ -24,7 +24,7 @@ No embeddings, reranking, OpenSearch implementation, broad scraping, autonomous 
 - Added `backend/services/retrieval/lexical.py` for user-scoped lexical chunk retrieval and trace persistence.
 - Updated `backend/services/search/indexer.py` so existing `index_record` and `reindex_user_documents` also populate the new knowledge document/chunk layer while preserving `SearchDocument` behavior.
 - Added `backend/services/retrieval/eval_artifacts.py` and `scripts/collect_retrieval_eval_artifact.py`.
-- Generated `docs/interview-artifacts/generated/local-retrieval-eval.json`.
+- Generated `docs/ai-artifacts/generated/local-retrieval-eval.json`.
 
 ## Follow-Up Review Fixes
 
@@ -53,12 +53,12 @@ Local migration status:
 - `scripts/collect_retrieval_eval_artifact.py`
 - `tests/conftest.py`
 - `tests/test_retrieval_foundation.py`
-- `docs/interview-artifacts/generated/local-retrieval-eval.json`
-- `docs/interview-artifacts/ai-retrieval-foundation-goal2a-progress.md`
+- `docs/ai-artifacts/generated/local-retrieval-eval.json`
+- `docs/ai-artifacts/ai-retrieval-foundation-goal2a-progress.md`
 
 ## Validation
 
-- `python3 scripts/collect_retrieval_eval_artifact.py --output docs/interview-artifacts/generated/local-retrieval-eval.json` -> wrote the local retrieval eval artifact.
+- `python3 scripts/collect_retrieval_eval_artifact.py --output docs/ai-artifacts/generated/local-retrieval-eval.json` -> wrote the local retrieval eval artifact.
 - `pytest -q tests/test_retrieval_foundation.py` -> 7 passed.
 - `pytest -q tests/test_search_indexing.py tests/test_search_user_isolation.py tests/test_search_security.py tests/test_search_eval.py tests/test_copilot_api.py tests/test_copilot_security.py tests/test_copilot_abuse_controls.py tests/test_copilot_eval.py tests/test_copilot_schema.py tests/test_retrieval_foundation.py tests/test_gmail_sync.py::test_gmail_sync_reset_clears_current_user_gmail_state` -> 35 passed.
 - `RADAR_ENABLED=true RADAR_RESEARCH_ENABLED=true pytest -q tests/test_research_radar_graph.py tests/test_research_radar_user_context.py tests/test_research_radar_observability.py tests/test_opportunity_radar.py tests/test_radar_lineage.py tests/test_radar_quality_metrics.py tests/test_source_discovery.py` -> 46 passed, 1 dev Redis warning.

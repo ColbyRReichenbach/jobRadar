@@ -253,8 +253,8 @@ def render_copilot_eval_report(result: CopilotEvalResult) -> str:
 def write_copilot_eval_outputs(
     result: CopilotEvalResult,
     *,
-    report_path: Path | str = Path("docs/interview-artifacts/copilot-eval.md"),
-    metrics_path: Path | str = Path("docs/interview-artifacts/generated/copilot-eval-v1-metrics.json"),
+    report_path: Path | str = Path("docs/ai-artifacts/copilot-eval.md"),
+    metrics_path: Path | str = Path("docs/ai-artifacts/generated/copilot-eval-v1-metrics.json"),
 ) -> tuple[Path, Path]:
     report_target = Path(report_path)
     metrics_target = Path(metrics_path)

@@ -540,8 +540,8 @@ def render_search_eval_report(result: SearchEvalResult) -> str:
 def write_search_eval_outputs(
     result: SearchEvalResult,
     *,
-    report_path: Path | str = Path("docs/interview-artifacts/search-eval.md"),
-    metrics_path: Path | str = Path("docs/interview-artifacts/generated/search-eval-v1-metrics.json"),
+    report_path: Path | str = Path("docs/ai-artifacts/search-eval.md"),
+    metrics_path: Path | str = Path("docs/ai-artifacts/generated/search-eval-v1-metrics.json"),
 ) -> tuple[Path, Path]:
     report_target = Path(report_path)
     metrics_target = Path(metrics_path)

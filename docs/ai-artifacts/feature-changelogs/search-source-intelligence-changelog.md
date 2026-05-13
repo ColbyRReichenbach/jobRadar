@@ -336,7 +336,7 @@ retrieval_failure_summary_after.json
 Generated report bundle:
 
 ```text
-docs/interview-artifacts/generated/
+docs/ai-artifacts/generated/
   YYYY-MM-DD_search-source-retrieval_search-source-v1_direct-source-ranker_v1/
 ```
 

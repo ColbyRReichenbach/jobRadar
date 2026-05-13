@@ -26,7 +26,7 @@ Plan used:
 - Added Gmail classifier trace persistence for stored, filtered, and quarantined classified messages, including classifier mode, route/subtype confidence, decision path, threshold version, matched features, preflight status, and source URL count.
 - Added nullable alert/recommendation dedupe metadata. User alerts can suppress duplicate dedupe keys; Gmail, calendar, and Radar report alerts now provide stable keys. Radar recommended actions now link to action candidates and suppress exact duplicate recommendation keys.
 - Added `backend/services/runtime_count_artifacts.py` and `scripts/collect_runtime_counts_artifact.py`.
-- Generated `docs/interview-artifacts/generated/local-runtime-counts.json` from `apptrail-local.db`; missing tables are `null`, existing empty tables are `0`.
+- Generated `docs/ai-artifacts/generated/local-runtime-counts.json` from `apptrail-local.db`; missing tables are `null`, existing empty tables are `0`.
 
 ## Changed Files
 
@@ -48,12 +48,12 @@ Plan used:
 - `tests/test_action_foundation.py`
 - `tests/test_email_classification_traces.py`
 - `tests/test_runtime_count_artifacts.py`
-- `docs/interview-artifacts/generated/local-runtime-counts.json`
+- `docs/ai-artifacts/generated/local-runtime-counts.json`
 
 ## Validation
 
 - `pytest -q tests/test_action_foundation.py tests/test_email_classification_traces.py tests/test_runtime_count_artifacts.py tests/test_alerts.py` -> 15 passed.
-- `python3 scripts/collect_runtime_counts_artifact.py --database-url sqlite+aiosqlite:///apptrail-local.db --database-label sqlite:apptrail-local.db --output docs/interview-artifacts/generated/local-runtime-counts.json` -> wrote the local runtime count artifact.
+- `python3 scripts/collect_runtime_counts_artifact.py --database-url sqlite+aiosqlite:///apptrail-local.db --database-label sqlite:apptrail-local.db --output docs/ai-artifacts/generated/local-runtime-counts.json` -> wrote the local runtime count artifact.
 - `pytest -q tests/test_duplicates.py tests/test_alerts.py tests/test_email_suggestions.py tests/test_gmail_intelligence.py tests/test_gmail_sync.py tests/test_ai_artifacts.py tests/test_ai_promotion_reports.py tests/test_action_foundation.py tests/test_email_classification_traces.py tests/test_runtime_count_artifacts.py` -> 55 passed, 1 Python-version warning from `google.api_core`.
 - `pytest -q tests/test_notifications.py tests/test_research_radar_graph.py tests/test_opportunity_radar.py tests/test_source_discovery.py` -> failed because local `.env` has `RADAR_ENABLED=false` and `RADAR_RESEARCH_ENABLED=false`, so `/api/research/*` returned 404 before the changed paths ran.
 - `env RADAR_ENABLED=true RADAR_RESEARCH_ENABLED=true pytest -q tests/test_notifications.py tests/test_research_radar_graph.py tests/test_opportunity_radar.py tests/test_source_discovery.py` -> 51 passed, 1 dev Redis warning.
@@ -104,7 +104,7 @@ Phase 1 adoption changed files:
 - `tests/test_gmail_sync.py`
 - `tests/test_interviews.py`
 - `tests/test_network.py`
-- `docs/interview-artifacts/ai-production-foundation-goal1-progress.md`
+- `docs/ai-artifacts/ai-production-foundation-goal1-progress.md`
 
 Phase 1 validation:
 

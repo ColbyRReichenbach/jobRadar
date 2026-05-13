@@ -31,7 +31,7 @@ Current files and data:
 - `scripts/run_red_team_eval.py`
 - `scripts/generate_ai_report.py`
 - `scripts/regenerate_ai_progress_index.py`
-- `docs/interview-artifacts/generated/*`
+- `docs/ai-artifacts/generated/*`
 - `evals/copilot/copilot_questions_v1.jsonl`
 - `evals/email_classifier/email_classifier_v1.jsonl`
 - `evals/search/search_queries_v1.jsonl`
@@ -54,7 +54,7 @@ Current persisted AI/feedback tables:
 Current generated report bundles already have a strong shape:
 
 ```text
-docs/interview-artifacts/generated/
+docs/ai-artifacts/generated/
   2026-05-02_email-classifier-eval_email-classifier-v1_gpt-4o-mini_v3/
     report.md
     metadata.json
@@ -324,7 +324,7 @@ search_retrieval_relevance_v1
 
 - Wrap the existing report writer with `backend/services/evals/artifact_writer.py`.
 - Link generated artifacts to `AiArtifact`.
-- Regenerate `docs/interview-artifacts/ai-system-progress-over-time.md`.
+- Regenerate `docs/ai-artifacts/ai-system-progress-over-time.md`.
 
 ### Step 5: Add Promotion Gates
 

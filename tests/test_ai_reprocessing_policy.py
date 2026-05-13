@@ -15,8 +15,8 @@ def test_reprocessing_policy_preserves_audit_lineage_and_requires_review():
     assert "failure" in policy["allowed_reprocess_statuses"]
 
 
-def test_reprocessing_policy_is_documented_for_interview_walkthrough():
-    doc = Path("docs/interview-artifacts/model-risk-management.md")
+def test_reprocessing_policy_is_documented_for_ai_system_review():
+    doc = Path("docs/ai-artifacts/model-risk-management.md")
     assert doc.exists()
     text = doc.read_text()
 

@@ -12,7 +12,7 @@ Use this as the execution checklist for the AI platform initiative. Each vertica
 - Keep branches vertical and reviewable. Do not merge unrelated refactors into feature branches.
 - Shared foundations such as migrations, `backend/models.py`, auth dependencies, API clients, and common test fixtures should be changed as early in the stack as possible.
 - If a later branch finds a foundation gap, open a focused fix against the earliest affected layer and rebase dependent branches.
-- Generated demo reports belong under `docs/interview-artifacts/generated`; runtime code must not depend on generated demo artifacts.
+- Generated demo reports belong under `docs/ai-artifacts/generated`; runtime code must not depend on generated demo artifacts.
 - Production UI must call authenticated backend APIs through typed clients. Hardcoded demo data belongs only in fixtures, seed scripts, tests, or clearly labeled static reports.
 
 ## Shared Quality Gate
@@ -79,7 +79,7 @@ Likely files:
 - `.env.example`
 - `docs/deployment-checklist.md`
 - `docs/production-readiness-audit.md`
-- `docs/interview-artifacts/known-ai-limitations-and-deferred-controls.md`
+- `docs/ai-artifacts/known-ai-limitations-and-deferred-controls.md`
 - `scripts/ci/run_backend_checks.sh`
 - `scripts/ci/run_dashboard_checks.sh`
 - `scripts/ci/run_ai_feature_checks.sh`
@@ -232,8 +232,8 @@ Likely files:
 - `backend/services/reports/summary_writer.py`
 - `scripts/generate_ai_report.py`
 - `scripts/regenerate_ai_progress_index.py`
-- `docs/interview-artifacts/ai-system-progress-over-time.md`
-- `docs/interview-artifacts/generated/.gitkeep`
+- `docs/ai-artifacts/ai-system-progress-over-time.md`
+- `docs/ai-artifacts/generated/.gitkeep`
 - `tests/test_report_generation.py`
 - `tests/test_progress_index.py`
 
@@ -252,7 +252,7 @@ Backend/script tasks:
 
 Documentation tasks:
 
-- [x] Create `docs/interview-artifacts/ai-system-progress-over-time.md`.
+- [x] Create `docs/ai-artifacts/ai-system-progress-over-time.md`.
 - [x] Document report naming convention.
 - [x] Document how to regenerate reports from structured inputs.
 - [x] Document that deterministic metric tables do not depend on AI.
@@ -298,7 +298,7 @@ Likely files:
 - `evals/dataset-governance.md`
 - `backend/services/evals/classifier_eval.py`
 - `scripts/run_email_classifier_eval.py`
-- `docs/interview-artifacts/email-classifier-eval.md`
+- `docs/ai-artifacts/email-classifier-eval.md`
 - `tests/test_classifier_eval.py`
 
 Tasks:
@@ -353,7 +353,7 @@ Likely files:
 - `backend/services/ai_artifacts.py`
 - `backend/services/reports/*`
 - `scripts/run_radar_lineage_report.py`
-- `docs/interview-artifacts/radar-lineage-report.md`
+- `docs/ai-artifacts/radar-lineage-report.md`
 - `tests/test_radar_lineage.py`
 - `tests/test_radar_quality_metrics.py`
 
@@ -611,7 +611,7 @@ Likely files:
 - `evals/search/search_baselines_v1.json`
 - `backend/services/evals/search_eval.py`
 - `scripts/run_search_eval.py`
-- `docs/interview-artifacts/search-eval.md`
+- `docs/ai-artifacts/search-eval.md`
 - `tests/test_search_eval.py`
 
 Tasks:
@@ -673,8 +673,8 @@ Likely files:
 - `backend/services/red_team.py`
 - `scripts/run_copilot_eval.py`
 - `scripts/run_red_team_eval.py`
-- `docs/interview-artifacts/copilot-eval.md`
-- `docs/interview-artifacts/red-team-eval.md`
+- `docs/ai-artifacts/copilot-eval.md`
+- `docs/ai-artifacts/red-team-eval.md`
 - `tests/test_copilot_eval.py`
 - `tests/test_red_team_eval.py`
 
@@ -887,12 +887,12 @@ Goal: package the system into an enterprise AI/ML story with scale, cost, govern
 
 Likely files:
 
-- `docs/interview-artifacts/cost-scaling-memo.md`
-- `docs/interview-artifacts/ai-governance-artifact.md`
-- `docs/interview-artifacts/risk-control-artifact.md`
-- `docs/interview-artifacts/model-risk-management.md`
-- `docs/interview-artifacts/demo-script.md`
-- `docs/interview-artifacts/architecture-walkthrough.md`
+- `docs/ai-artifacts/cost-scaling-memo.md`
+- `docs/ai-artifacts/ai-governance-artifact.md`
+- `docs/ai-artifacts/risk-control-artifact.md`
+- `docs/ai-artifacts/model-risk-management.md`
+- `docs/ai-artifacts/demo-script.md`
+- `docs/ai-artifacts/architecture-walkthrough.md`
 - `tests/test_ai_retention.py`
 - `tests/test_ai_reprocessing_policy.py`
 

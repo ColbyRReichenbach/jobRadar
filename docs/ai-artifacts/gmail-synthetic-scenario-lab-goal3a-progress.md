@@ -227,7 +227,7 @@ The augmentation eval completed with sandbox-only Arrow CPU feature warnings fro
 
 - `scripts/generate_gmail_synthetic_scenarios.py`
 - `scripts/run_gmail_synthetic_lr_augmentation_eval.py`
-- `docs/interview-artifacts/gmail-synthetic-scenario-lab-goal3a-progress.md`
+- `docs/ai-artifacts/gmail-synthetic-scenario-lab-goal3a-progress.md`
 
 ## Next Gate
 

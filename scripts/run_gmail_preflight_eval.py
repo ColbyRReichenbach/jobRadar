@@ -68,7 +68,7 @@ def build_artifact_payload(*, dataset_path: Path, result: dict[str, Any] | None 
         },
         "supporting_artifacts": [
             {"label": "Preflight synthetic dataset", "path": str(dataset_path)},
-            {"label": "Feature changelog", "path": "docs/interview-artifacts/feature-changelogs/gmail-classifier-changelog.md"},
+            {"label": "Feature changelog", "path": "docs/ai-artifacts/feature-changelogs/gmail-classifier-changelog.md"},
             {"label": "Dataset governance", "path": "evals/dataset-governance.md"},
         ],
         "notes": [
@@ -82,7 +82,7 @@ def build_artifact_payload(*, dataset_path: Path, result: dict[str, Any] | None 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", type=Path, default=Path("evals/email_classifier/gmail_llm_preflight_synthetic_v1.jsonl"))
-    parser.add_argument("--output-dir", type=Path, default=Path("docs/interview-artifacts/generated"))
+    parser.add_argument("--output-dir", type=Path, default=Path("docs/ai-artifacts/generated"))
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
 

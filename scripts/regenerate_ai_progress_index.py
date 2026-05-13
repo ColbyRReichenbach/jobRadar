@@ -16,10 +16,10 @@ from backend.services.reports.progress_index import write_progress_index
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--generated-dir", default="docs/interview-artifacts/generated", help="Generated report directory")
+    parser.add_argument("--generated-dir", default="docs/ai-artifacts/generated", help="Generated report directory")
     parser.add_argument(
         "--output",
-        default="docs/interview-artifacts/ai-system-progress-over-time.md",
+        default="docs/ai-artifacts/ai-system-progress-over-time.md",
         help="Progress index markdown path",
     )
     args = parser.parse_args()

@@ -8,7 +8,7 @@ from backend.services.reports.report_templates import report_input_from_dict
 from backend.services.reports.report_writer import render_report_markdown, write_report_bundle, write_report_from_json
 from backend.services.reports.summary_writer import SUMMARY_INSTRUCTION, build_summary_payload
 
-ARTIFACT_ROOT = Path("docs/interview-artifacts")
+ARTIFACT_ROOT = Path("docs/ai-artifacts")
 GENERATED_ROOT = ARTIFACT_ROOT / "generated"
 
 
@@ -107,9 +107,8 @@ def test_summary_payload_is_constrained_to_computed_inputs():
     assert "Confusion Matrix" not in json.dumps(payload)
 
 
-def test_generated_artifacts_have_reproducible_metadata_and_claim_status():
+def test_local_generated_artifacts_have_reproducible_metadata_and_claim_status():
     generated = sorted(path for path in GENERATED_ROOT.glob("2026-05-02-*.md"))
-    assert generated, "Expected dated generated artifacts"
 
     for path in generated:
         text = path.read_text()
@@ -121,7 +120,7 @@ def test_generated_artifacts_have_reproducible_metadata_and_claim_status():
         assert "live enterprise traffic" not in text.lower().replace("no live enterprise traffic", "")
 
 
-def test_core_interview_artifacts_label_evidence_and_avoid_overclaims():
+def test_core_ai_artifacts_label_evidence_and_avoid_overclaims():
     docs = [
         ARTIFACT_ROOT / "cost-scaling-memo.md",
         ARTIFACT_ROOT / "ai-governance-artifact.md",

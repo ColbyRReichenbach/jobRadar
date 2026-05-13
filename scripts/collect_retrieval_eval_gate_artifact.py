@@ -15,7 +15,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Write the local retrieval eval gate comparison artifact.")
     parser.add_argument(
         "--output",
-        default="docs/interview-artifacts/generated/local-retrieval-eval-gate.json",
+        default="docs/ai-artifacts/generated/local-retrieval-eval-gate.json",
         help="Output JSON path.",
     )
     parser.add_argument("--k", type=int, default=DEFAULT_K, help="Retrieval cutoff for comparison metrics.")

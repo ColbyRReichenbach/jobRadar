@@ -116,7 +116,7 @@ def build_artifact_payload(result: Any, *, documents_path: Path, queries_path: P
             {"label": "Search documents fixture", "path": str(documents_path)},
             {"label": "Search queries fixture", "path": str(queries_path)},
             {"label": "Search baselines fixture", "path": str(baselines_path)},
-            {"label": "Feature changelog", "path": "docs/interview-artifacts/feature-changelogs/search-source-intelligence-changelog.md"},
+            {"label": "Feature changelog", "path": "docs/ai-artifacts/feature-changelogs/search-source-intelligence-changelog.md"},
         ],
         "notes": [
             result.decision_note,
@@ -130,7 +130,7 @@ def main() -> None:
     parser.add_argument("--documents", type=Path, default=DEFAULT_DOCUMENTS_PATH)
     parser.add_argument("--queries", type=Path, default=DEFAULT_QUERIES_PATH)
     parser.add_argument("--baselines", type=Path, default=DEFAULT_BASELINES_PATH)
-    parser.add_argument("--output-dir", type=Path, default=Path("docs/interview-artifacts/generated"))
+    parser.add_argument("--output-dir", type=Path, default=Path("docs/ai-artifacts/generated"))
     parser.add_argument("--payload-output", type=Path)
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()

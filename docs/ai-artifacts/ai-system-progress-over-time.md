@@ -1,6 +1,6 @@
 # AI System Progress Over Time
 
-This index is generated from immutable report folders under `docs/interview-artifacts/generated`.
+This index summarizes committed AI evaluation and governance artifacts. Generated report bundles are written under `docs/ai-artifacts/generated` for local/release review and are intentionally ignored by git unless a release explicitly needs to publish one.
 
 ## Reading Order
 
@@ -13,12 +13,6 @@ Static architecture and governance artifacts:
 - [Architecture Walkthrough](architecture-walkthrough.md)
 - [Demo Script](demo-script.md)
 - [Known AI Limitations and Deferred Controls](known-ai-limitations-and-deferred-controls.md)
-
-Projection snapshots:
-
-- [Cost Scaling Projection](generated/2026-05-02-cost-scaling-projection.md)
-- [Governance Snapshot](generated/2026-05-02-governance-snapshot.md)
-- [Risk Controls Snapshot](generated/2026-05-02-risk-controls-snapshot.md)
 
 Projection artifacts are planning tools and must not claim live enterprise traffic.
 
@@ -33,8 +27,7 @@ Use the static changelogs and runbook to understand the workflow:
 
 | Date | Report | Type | Dataset | Model | Prompt | Decision |
 | --- | --- | --- | --- | --- | --- | --- |
-| 2026-05-02 | [Radar Lineage Report - Banking AI Assistant Hiring Radar](generated/2026-05-02_radar-lineage_radar-lineage-v1-22222222_gpt-5-4_deterministic-lineage-v1/report.md) | radar_lineage | radar-lineage-v1-22222222 | gpt-5.4 | deterministic-lineage-v1 | pending_admin_review |
-| 2026-05-02 | [Email Classifier Eval](generated/2026-05-02_email-classifier-eval_email-classifier-v1_gpt-4o-mini_v3/report.md) | email_classifier_eval | email_classifier_v1 | gpt-4o-mini | v3 | approved_for_demo_artifact |
+| No committed generated reports | Run the commands below to regenerate local report bundles. | local artifact | varies | varies | varies | not committed |
 
 ## Reproducible Report Format
 
@@ -60,15 +53,15 @@ Regenerate a report from structured JSON:
 ```bash
 scripts/generate_ai_report.py \
   --input path/to/report-input.json \
-  --output-dir docs/interview-artifacts/generated
+  --output-dir docs/ai-artifacts/generated
 ```
 
 Regenerate this index:
 
 ```bash
 scripts/regenerate_ai_progress_index.py \
-  --generated-dir docs/interview-artifacts/generated \
-  --output docs/interview-artifacts/ai-system-progress-over-time.md
+  --generated-dir docs/ai-artifacts/generated \
+  --output docs/ai-artifacts/ai-system-progress-over-time.md
 ```
 
 Deterministic metric tables are the source of truth. Optional AI summaries must be generated only from `metadata.json`, `metrics.json`, `token_breakdown.json`, `cost_breakdown.json`, `latency_metrics.json`, and explicit notes.

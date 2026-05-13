@@ -19,7 +19,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--rules-dir", type=Path, required=True)
     parser.add_argument("--live-dir", type=Path, required=True)
-    parser.add_argument("--output-dir", type=Path, default=Path("docs/interview-artifacts/generated"))
+    parser.add_argument("--output-dir", type=Path, default=Path("docs/ai-artifacts/generated"))
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
 
