@@ -129,6 +129,7 @@ test-results/
 audit/.gmail_token.json
 audit/real_email_audit.csv
 audit/raw_emails_batch1.json
+audit/synthetic_email_audit_*.csv
 audit/__pycache__/
 audit/runs/
 
@@ -137,6 +138,12 @@ audit/runs/
 docs/interview-artifacts/generated/**
 !docs/interview-artifacts/generated/
 !docs/interview-artifacts/generated/.gitkeep
+
+# Rendered reports are local/share artifacts; commit Markdown/source scripts
+# instead so PDFs/HTML can be regenerated without bloating the repo.
+docs/interview-artifacts/**/*.html
+docs/interview-artifacts/**/*.pdf
+docs/interview-artifacts/**/*production-decision-report.txt
 
 # ─── Vite / Build Cache ──────────────────────────────────────────────────────
 dashboardv2/.vite/
