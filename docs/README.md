@@ -1,10 +1,17 @@
 # Documentation Map
 
-This folder has three different kinds of documents. Treat them differently when deciding what belongs in the remote repo.
+This folder is split by purpose. Not every document should read the same way, and not every document belongs in the remote repo forever.
+
+The rule of thumb:
+
+- product docs should explain the current system clearly
+- operational docs should stay precise
+- AI artifacts should preserve evidence and decisions
+- old plans should move to the archive instead of competing with current truth
 
 ## Product Source Of Truth
 
-These docs describe the product or operational posture as it should be understood today:
+These are the docs to read if you want to understand AppTrail as it exists today:
 
 - [`../README.md`](../README.md): product overview, local setup, and documentation entrypoint.
 - [`../TECHNICAL.md`](../TECHNICAL.md): architecture, implementation tradeoffs, and system shape.
@@ -15,7 +22,7 @@ These docs describe the product or operational posture as it should be understoo
 
 ## Product Design And Implementation Specs
 
-These docs are product-adjacent specs. Keep them in the repo while they describe active or near-term architecture:
+These are active or near-term product specs. Keep them in the repo while they still describe architecture we are building toward:
 
 - [`radar-research-spec.md`](radar-research-spec.md)
 - [`radar-research-sprints.md`](radar-research-sprints.md)
@@ -25,7 +32,7 @@ These docs are product-adjacent specs. Keep them in the repo while they describe
 
 ## AI Evaluation And Governance Artifacts
 
-These are committed when they document model behavior, evaluation decisions, safety controls, or reproducible AI-system evidence:
+These docs are evidence, not marketing. Commit them when they document model behavior, evaluation decisions, safety controls, or reproducible AI-system outcomes:
 
 - [`../evals/`](../evals/): sanitized fixture datasets and labeling guidelines.
 - [`ai-artifacts/`](ai-artifacts/): AI governance notes, eval reports, model-risk controls, and progress logs.
@@ -35,7 +42,7 @@ Generated eval outputs, raw Gmail-derived labeling runs, rendered PDFs/HTML, and
 
 ## Archive
 
-[`archive/`](archive/) contains historical plans, old audits, retired execution backlogs, and superseded working docs. Move docs there when they are still useful context but should not be treated as current product truth.
+[`archive/`](archive/) is for historical plans, old audits, retired execution backlogs, and superseded working docs. Keep them when they explain why the product changed. Do not treat them as current product truth.
 
 ## Keep Out Of Remote
 

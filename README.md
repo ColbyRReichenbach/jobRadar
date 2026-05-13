@@ -1,87 +1,50 @@
 # AppTrail
 
-AppTrail is a job search operating system for people who want one place to run the whole process. It combines a web dashboard, a Chrome extension, Gmail sync, recruiter contact tracking, resume tooling, interview prep, and an opportunity research workflow called Radar.
+AppTrail is a job-search OS for people who need one place to run the whole process: track applications, save roles from the browser, sync Gmail, follow recruiter conversations, manage contacts, prep for interviews, and research opportunities without losing the thread across tabs, inboxes, and spreadsheets.
 
-The product is built around a simple idea: once a role matters to you, it should not disappear into a spreadsheet, an inbox, or a pile of open tabs. AppTrail keeps the application, the related email, the people involved, and the next action in the same system.
+The product is built around a simple idea: once a role matters, it should not disappear. The application, the email trail, the people involved, the source page, and the next action should live in the same system.
 
-## What AppTrail Does
+## What It Does
 
-- Tracks jobs you save from the browser extension or add from the dashboard
-- Organizes the pipeline by stage, company, and status
-- Pulls hiring-related email into the product and classifies it automatically
-- Keeps recruiter and contact information next to the application it belongs to
-- Stores interview notes, interview history, and follow-up context
-- Parses and tailors resumes for specific roles
-- Searches for new roles and highlights which ones are worth attention
-- Runs Opportunity Radar to surface useful signals from the data you already have
+AppTrail has a few connected pieces:
 
-## Main Surfaces
+- A dashboard for the application pipeline, inbox, conversations, network, calendar, job search, Radar, analytics, classifier audit, extraction reports, profile, and settings.
+- A Chrome extension that detects supported job pages, extracts job details, opens a side panel for review, saves roles, queues work offline, and can optionally track repeated career-page visits or application-submission signals.
+- Gmail sync and classification, so application confirmations, recruiter replies, interview messages, and noisy job alerts can be routed into the right product behavior.
+- Contact and recruiter context next to the applications they belong to.
+- Resume parsing and tailoring for specific roles.
+- Opportunity Radar, a research workflow for surfacing useful signals from the user's existing job-search data.
 
-### Dashboard
-
-The dashboard is the working surface for the product. It includes:
-
-- Pipeline board
-- Inbox
-- Conversations
-- Network
-- Calendar
-- Job Search
-- Opportunity Radar
-- Analytics
-- Classifier Audit
-- Extraction Reports
-- Profile and Settings
-
-### Chrome Extension
-
-The extension handles capture while you browse. It can:
-
-- detect supported job pages across major ATS platforms
-- open a side panel with extracted job details
-- let you edit and save a role without leaving the tab
-- optionally track repeated career-page visits after you enable that setting
-- optionally detect common application submission pages as review signals
-- queue activity locally when the browser is offline and sync later
-
-### Background Services
-
-The backend and worker processes handle the long-running parts of the product:
-
-- Gmail sync
-- email classification
-- recruiter/contact enrichment
-- job parsing
-- notifications
-- recurring maintenance jobs
+The important part is that these are not isolated features. Email classification affects application state. Extension captures affect source intelligence. Radar recommendations can become actions. The system is designed around those downstream effects, not just around storing records.
 
 ## Who It Is For
 
-AppTrail is designed for an active job search where volume and follow-through matter. It is especially useful when:
+AppTrail is for active job searches where volume and follow-through matter. It is useful when:
 
-- you are tracking many applications at once
-- you want email and application state tied together
-- you care about follow-up timing
-- you want a browser-based workflow instead of a spreadsheet
+- you are tracking enough roles that a spreadsheet starts falling apart
+- you want Gmail and application state tied together
+- you care about recruiter follow-up timing
+- you want browser capture without context switching
+- you want research and next actions attached to the roles they came from
 
 ## Running It Locally
 
-### Fastest path
+Fastest path:
 
 ```bash
 make local-open
 ```
 
-That command prepares a local environment file, starts Docker services, runs migrations, brings up the backend, worker, scheduler, and dashboard, then opens the app in the browser.
+That prepares local env defaults, starts Docker services, runs migrations, brings up the backend, worker, scheduler, and dashboard, then opens the app.
 
-### Standard local flow
+Standard local flow:
 
 ```bash
 make local-env
 make local-up
 ```
 
-Useful follow-up commands:
+Useful follow-ups:
 
 ```bash
 make local-logs
@@ -89,9 +52,7 @@ make local-down
 make local-reset
 ```
 
-### Manual development flow
-
-If you want to run services separately:
+Manual backend flow:
 
 ```bash
 make local-env
@@ -101,17 +62,16 @@ alembic upgrade head
 uvicorn backend.main:app --reload --port 8000
 ```
 
-Manual backend commands load `.env.local` when it exists, so local development
-uses local Postgres instead of the hosted Neon database.
+Manual backend commands load `.env.local` when it exists, so local development uses local Postgres instead of the hosted Neon database.
 
-In another terminal:
+Worker and scheduler:
 
 ```bash
 celery -A backend.celery_app:celery_app worker --loglevel=info
 celery -A backend.celery_app:celery_app beat --loglevel=info
 ```
 
-And for the dashboard:
+Dashboard:
 
 ```bash
 cd dashboardv2
@@ -121,9 +81,15 @@ npm run dev
 
 ## Privacy And Control
 
-AppTrail has explicit consent controls for data processing and third-party enrichment. The extension only runs on supported job-related pages, uses a user-scoped API key stored locally until you clear it, and syncs only saved jobs or opt-in extension activity.
+AppTrail handles sensitive job-search data, so the privacy model is part of the product design, not an afterthought.
 
-For policy details, see:
+- Gmail and enrichment flows are consent-aware.
+- Gmail tokens are encrypted at rest.
+- The extension uses a user-scoped API key and only syncs saved jobs or opt-in extension activity.
+- AI-heavy flows use deterministic logic first where product side effects matter.
+- LLM adjudication is reserved for bounded, preflight-safe cases.
+
+Policy docs:
 
 - [Privacy Policy](docs/privacy-policy.md)
 - [Security Model](SECURITY.md)
@@ -149,13 +115,13 @@ For policy details, see:
 
 ## Extension Release Checks
 
-Run the controlled-beta gate locally with:
+Run the controlled-beta gate locally:
 
 ```bash
 bash scripts/release/run_beta_readiness_checks.sh
 ```
 
-Build the Chrome Web Store submission bundle with:
+Build the Chrome Web Store submission bundle:
 
 ```bash
 bash scripts/release/package_chrome_webstore.sh
