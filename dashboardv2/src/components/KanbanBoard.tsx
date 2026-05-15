@@ -4,7 +4,7 @@ import { MapPin, DollarSign, Calendar, Filter, Linkedin, Globe, Briefcase, Chevr
 import { format, isAfter, subDays, subWeeks, subMonths, formatDistanceToNow } from 'date-fns';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
-import { updateJob, getWarmPaths } from '../lib/api';
+import { createContact, updateJob, getWarmPaths } from '../lib/api';
 import { AddJobModal } from './AddJobModal';
 import { DialogShell } from './DialogShell';
 
@@ -71,6 +71,7 @@ interface KanbanBoardProps {
 export function KanbanBoard({ jobs, setJobs, focusRequest }: KanbanBoardProps) {
   const jobDialogTitleId = useId();
   const selectedJobCloseButtonRef = useRef<HTMLButtonElement>(null);
+  const handledFocusTokenRef = useRef<number | null>(null);
   const [dateFilter, setDateFilter] = useState<string>('all');
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
@@ -81,6 +82,19 @@ export function KanbanBoard({ jobs, setJobs, focusRequest }: KanbanBoardProps) {
   const [notesText, setNotesText] = useState('');
   const [editingDescription, setEditingDescription] = useState(false);
   const [descriptionText, setDescriptionText] = useState('');
+  const [editingBasics, setEditingBasics] = useState(false);
+  const [companyText, setCompanyText] = useState('');
+  const [roleText, setRoleText] = useState('');
+  const [editingDetails, setEditingDetails] = useState(false);
+  const [locationText, setLocationText] = useState('');
+  const [salaryText, setSalaryText] = useState('');
+  const [urlText, setUrlText] = useState('');
+  const [sourceText, setSourceText] = useState<Job['source'] | ''>('');
+  const [showContactForm, setShowContactForm] = useState(false);
+  const [contactName, setContactName] = useState('');
+  const [contactTitle, setContactTitle] = useState('');
+  const [contactEmail, setContactEmail] = useState('');
+  const [contactLinkedin, setContactLinkedin] = useState('');
   const [savingField, setSavingField] = useState<string | null>(null);
   const [boardError, setBoardError] = useState<string | null>(null);
 
@@ -100,11 +114,15 @@ export function KanbanBoard({ jobs, setJobs, focusRequest }: KanbanBoardProps) {
 
   useEffect(() => {
     if (!focusRequest?.jobId || jobs.length === 0) return;
+    if (handledFocusTokenRef.current === focusRequest.token) return;
     const target = jobs.find((job) => job.id === focusRequest.jobId);
     if (target) {
+      handledFocusTokenRef.current = focusRequest.token;
       setSelectedJob(target);
       setEditingNotes(false);
       setEditingDescription(false);
+      setEditingBasics(false);
+      setEditingDetails(false);
     }
   }, [focusRequest, jobs]);
 
@@ -173,6 +191,96 @@ export function KanbanBoard({ jobs, setJobs, focusRequest }: KanbanBoardProps) {
     }
   };
 
+  const handleSaveBasics = async () => {
+    if (!selectedJob || !companyText.trim() || !roleText.trim()) return;
+    setSavingField('basics');
+    try {
+      await updateJob(selectedJob.id, {
+        company: companyText.trim(),
+        role: roleText.trim(),
+      });
+      const updated = {
+        ...selectedJob,
+        company: companyText.trim(),
+        role: roleText.trim(),
+      };
+      setSelectedJob(updated);
+      setJobs(jobs.map(j => j.id === selectedJob.id ? updated : j));
+      setEditingBasics(false);
+    } catch (err) {
+      console.error('Failed to save job details:', err);
+      setBoardError('We could not save the company or title change.');
+    } finally {
+      setSavingField(null);
+    }
+  };
+
+  const handleSaveDetails = async () => {
+    if (!selectedJob) return;
+    setSavingField('details');
+    try {
+      await updateJob(selectedJob.id, {
+        location: locationText.trim(),
+        salary: salaryText.trim() || undefined,
+        url: urlText.trim() || undefined,
+        source: sourceText || undefined,
+      });
+      const updated = {
+        ...selectedJob,
+        location: locationText.trim(),
+        salary: salaryText.trim() || undefined,
+        url: urlText.trim() || undefined,
+        source: sourceText || undefined,
+      };
+      setSelectedJob(updated);
+      setJobs(jobs.map(j => j.id === selectedJob.id ? updated : j));
+      setEditingDetails(false);
+    } catch (err) {
+      console.error('Failed to save job details:', err);
+      setBoardError('We could not save the job details.');
+    } finally {
+      setSavingField(null);
+    }
+  };
+
+  const handleCreateContact = async () => {
+    if (!selectedJob || (!contactName.trim() && !contactEmail.trim())) return;
+    setSavingField('contact');
+    try {
+      const created = await createContact({
+        name: contactName.trim() || undefined,
+        title: contactTitle.trim() || undefined,
+        email: contactEmail.trim() || undefined,
+        linkedin_url: contactLinkedin.trim() || undefined,
+        company_name: selectedJob.company,
+        application_id: selectedJob.id,
+      });
+      const newContact = {
+        id: created.id,
+        name: created.name || '',
+        role: created.title || '',
+        email: created.email || '',
+        linkedin: created.linkedin_url || undefined,
+      };
+      const updated = {
+        ...selectedJob,
+        contacts: [...(selectedJob.contacts || []), newContact],
+      };
+      setSelectedJob(updated);
+      setJobs(jobs.map(j => j.id === selectedJob.id ? updated : j));
+      setContactName('');
+      setContactTitle('');
+      setContactEmail('');
+      setContactLinkedin('');
+      setShowContactForm(false);
+    } catch (err) {
+      console.error('Failed to add contact:', err);
+      setBoardError('We could not add that contact.');
+    } finally {
+      setSavingField(null);
+    }
+  };
+
   const startEditingNotes = () => {
     setNotesText(selectedJob?.notes || '');
     setEditingNotes(true);
@@ -183,6 +291,20 @@ export function KanbanBoard({ jobs, setJobs, focusRequest }: KanbanBoardProps) {
     setEditingDescription(true);
   };
 
+  const startEditingBasics = () => {
+    setCompanyText(selectedJob?.company || '');
+    setRoleText(selectedJob?.role || '');
+    setEditingBasics(true);
+  };
+
+  const startEditingDetails = () => {
+    setLocationText(selectedJob?.location || '');
+    setSalaryText(selectedJob?.salary || '');
+    setUrlText(selectedJob?.url || '');
+    setSourceText(selectedJob?.source || '');
+    setEditingDetails(true);
+  };
+
   const handleJobAdded = (newJob: Job) => {
     setJobs([newJob, ...jobs]);
   };
@@ -191,6 +313,8 @@ export function KanbanBoard({ jobs, setJobs, focusRequest }: KanbanBoardProps) {
     setSelectedJob(null);
     setEditingNotes(false);
     setEditingDescription(false);
+    setEditingBasics(false);
+    setEditingDetails(false);
   };
 
   return (
@@ -411,24 +535,71 @@ export function KanbanBoard({ jobs, setJobs, focusRequest }: KanbanBoardProps) {
                       <Building2 className="w-6 h-6 text-slate-400" />
                     )}
                   </div>
-                  <div>
-                    <h2 id={jobDialogTitleId} className="text-xl md:text-2xl font-serif font-bold text-slate-900 mb-0.5">{selectedJob.role}</h2>
-                    <div className="flex items-center gap-2 text-sm text-slate-600 font-medium">
-                      <span>{selectedJob.company}</span>
-                      <span className="w-1 h-1 rounded-full bg-slate-300" />
-                      <span className={cn(
-                        "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider",
-                        SECTIONS.find(c => c.id === selectedJob.status)?.bg,
-                        SECTIONS.find(c => c.id === selectedJob.status)?.color
-                      )}>
-                        {SECTIONS.find(c => c.id === selectedJob.status)?.title}
-                      </span>
-                      {selectedJob.umbrellaName && (
-                        <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-violet-50 text-violet-600">
-                          {selectedJob.umbrellaName}
-                        </span>
-                      )}
-                    </div>
+                  <div className="min-w-0">
+                    {editingBasics ? (
+                      <div className="space-y-2">
+                        <input
+                          id={jobDialogTitleId}
+                          value={roleText}
+                          onChange={(event) => setRoleText(event.target.value)}
+                          className="w-full rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xl font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500/20"
+                          placeholder="Role title"
+                        />
+                        <input
+                          value={companyText}
+                          onChange={(event) => setCompanyText(event.target.value)}
+                          className="w-full rounded-lg border border-indigo-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20"
+                          placeholder="Company"
+                        />
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={handleSaveBasics}
+                            disabled={savingField === 'basics' || !companyText.trim() || !roleText.trim()}
+                            className="inline-flex items-center gap-1 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                            {savingField === 'basics' ? 'Saving...' : 'Save'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditingBasics(false)}
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex items-start gap-2">
+                          <h2 id={jobDialogTitleId} className="text-xl md:text-2xl font-serif font-bold text-slate-900 mb-0.5">{selectedJob.role}</h2>
+                          <button
+                            type="button"
+                            onClick={startEditingBasics}
+                            className="mt-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
+                          >
+                            Edit title
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-slate-600 font-medium">
+                          <span>{selectedJob.company}</span>
+                          <span className="w-1 h-1 rounded-full bg-slate-300" />
+                          <span className={cn(
+                            "px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider",
+                            SECTIONS.find(c => c.id === selectedJob.status)?.bg,
+                            SECTIONS.find(c => c.id === selectedJob.status)?.color
+                          )}>
+                            {SECTIONS.find(c => c.id === selectedJob.status)?.title}
+                          </span>
+                          {selectedJob.umbrellaName && (
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-violet-50 text-violet-600">
+                              {selectedJob.umbrellaName}
+                            </span>
+                          )}
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
                 <button
@@ -599,54 +770,92 @@ export function KanbanBoard({ jobs, setJobs, focusRequest }: KanbanBoardProps) {
 
                   {/* Details Card */}
                   <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 space-y-3">
-                    <h4 className="font-bold text-slate-900 text-xs uppercase tracking-wider">Details</h4>
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="font-bold text-slate-900 text-xs uppercase tracking-wider">Details</h4>
+                      {editingDetails ? (
+                        <button type="button" onClick={handleSaveDetails} disabled={savingField === 'details'} className="text-xs font-semibold text-emerald-600 hover:text-emerald-700">
+                          {savingField === 'details' ? 'Saving...' : 'Save'}
+                        </button>
+                      ) : (
+                        <button type="button" onClick={startEditingDetails} className="text-xs font-semibold text-indigo-600 hover:text-indigo-700">Edit</button>
+                      )}
+                    </div>
 
-                    <div className="space-y-2.5">
-                      <div className="flex items-start gap-2.5">
-                        <MapPin className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" />
-                        <div>
-                          <div className="text-[11px] font-medium text-slate-500">Location</div>
-                          <div className="text-sm text-slate-900 font-medium">{selectedJob.location}</div>
-                        </div>
+                    {editingDetails ? (
+                      <div className="space-y-2">
+                        <input value={locationText} onChange={(event) => setLocationText(event.target.value)} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500/20" placeholder="Location" />
+                        <input value={salaryText} onChange={(event) => setSalaryText(event.target.value)} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500/20" placeholder="Salary / compensation" />
+                        <input value={urlText} onChange={(event) => setUrlText(event.target.value)} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500/20" placeholder="Job URL" />
+                        <select value={sourceText} onChange={(event) => setSourceText(event.target.value as Job['source'] | '')} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500/20">
+                          <option value="">No source</option>
+                          <option value="company_site">Company site</option>
+                          <option value="linkedin">LinkedIn</option>
+                          <option value="indeed">Indeed</option>
+                          <option value="glassdoor">Glassdoor</option>
+                          <option value="other">Other</option>
+                        </select>
+                        <button type="button" onClick={() => setEditingDetails(false)} className="text-xs font-semibold text-slate-500 hover:text-slate-700">Cancel</button>
                       </div>
+                    ) : (
+                      <div className="space-y-2.5">
+                        <div className="flex items-start gap-2.5">
+                          <MapPin className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" />
+                          <div>
+                            <div className="text-[11px] font-medium text-slate-500">Location</div>
+                            <div className="text-sm text-slate-900 font-medium">{selectedJob.location || 'Not set'}</div>
+                          </div>
+                        </div>
 
-                      {selectedJob.salary && (
                         <div className="flex items-start gap-2.5">
                           <DollarSign className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" />
                           <div>
                             <div className="text-[11px] font-medium text-slate-500">Compensation</div>
-                            <div className="text-sm text-slate-900 font-medium">{selectedJob.salary}</div>
+                            <div className="text-sm text-slate-900 font-medium">{selectedJob.salary || 'Not set'}</div>
                           </div>
                         </div>
-                      )}
 
-                      <div className="flex items-start gap-2.5">
-                        <Calendar className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" />
-                        <div>
-                          <div className="text-[11px] font-medium text-slate-500">Date Added</div>
-                          <div className="text-sm text-slate-900 font-medium">{format(new Date(selectedJob.dateAdded), 'MMMM d, yyyy')}</div>
+                        <div className="flex items-start gap-2.5">
+                          <Calendar className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" />
+                          <div>
+                            <div className="text-[11px] font-medium text-slate-500">Date Added</div>
+                            <div className="text-sm text-slate-900 font-medium">{format(new Date(selectedJob.dateAdded), 'MMMM d, yyyy')}</div>
+                          </div>
                         </div>
-                      </div>
 
-                      {selectedJob.source && (
                         <div className="flex items-start gap-2.5">
                           <LinkIcon className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" />
                           <div>
                             <div className="text-[11px] font-medium text-slate-500">Source</div>
-                            <div className="text-sm text-slate-900 font-medium capitalize">{selectedJob.source.replace('_', ' ')}</div>
+                            <div className="text-sm text-slate-900 font-medium capitalize">{selectedJob.source?.replace('_', ' ') || 'Not set'}</div>
                           </div>
                         </div>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Contacts Card */}
-                  {selectedJob.contacts && selectedJob.contacts.length > 0 && (
-                    <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 space-y-3">
+                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
                       <h4 className="font-bold text-slate-900 text-xs uppercase tracking-wider flex items-center gap-2">
                         <Users className="w-3.5 h-3.5" />
                         Contacts
                       </h4>
+                      <button type="button" onClick={() => setShowContactForm((value) => !value)} className="text-xs font-semibold text-indigo-600 hover:text-indigo-700">
+                        {showContactForm ? 'Cancel' : 'Add'}
+                      </button>
+                    </div>
+                    {showContactForm && (
+                      <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-3">
+                        <input value={contactName} onChange={(event) => setContactName(event.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500/20" placeholder="Name" />
+                        <input value={contactTitle} onChange={(event) => setContactTitle(event.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500/20" placeholder="Title / relationship" />
+                        <input value={contactEmail} onChange={(event) => setContactEmail(event.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500/20" placeholder="Email" />
+                        <input value={contactLinkedin} onChange={(event) => setContactLinkedin(event.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500/20" placeholder="LinkedIn URL" />
+                        <button type="button" onClick={handleCreateContact} disabled={savingField === 'contact' || (!contactName.trim() && !contactEmail.trim())} className="w-full rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">
+                          {savingField === 'contact' ? 'Adding...' : 'Add contact to job'}
+                        </button>
+                      </div>
+                    )}
+                    {selectedJob.contacts && selectedJob.contacts.length > 0 ? (
                       <div className="space-y-2.5">
                         {selectedJob.contacts.map(contact => (
                           <div key={contact.id} className="flex flex-col">
@@ -656,8 +865,10 @@ export function KanbanBoard({ jobs, setJobs, focusRequest }: KanbanBoardProps) {
                           </div>
                         ))}
                       </div>
-                    </div>
-                  )}
+                    ) : (
+                      <p className="text-xs leading-5 text-slate-500">No contacts attached to this job yet.</p>
+                    )}
+                  </div>
                 </div>
               </div>
             </DialogShell>

@@ -38,6 +38,11 @@ export function DialogShell({
   layoutId,
 }: DialogShellProps) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -63,7 +68,7 @@ export function DialogShell({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
-        onClose();
+        onCloseRef.current();
         return;
       }
 
@@ -99,7 +104,7 @@ export function DialogShell({
       document.body.style.overflow = previousOverflow;
       previousActive?.focus();
     };
-  }, [onClose]);
+  }, []);
 
   return (
     <div className={wrapperClassName}>

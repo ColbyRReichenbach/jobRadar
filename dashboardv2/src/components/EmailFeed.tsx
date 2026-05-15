@@ -167,6 +167,7 @@ export function EmailFeed({
   const [creatingInterview, setCreatingInterview] = useState(false);
   const [interviewStatus, setInterviewStatus] = useState<string | null>(null);
   const [applicationSuggestions, setApplicationSuggestions] = useState<ApplicationSuggestion[]>([]);
+  const [applicationSuggestionsCollapsed, setApplicationSuggestionsCollapsed] = useState(false);
   const [suggestionStatus, setSuggestionStatus] = useState<string | null>(null);
   const [busySuggestionKey, setBusySuggestionKey] = useState<string | null>(null);
   const [correctionDialog, setCorrectionDialog] = useState<{
@@ -582,60 +583,81 @@ export function EmailFeed({
 
     return (
       <div className="space-y-2 pb-2">
-        <div className="px-1">
-          <h2 className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Suggested applications</h2>
-          <p className="mt-1 text-xs text-slate-500">
-            Review job updates AppTrail found in Gmail before adding them to your pipeline.
-          </p>
-        </div>
-        {suggestionStatus && (
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-            {suggestionStatus}
+        <div className="flex items-start justify-between gap-3 px-1">
+          <div>
+            <h2 className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Suggested applications</h2>
+            <p className="mt-1 text-xs text-slate-500">
+              Review job updates AppTrail found in Gmail before adding them to your pipeline.
+            </p>
           </div>
-        )}
-        {applicationSuggestions.slice(0, 4).map((suggestion) => {
-          const latestEvidence = suggestion.evidence[0];
-          const isBusy = busySuggestionKey === suggestion.suggestion_key;
-          return (
-            <div key={suggestion.suggestion_key} className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-bold text-slate-900 truncate">
-                    {suggestion.role_title}
+          {applicationSuggestions.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setApplicationSuggestionsCollapsed((value) => !value)}
+              className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
+              aria-expanded={!applicationSuggestionsCollapsed}
+            >
+              {applicationSuggestionsCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
+              {applicationSuggestionsCollapsed ? 'Show' : 'Hide'}
+            </button>
+          )}
+        </div>
+        {applicationSuggestionsCollapsed ? (
+          <p className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-500">
+            {applicationSuggestions.length} suggestion{applicationSuggestions.length === 1 ? '' : 's'} hidden.
+          </p>
+        ) : (
+          <>
+            {suggestionStatus && (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                {suggestionStatus}
+              </div>
+            )}
+            {applicationSuggestions.slice(0, 4).map((suggestion) => {
+              const latestEvidence = suggestion.evidence[0];
+              const isBusy = busySuggestionKey === suggestion.suggestion_key;
+              return (
+                <div key={suggestion.suggestion_key} className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-slate-900 truncate">
+                        {suggestion.role_title}
+                      </p>
+                      <p className="text-xs font-medium text-indigo-700 truncate">
+                        {suggestion.company}
+                      </p>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-white px-2 py-1 text-[10px] font-semibold text-slate-500">
+                      {Math.round(suggestion.confidence * 100)}%
+                    </span>
+                  </div>
+                  <p className="mt-2 line-clamp-2 text-xs text-slate-600">
+                    {latestEvidence?.subject || latestEvidence?.snippet || `${suggestion.email_count} related Gmail update${suggestion.email_count === 1 ? '' : 's'}.`}
                   </p>
-                  <p className="text-xs font-medium text-indigo-700 truncate">
-                    {suggestion.company}
-                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void handleAcceptApplicationSuggestion(suggestion)}
+                      disabled={isBusy}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-50"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      {suggestion.existing_application ? 'Link emails' : 'Add to pipeline'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleDismissApplicationSuggestion(suggestion)}
+                      disabled={isBusy}
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
                 </div>
-                <span className="shrink-0 rounded-full bg-white px-2 py-1 text-[10px] font-semibold text-slate-500">
-                  {Math.round(suggestion.confidence * 100)}%
-                </span>
-              </div>
-              <p className="mt-2 line-clamp-2 text-xs text-slate-600">
-                {latestEvidence?.subject || latestEvidence?.snippet || `${suggestion.email_count} related Gmail update${suggestion.email_count === 1 ? '' : 's'}.`}
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => void handleAcceptApplicationSuggestion(suggestion)}
-                  disabled={isBusy}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-50"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  {suggestion.existing_application ? 'Link emails' : 'Add to pipeline'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleDismissApplicationSuggestion(suggestion)}
-                  disabled={isBusy}
-                  className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
-                >
-                  Dismiss
-                </button>
-              </div>
-            </div>
-          );
-        })}
+              );
+            })}
+          </>
+        )}
       </div>
     );
   };

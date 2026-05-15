@@ -1,4 +1,5 @@
 import csv
+import html
 import json
 import os
 import re
@@ -16,7 +17,7 @@ from pydantic import BaseModel, EmailStr, Field
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
-from sqlalchemy import delete, func, inspect as sa_inspect, select, text, update
+from sqlalchemy import delete, func, inspect as sa_inspect, or_, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -1086,10 +1087,30 @@ GENERIC_COMPANY_DOMAINS = {
     "smartrecruiters.com",
     "taleo.net",
 }
+GENERIC_COMPANY_NAMES = {
+    "ashby",
+    "bamboohr",
+    "em",
+    "greenhouse",
+    "hire",
+    "icims",
+    "jobvite",
+    "lever",
+    "mc",
+    "send",
+    "captechcareers",
+    "smartrecruiters",
+    "successfactors",
+    "talentbankonline",
+    "teamworkonline",
+    "us",
+    "workday",
+    "workdaynordstrom",
+}
 
 
 def _compact_text(value: str | None) -> str:
-    return re.sub(r"\s+", " ", (value or "").strip())
+    return re.sub(r"\s+", " ", html.unescape(value or "").strip())
 
 
 def _limit_text(value: str | None, max_len: int) -> str | None:
@@ -1125,14 +1146,32 @@ def _guess_company_from_domain(domain: str | None) -> str | None:
     return label.replace("-", " ").replace("_", " ").title()[:MAX_NAME_LEN]
 
 
+def _guess_company_from_sender_email(email_address: str | None) -> str | None:
+    value = (email_address or "").strip().lower()
+    if "@" not in value:
+        return None
+    local_part, domain = value.split("@", 1)
+    if domain not in GENERIC_COMPANY_DOMAINS:
+        return None
+    local_part = re.split(r"[+._-]", local_part, maxsplit=1)[0]
+    if not local_part or local_part in {"no", "noreply", "notification", "notifications", "system"}:
+        return None
+    return local_part.replace("-", " ").replace("_", " ").title()[:MAX_NAME_LEN]
+
+
 def _extract_company_from_email_event(event: EmailEvent) -> str | None:
-    if event.company_name:
+    existing_company = _limit_text(event.company_name, MAX_NAME_LEN)
+    if existing_company and existing_company.replace(" ", "").lower() not in GENERIC_COMPANY_NAMES:
         return _limit_text(event.company_name, MAX_NAME_LEN)
 
     candidates = [event.subject, event.summary, event.snippet, event.body]
     patterns = [
+        r"\bapplication status update\s+[–-]\s+([A-Z][A-Za-z0-9&.'\-, ]{1,80})",
+        r"\b(?:received by|confirmed by|scheduled by)\s+([A-Z][A-Za-z0-9&.'\-, ]{1,80})",
+        r"\bthank you for applying\s+with\s+([A-Z][A-Za-z0-9&.'\-, ]{1,80})",
+        r"\b(?:position|role|job)\s+with\s+([A-Z][A-Za-z0-9&.'\-, ]{1,80})",
         r"\b(?:at|with|from)\s+([A-Z][A-Za-z0-9&.'\-, ]{1,80})",
-        r"\b(?:application to|applied to|applying to|candidacy with)\s+([A-Z][A-Za-z0-9&.'\-, ]{1,80})",
+        r"\bcandidacy with\s+([A-Z][A-Za-z0-9&.'\-, ]{1,80})",
     ]
     for text_value in candidates:
         if not text_value:
@@ -1144,6 +1183,16 @@ def _extract_company_from_email_event(event: EmailEvent) -> str | None:
                 if company:
                     return company
 
+    email_company = _guess_company_from_sender_email(event.sender_email)
+    if email_company:
+        return email_company
+
+    sender_company = _clean_extracted_name(event.sender)
+    if sender_company:
+        sender_company = re.sub(r"^workday\s+", "", sender_company, flags=re.I).strip()
+    if sender_company and sender_company.replace(" ", "").lower() not in GENERIC_COMPANY_NAMES:
+        return sender_company
+
     return _guess_company_from_domain(event.sender_domain)
 
 
@@ -1151,44 +1200,94 @@ def _clean_role_title(value: str | None, company: str | None = None) -> str | No
     role = _compact_text(value)
     if not role:
         return None
+    role = re.sub(
+        r"^(?:thank you for\s+)?(?:applying|applied|application|candidacy)\s+(?:for|to)\s+(?:the\s+)?",
+        "",
+        role,
+        flags=re.I,
+    )
+    role = re.sub(r"^(?:your\s+)?interest\s+in\s+(?:the\s+)?", "", role, flags=re.I)
+    role = re.sub(r"^(?:R\d+\s+|\d{4,}\s+)+", "", role, flags=re.I)
+    role = role.strip(" ()")
     if company:
         role = re.sub(rf"\b(?:at|with)\s+{re.escape(company)}\b.*$", "", role, flags=re.I)
     role = re.sub(r"\b(?:role|position|job|opening|opportunity)\b.*$", "", role, flags=re.I)
     role = re.sub(r"^(?:the|a|an)\s+", "", role, flags=re.I)
     role = re.sub(r"[\s,.;:!?\-]+$", "", role).strip(" -")
-    if len(role) < 3:
+    normalized = role.lower().strip()
+    if (
+        len(role) < 3
+        or normalized in {"for", "for the", "the", "applying", "applying for", "applying for the"}
+        or re.fullmatch(r"\d{4,}", normalized)
+    ):
         return None
     return role[:MAX_NAME_LEN]
 
 
 def _extract_role_from_email_event(event: EmailEvent, company: str | None = None) -> str:
     candidates = [event.subject, event.summary, event.snippet, event.body]
-    patterns = [
-        r"\b(?:for|regarding|about)\s+(?:the\s+)?([A-Za-z0-9/&,\-+. ]{3,100}?)\s+(?:role|position|job|opening)\b",
-        r"\b([A-Za-z0-9/&,\-+. ]{3,100}?)\s+(?:role|position|job|opening)\b",
+    specific_patterns = [
+        r"\brole of:?\s*([^.;\n]{3,120}?)(?:\s+role\b|[.)]|$)",
+        r"\bapplication for\s+(?:our\s+)?(?:R\d+\s+)?([A-Za-z0-9/&,\-+. ]{3,100}?)(?:\s+role|\s+position|\s+with|\s+at|\s+[–-]|\s+\(|$)",
+        r"\b(?:applying|applied)\s+for\s+(?:the\s+)?([A-Za-z0-9/&,\-+. ]{3,100}?)(?:\s+role|\s+position|\s+with|\s+at|\s+[–-]|$)",
+        r"\bapplying\s+to\s+(?:the\s+)?([A-Za-z0-9/&,\-+. ]{3,100}?)(?:\s+role|\s+position|\s+with|\s+at|\s+[–-]|$)",
+        r"\binterest\s+in\s+(?:the\s+)?([A-Za-z0-9/&,\-+. ]{3,100}?)\s+position\b",
+        r"\binterview(?:\(s\))?\s+for\s+([A-Za-z0-9/&,\-+. ]{3,100}?)\s+have been\b",
         r"\binterview\s+(?:for|regarding|about)\s+(?:the\s+)?([A-Za-z0-9/&,\-+. ]{3,100})",
         r"\boffer\s+(?:for|regarding)\s+(?:the\s+)?([A-Za-z0-9/&,\-+. ]{3,100})",
     ]
-    for text_value in candidates:
-        if not text_value:
-            continue
-        for pattern in patterns:
-            match = re.search(pattern, text_value, flags=re.I)
-            if match:
-                role = _clean_role_title(match.group(1), company)
-                if role:
-                    return role
+    generic_patterns = [
+        r"\b(?:for|regarding|about)\s+(?:the\s+)?([A-Za-z0-9/&,\-+. ]{3,100}?)\s+(?:role|position|job|opening)\b",
+        r"\b([A-Za-z0-9/&,\-+. ]{3,100}?)\s+(?:role|position|job|opening)\b",
+    ]
+    for patterns in (specific_patterns, generic_patterns):
+        for text_value in candidates:
+            if not text_value:
+                continue
+            text_value = _compact_text(text_value)
+            for pattern in patterns:
+                match = re.search(pattern, text_value, flags=re.I)
+                if match:
+                    role = _clean_role_title(match.group(1), company)
+                    if role:
+                        return role
 
     fallback = _compact_text(event.subject)
     fallback = re.sub(r"^(?:re|fw|fwd):\s*", "", fallback, flags=re.I)
     fallback = re.sub(
-        r"\b(?:application update|status update|thank you for applying|your application|interview scheduled|next steps|following up)\b",
+        r"\b(?:application update|status update|thank you for applying|your application|interview scheduled|interview scheduling verification code|verification code|next steps|following up)\b",
         "",
         fallback,
         flags=re.I,
     )
     fallback = _clean_role_title(fallback, company)
     return fallback or "Role from email update"
+
+
+def _is_verification_only_email(event: EmailEvent) -> bool:
+    text_value = _compact_text(" ".join([event.subject or "", event.snippet or "", event.summary or ""])).lower()
+    if "verification code" not in text_value and "security code" not in text_value:
+        return False
+    return not re.search(r"\b(interview with|interview for|scheduled for|confirmed for|invited to interview)\b", text_value)
+
+
+def _is_canceled_interview_email(event: EmailEvent) -> bool:
+    text_value = _compact_text(" ".join([event.subject or "", event.snippet or "", event.summary or ""])).lower()
+    return "cancel" in text_value and "interview" in text_value
+
+
+def _has_interview_signal(event: EmailEvent) -> bool:
+    text_value = _compact_text(" ".join([event.subject or "", event.snippet or "", event.summary or ""])).lower()
+    return bool(re.search(r"\b(interview|teams meeting|zoom meeting|phone screen|onsite|on-site)\b", text_value))
+
+
+def _is_application_suggestion_noise(event: EmailEvent) -> bool:
+    text_value = _compact_text(" ".join([event.subject or "", event.snippet or "", event.summary or ""])).lower()
+    return bool(
+        "dream job" in text_value
+        or "leader check-in conversation survey" in text_value
+        or ("linkedin" in text_value and "application" not in text_value)
+    )
 
 
 def _extract_first_url_from_email_event(event: EmailEvent) -> str | None:
@@ -2697,6 +2796,12 @@ async def list_application_suggestions(
 
     groups: dict[str, dict] = {}
     for event in events:
+        if _is_verification_only_email(event) or _is_application_suggestion_noise(event):
+            continue
+        if (event.sender_domain or "").lower() in {"gmail.com", "googlemail.com"}:
+            continue
+        if event.classification == "interview_request" and not _has_interview_signal(event):
+            continue
         company = _extract_company_from_email_event(event)
         if not company:
             continue
@@ -3124,7 +3229,7 @@ async def google_auth_callback(
     picture = id_info.get("picture", "")
 
     # Find or create user
-    stmt = select(User).where(User.google_id == google_id)
+    stmt = select(User).where(or_(User.google_id == google_id, User.email == email))
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
 
@@ -3296,7 +3401,7 @@ async def local_dev_login(
     name = (body.name if body else None) or os.getenv("LOCAL_DEV_AUTH_NAME", "Local AppTrail User")
     google_id = f"local-dev:{email}"
 
-    stmt = select(User).where(User.google_id == google_id)
+    stmt = select(User).where(or_(User.google_id == google_id, User.email == email))
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
 
@@ -6127,7 +6232,16 @@ async def list_interview_suggestions(
         for decision in decision_result.scalars().all()
         if decision.decision in {"accepted", "dismissed"}
     }
-    return [_serialize_interview_suggestion(event) for event in events if event.id not in reviewed_email_ids][:limit]
+    return [
+        _serialize_interview_suggestion(event)
+        for event in events
+        if (
+            event.id not in reviewed_email_ids
+            and not _is_verification_only_email(event)
+            and not _is_canceled_interview_email(event)
+            and _has_interview_signal(event)
+        )
+    ][:limit]
 
 
 @app.post("/api/interview-suggestions/{email_id}/accept", status_code=201)
