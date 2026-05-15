@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="360" viewBox="0 0 920 360" role="img" aria-label="Reviewed evidence labels">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<text x="32" y="40" font-size="24" font-weight="700" fill="#102027">Reviewed evidence labels</text>
+<text x="32" y="68" font-size="13" fill="#607d8b">Manual review kept 83 evidence cards and labeled 118 JD requirements.</text>
+<rect x="80" y="138" width="154.5762711864407" height="58" fill="#16a34a"/>
+<text x="157.28813559322035" y="173" text-anchor="middle" font-size="15" font-weight="700" fill="#ffffff">24</text>
+<rect x="234.5762711864407" y="138" width="412.20338983050846" height="58" fill="#f59e0b"/>
+<text x="440.6779661016949" y="173" text-anchor="middle" font-size="15" font-weight="700" fill="#ffffff">64</text>
+<rect x="646.7796610169491" y="138" width="193.22033898305085" height="58" fill="#dc2626"/>
+<text x="743.3898305084746" y="173" text-anchor="middle" font-size="15" font-weight="700" fill="#ffffff">30</text>
+<rect x="80" y="138" width="760" height="58" fill="none" stroke="#cfd8dc"/>
+<circle cx="180" cy="245" r="8" fill="#16a34a"/>
+<text x="196" y="250" font-size="14" fill="#102027">direct: 24 (20.3%)</text>
+<circle cx="390" cy="245" r="8" fill="#f59e0b"/>
+<text x="406" y="250" font-size="14" fill="#102027">partial: 64 (54.2%)</text>
+<circle cx="600" cy="245" r="8" fill="#dc2626"/>
+<text x="616" y="250" font-size="14" fill="#102027">none: 30 (25.4%)</text>
+<text x="80" y="320" font-size="13" fill="#607d8b">This is enough for failure discovery and product direction, not statistical proof.</text>
+</svg>

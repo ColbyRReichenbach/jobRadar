@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="560" viewBox="0 0 1180 560" role="img" aria-label="Retrieval quality: model upgrade was not the main fix">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<text x="32" y="40" font-size="24" font-weight="700" fill="#102027">Retrieval quality: model upgrade was not the main fix</text>
+<text x="32" y="68" font-size="13" fill="#607d8b">Reviewed label set: 25 JD cases, 118 requirements, 88 citation-labeled requirements, 30 unsupported.</text>
+<text x="64" y="105" font-size="15" font-weight="700" fill="#102027">Raw lexical</text>
+<rect x="64" y="125" width="46" height="240" fill="#f1f5f9"/>
+<rect x="64" y="242" width="46" height="123" fill="#7c3aed"/>
+<text x="87.0" y="234" text-anchor="middle" font-size="12" font-weight="700" fill="#263238">25.8%</text>
+<text x="87.0" y="385" text-anchor="middle" font-size="11" fill="#607d8b">Recall</text>
+<rect x="128" y="125" width="46" height="240" fill="#f1f5f9"/>
+<rect x="128" y="196" width="46" height="169" fill="#7c3aed"/>
+<text x="151.0" y="188" text-anchor="middle" font-size="12" font-weight="700" fill="#263238">35.3%</text>
+<text x="151.0" y="385" text-anchor="middle" font-size="11" fill="#607d8b">Precision</text>
+<rect x="192" y="125" width="46" height="240" fill="#f1f5f9"/>
+<rect x="192" y="141" width="46" height="224" fill="#dc2626"/>
+<text x="215.0" y="133" text-anchor="middle" font-size="12" font-weight="700" fill="#263238">46.7%</text>
+<text x="215.0" y="385" text-anchor="middle" font-size="11" fill="#607d8b">False support</text>
+<text x="64" y="419" font-size="13" fill="#607d8b">p95 latency: <tspan font-weight="700" fill="#102027">24 ms</tspan></text>
+<text x="329" y="105" font-size="15" font-weight="700" fill="#102027">Lexical + support</text>
+<rect x="329" y="125" width="46" height="240" fill="#f1f5f9"/>
+<rect x="329" y="254" width="46" height="111" fill="#00897b"/>
+<text x="352.0" y="246" text-anchor="middle" font-size="12" font-weight="700" fill="#263238">23.2%</text>
+<text x="352.0" y="385" text-anchor="middle" font-size="11" fill="#607d8b">Recall</text>
+<rect x="393" y="125" width="46" height="240" fill="#f1f5f9"/>
+<rect x="393" y="163" width="46" height="202" fill="#00897b"/>
+<text x="416.0" y="155" text-anchor="middle" font-size="12" font-weight="700" fill="#263238">42.1%</text>
+<text x="416.0" y="385" text-anchor="middle" font-size="11" fill="#607d8b">Precision</text>
+<rect x="457" y="125" width="46" height="240" fill="#f1f5f9"/>
+<rect x="457" y="237" width="46" height="128" fill="#dc2626"/>
+<text x="480.0" y="229" text-anchor="middle" font-size="12" font-weight="700" fill="#263238">26.7%</text>
+<text x="480.0" y="385" text-anchor="middle" font-size="11" fill="#607d8b">False support</text>
+<text x="329" y="419" font-size="13" fill="#607d8b">p95 latency: <tspan font-weight="700" fill="#102027">20 ms</tspan></text>
+<text x="594" y="105" font-size="15" font-weight="700" fill="#102027">Embedding + support</text>
+<rect x="594" y="125" width="46" height="240" fill="#f1f5f9"/>
+<rect x="594" y="254" width="46" height="111" fill="#2563eb"/>
+<text x="617.0" y="246" text-anchor="middle" font-size="12" font-weight="700" fill="#263238">23.3%</text>
+<text x="617.0" y="385" text-anchor="middle" font-size="11" fill="#607d8b">Recall</text>
+<rect x="658" y="125" width="46" height="240" fill="#f1f5f9"/>
+<rect x="658" y="163" width="46" height="202" fill="#2563eb"/>
+<text x="681.0" y="155" text-anchor="middle" font-size="12" font-weight="700" fill="#263238">42.2%</text>
+<text x="681.0" y="385" text-anchor="middle" font-size="11" fill="#607d8b">Precision</text>
+<rect x="722" y="125" width="46" height="240" fill="#f1f5f9"/>
+<rect x="722" y="237" width="46" height="128" fill="#dc2626"/>
+<text x="745.0" y="229" text-anchor="middle" font-size="12" font-weight="700" fill="#263238">26.7%</text>
+<text x="745.0" y="385" text-anchor="middle" font-size="11" fill="#607d8b">False support</text>
+<text x="594" y="419" font-size="13" fill="#607d8b">p95 latency: <tspan font-weight="700" fill="#102027">761 ms</tspan></text>
+<text x="859" y="105" font-size="15" font-weight="700" fill="#102027">Hybrid + support</text>
+<rect x="859" y="125" width="46" height="240" fill="#f1f5f9"/>
+<rect x="859" y="247" width="46" height="118" fill="#f59e0b"/>
+<text x="882.0" y="239" text-anchor="middle" font-size="12" font-weight="700" fill="#263238">24.7%</text>
+<text x="882.0" y="385" text-anchor="middle" font-size="11" fill="#607d8b">Recall</text>
+<rect x="923" y="125" width="46" height="240" fill="#f1f5f9"/>
+<rect x="923" y="155" width="46" height="210" fill="#f59e0b"/>
+<text x="946.0" y="147" text-anchor="middle" font-size="12" font-weight="700" fill="#263238">43.8%</text>
+<text x="946.0" y="385" text-anchor="middle" font-size="11" fill="#607d8b">Precision</text>
+<rect x="987" y="125" width="46" height="240" fill="#f1f5f9"/>
+<rect x="987" y="237" width="46" height="128" fill="#dc2626"/>
+<text x="1010.0" y="229" text-anchor="middle" font-size="12" font-weight="700" fill="#263238">26.7%</text>
+<text x="1010.0" y="385" text-anchor="middle" font-size="11" fill="#607d8b">False support</text>
+<text x="859" y="419" font-size="13" fill="#607d8b">p95 latency: <tspan font-weight="700" fill="#102027">721 ms</tspan></text>
+<rect x="68" y="470" width="1040" height="54" rx="10" fill="#ecfdf5" stroke="#bbf7d0"/>
+<text x="92" y="500" font-size="13" font-weight="400" fill="#14532d">Embeddings/hybrid gave small recall and precision lifts, but false support stayed flat and latency rose sharply. The bottleneck is</text>
+<text x="92" y="517" font-size="13" font-weight="400" fill="#14532d">evidence/support quality, not just model class.</text>
+</svg>

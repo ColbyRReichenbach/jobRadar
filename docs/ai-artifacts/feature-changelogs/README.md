@@ -12,6 +12,7 @@ These are not claims of bank-scale traffic or completed enterprise ML maturity. 
 4. [Search Retrieval and Source Intelligence](search-source-intelligence-changelog.md)
 5. [Radar Research](radar-research-changelog.md)
 6. [Copilot Routing](copilot-routing-changelog.md)
+7. [Resume Tailoring Evidence Retrieval](resume-tailoring-changelog.md)
 
 ## Document Workflow
 
@@ -161,4 +162,5 @@ observe failure
 | Radar | Generic reports look smart but are not actionable. | Source precision and missing-data honesty over broad recall. |
 | Copilot | A generic assistant feels broken when it cannot use product state. | Route first, read typed product data, ask clarifying questions. |
 | Search/retrieval | Bad retrieval causes bad model answers even with a strong LLM. | Metadata and lexical baseline first, embeddings only after measured retrieval misses. |
+| Resume tailoring | Prompt-only rewriting can invent experience or overstate weak evidence. | Evidence cards, citation support, privacy preflight, and abstention before generation. |
 | Eval layer | Small datasets can mislead if treated as statistically conclusive. | Use small evals for failure discovery, regression, RCA, and promotion discipline. |

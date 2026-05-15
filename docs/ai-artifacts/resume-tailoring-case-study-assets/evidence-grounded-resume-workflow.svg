@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="480" viewBox="0 0 1180 480" role="img" aria-label="Evidence-grounded resume assistant architecture">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<text x="32" y="40" font-size="24" font-weight="700" fill="#102027">Evidence-grounded resume assistant architecture</text>
+<text x="32" y="68" font-size="13" fill="#607d8b">The product moved from direct rewriting to verified evidence retrieval plus user-approved suggestions.</text>
+<rect x="38" y="112" width="200" height="170" rx="10" fill="#f6f8f9" stroke="#dbe4ea"/>
+<circle cx="62" cy="142" r="15" fill="#2563eb"/>
+<text x="57" y="147" font-size="14" font-weight="700" fill="#ffffff">1</text>
+<text x="86" y="147" font-size="15" font-weight="700" fill="#102027">Resume + JD +</text>
+<text x="86" y="165" font-size="15" font-weight="700" fill="#102027">project docs</text>
+<text x="56" y="196" font-size="12" font-weight="400" fill="#455a64">User inputs are scoped</text>
+<text x="56" y="213" font-size="12" font-weight="400" fill="#455a64">and redacted before any</text>
+<text x="56" y="230" font-size="12" font-weight="400" fill="#455a64">model path.</text>
+<line x1="244" y1="195" x2="262" y2="195" stroke="#607d8b" stroke-width="2"/>
+<path d="M 262 190 L 270 195 L 262 200" fill="none" stroke="#607d8b" stroke-width="2"/>
+<rect x="266" y="112" width="200" height="170" rx="10" fill="#f6f8f9" stroke="#dbe4ea"/>
+<circle cx="290" cy="142" r="15" fill="#2563eb"/>
+<text x="285" y="147" font-size="14" font-weight="700" fill="#ffffff">2</text>
+<text x="314" y="147" font-size="15" font-weight="700" fill="#102027">Evidence cards</text>
+<text x="284" y="196" font-size="12" font-weight="400" fill="#455a64">Project material is</text>
+<text x="284" y="213" font-size="12" font-weight="400" fill="#455a64">converted into small,</text>
+<text x="284" y="230" font-size="12" font-weight="400" fill="#455a64">resume-safe claims.</text>
+<line x1="472" y1="195" x2="490" y2="195" stroke="#607d8b" stroke-width="2"/>
+<path d="M 490 190 L 498 195 L 490 200" fill="none" stroke="#607d8b" stroke-width="2"/>
+<rect x="494" y="112" width="200" height="170" rx="10" fill="#f6f8f9" stroke="#dbe4ea"/>
+<circle cx="518" cy="142" r="15" fill="#2563eb"/>
+<text x="513" y="147" font-size="14" font-weight="700" fill="#ffffff">3</text>
+<text x="542" y="147" font-size="15" font-weight="700" fill="#102027">Requirement</text>
+<text x="542" y="165" font-size="15" font-weight="700" fill="#102027">extraction</text>
+<text x="512" y="196" font-size="12" font-weight="400" fill="#455a64">The JD is split into</text>
+<text x="512" y="213" font-size="12" font-weight="400" fill="#455a64">concrete requirements</text>
+<text x="512" y="230" font-size="12" font-weight="400" fill="#455a64">before matching.</text>
+<line x1="700" y1="195" x2="718" y2="195" stroke="#607d8b" stroke-width="2"/>
+<path d="M 718 190 L 726 195 L 718 200" fill="none" stroke="#607d8b" stroke-width="2"/>
+<rect x="722" y="112" width="200" height="170" rx="10" fill="#f6f8f9" stroke="#dbe4ea"/>
+<circle cx="746" cy="142" r="15" fill="#2563eb"/>
+<text x="741" y="147" font-size="14" font-weight="700" fill="#ffffff">4</text>
+<text x="770" y="147" font-size="15" font-weight="700" fill="#102027">Retrieval + support</text>
+<text x="770" y="165" font-size="15" font-weight="700" fill="#102027">check</text>
+<text x="740" y="196" font-size="12" font-weight="400" fill="#455a64">Cards are retrieved, then</text>
+<text x="740" y="213" font-size="12" font-weight="400" fill="#455a64">checked against each</text>
+<text x="740" y="230" font-size="12" font-weight="400" fill="#455a64">requirement.</text>
+<line x1="928" y1="195" x2="946" y2="195" stroke="#607d8b" stroke-width="2"/>
+<path d="M 946 190 L 954 195 L 946 200" fill="none" stroke="#607d8b" stroke-width="2"/>
+<rect x="950" y="112" width="200" height="170" rx="10" fill="#f6f8f9" stroke="#dbe4ea"/>
+<circle cx="974" cy="142" r="15" fill="#2563eb"/>
+<text x="969" y="147" font-size="14" font-weight="700" fill="#ffffff">5</text>
+<text x="998" y="147" font-size="15" font-weight="700" fill="#102027">Suggested bullets +</text>
+<text x="998" y="165" font-size="15" font-weight="700" fill="#102027">gaps</text>
+<text x="968" y="196" font-size="12" font-weight="400" fill="#455a64">Only supported evidence</text>
+<text x="968" y="213" font-size="12" font-weight="400" fill="#455a64">becomes suggestions; weak</text>
+<text x="968" y="230" font-size="12" font-weight="400" fill="#455a64">areas are shown.</text>
+<rect x="120" y="340" width="940" height="88" rx="12" fill="#fff7ed" stroke="#fed7aa"/>
+<text x="146" y="374" font-size="17" font-weight="700" fill="#9a3412">Product constraint</text>
+<text x="146" y="402" font-size="13" font-weight="400" fill="#7c2d12">The LLM can still help with wording, but only after AppTrail retrieves verified evidence and preserves unsupported</text>
+<text x="146" y="419" font-size="13" font-weight="400" fill="#7c2d12">gaps.</text>
+</svg>

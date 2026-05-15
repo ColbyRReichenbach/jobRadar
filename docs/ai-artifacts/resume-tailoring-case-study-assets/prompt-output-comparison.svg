@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="560" viewBox="0 0 1180 560" role="img" aria-label="Prompt-only vs engineered vs evidence-grounded">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<text x="32" y="40" font-size="24" font-weight="700" fill="#102027">Prompt-only vs engineered vs evidence-grounded</text>
+<text x="32" y="68" font-size="13" fill="#607d8b">The same resume can produce very different product risk depending on whether claims need evidence.</text>
+<rect x="42" y="108" width="340" height="370" rx="12" fill="#ffffff" stroke="#dbe4ea"/>
+<rect x="42" y="108" width="340" height="64" rx="12" fill="#dc2626"/>
+<text x="64" y="146" font-size="22" font-weight="700" fill="#ffffff">Lazy prompt</text>
+<text x="64" y="204" font-size="15" font-weight="700" fill="#102027">Make me look like a strong fit.</text>
+<circle cx="70" cy="254" r="4" fill="#dc2626"/>
+<text x="84" y="258" font-size="13" font-weight="400" fill="#263238">Fluent rewritten resume</text>
+<circle cx="70" cy="292" r="4" fill="#dc2626"/>
+<text x="84" y="296" font-size="13" font-weight="400" fill="#263238">Adds exact-match claims</text>
+<circle cx="70" cy="330" r="4" fill="#dc2626"/>
+<text x="84" y="334" font-size="13" font-weight="400" fill="#263238">Does not show unsupported gaps</text>
+<circle cx="70" cy="368" r="4" fill="#dc2626"/>
+<text x="84" y="372" font-size="13" font-weight="400" fill="#263238">High risk on near-miss roles</text>
+<rect x="60" y="406" width="304" height="52" rx="8" fill="#f6f8f9"/>
+<text x="74" y="428" font-size="12" font-weight="400" fill="#455a64">Example: added Tableau and</text>
+<text x="74" y="443" font-size="12" font-weight="400" fill="#455a64">customer-acquisition forecasting for a</text>
+<text x="74" y="458" font-size="12" font-weight="400" fill="#455a64">DraftKings Analyst I role.</text>
+<rect x="418" y="108" width="340" height="370" rx="12" fill="#ffffff" stroke="#dbe4ea"/>
+<rect x="418" y="108" width="340" height="64" rx="12" fill="#f59e0b"/>
+<text x="440" y="146" font-size="22" font-weight="700" fill="#ffffff">Engineered prompt</text>
+<text x="440" y="204" font-size="15" font-weight="700" fill="#102027">Preserve factual accuracy.</text>
+<circle cx="446" cy="254" r="4" fill="#f59e0b"/>
+<text x="460" y="258" font-size="13" font-weight="400" fill="#263238">Flags weak requirements</text>
+<circle cx="446" cy="292" r="4" fill="#f59e0b"/>
+<text x="460" y="296" font-size="13" font-weight="400" fill="#263238">Fewer unsupported claims</text>
+<circle cx="446" cy="330" r="4" fill="#f59e0b"/>
+<text x="460" y="334" font-size="13" font-weight="400" fill="#263238">Still only knows resume text</text>
+<circle cx="446" cy="368" r="4" fill="#f59e0b"/>
+<text x="460" y="372" font-size="13" font-weight="400" fill="#263238">Cannot cite project artifacts</text>
+<rect x="436" y="406" width="304" height="52" rx="8" fill="#f6f8f9"/>
+<text x="450" y="428" font-size="12" font-weight="400" fill="#455a64">Example: called out Tableau,</text>
+<text x="450" y="443" font-size="12" font-weight="400" fill="#455a64">Databricks/Airflow, and marketing</text>
+<text x="450" y="458" font-size="12" font-weight="400" fill="#455a64">requirements as weak or unsupported.</text>
+<rect x="794" y="108" width="340" height="370" rx="12" fill="#ffffff" stroke="#dbe4ea"/>
+<rect x="794" y="108" width="340" height="64" rx="12" fill="#00897b"/>
+<text x="816" y="146" font-size="22" font-weight="700" fill="#ffffff">Evidence-grounded assistant</text>
+<text x="816" y="204" font-size="15" font-weight="700" fill="#102027">Only suggest what evidence</text>
+<text x="816" y="223" font-size="15" font-weight="700" fill="#102027">supports.</text>
+<circle cx="822" cy="254" r="4" fill="#00897b"/>
+<text x="836" y="258" font-size="13" font-weight="400" fill="#263238">Retrieves project facts</text>
+<circle cx="822" cy="292" r="4" fill="#00897b"/>
+<text x="836" y="296" font-size="13" font-weight="400" fill="#263238">Cites evidence IDs</text>
+<circle cx="822" cy="330" r="4" fill="#00897b"/>
+<text x="836" y="334" font-size="13" font-weight="400" fill="#263238">Can abstain</text>
+<circle cx="822" cy="368" r="4" fill="#00897b"/>
+<text x="836" y="372" font-size="13" font-weight="400" fill="#263238">Lower recall today, safer output</text>
+<rect x="812" y="406" width="304" height="52" rx="8" fill="#f6f8f9"/>
+<text x="826" y="428" font-size="12" font-weight="400" fill="#455a64">Example: no verified marketing</text>
+<text x="826" y="443" font-size="12" font-weight="400" fill="#455a64">evidence-grounded bullets for the</text>
+<text x="826" y="458" font-size="12" font-weight="400" fill="#455a64">Anthropic near-miss.</text>
+</svg>

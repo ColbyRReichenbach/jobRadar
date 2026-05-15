@@ -1,0 +1,97 @@
+[
+  {
+    "id": "strong_fit_backend",
+    "title": "Senior Backend Software Engineer",
+    "job_description": "Build Python backend services with FastAPI, PostgreSQL, Redis queues, Docker, observability, CI, and production incident diagnosis.",
+    "expected_requirements": [
+      {
+        "id": "backend_api",
+        "query": "Python FastAPI PostgreSQL Redis Docker backend services",
+        "expected_evidence_ids": ["EV-BACKEND-API"]
+      },
+      {
+        "id": "observability",
+        "query": "OpenTelemetry structured logging latency dashboards regression alerts",
+        "expected_evidence_ids": ["EV-BACKEND-OBS"]
+      },
+      {
+        "id": "ci_tests",
+        "query": "unit integration tests CI API database queue workflows",
+        "expected_evidence_ids": ["EV-BACKEND-CI"]
+      }
+    ]
+  },
+  {
+    "id": "strong_fit_applied_ai",
+    "title": "Applied AI Engineer",
+    "job_description": "Develop RAG retrieval evaluation, citation support checks, prompt safety validation, schema-bound outputs, and cost latency reporting for LLM features.",
+    "expected_requirements": [
+      {
+        "id": "rag_eval",
+        "query": "RAG retrieval evaluation chunk evidence IDs citations recall precision MRR",
+        "expected_evidence_ids": ["EV-AI-RAG"]
+      },
+      {
+        "id": "claim_safety",
+        "query": "unsupported claim checks missing evidence unverified skills fabricated metrics PII URL leakage",
+        "expected_evidence_ids": ["EV-AI-SAFETY"]
+      },
+      {
+        "id": "cost_latency",
+        "query": "model call latency token usage fallback status local artifacts promotion",
+        "expected_evidence_ids": ["EV-AI-COST"]
+      }
+    ]
+  },
+  {
+    "id": "data_retrieval_adjacent",
+    "title": "Data Retrieval Quality Engineer",
+    "job_description": "Own SQL and Python data quality checks, ETL validation, search ranking evaluation, dedupe decisions, and reproducible metrics artifacts.",
+    "expected_requirements": [
+      {
+        "id": "etl_quality",
+        "query": "SQL Python ETL normalized job records dedupe source freshness",
+        "expected_evidence_ids": ["EV-DATA-PIPELINE"]
+      },
+      {
+        "id": "search_metrics",
+        "query": "lexical search ranking recall precision missing unrelated metrics",
+        "expected_evidence_ids": ["EV-DATA-RANKING"]
+      },
+      {
+        "id": "artifact_governance",
+        "query": "JSON Markdown eval artifacts dataset version provenance limitations promotion recommendations",
+        "expected_evidence_ids": ["EV-DATA-GOV"]
+      }
+    ]
+  },
+  {
+    "id": "adjacent_platform_product",
+    "title": "Product Platform Engineer",
+    "job_description": "Build internal workflow tools, improve developer experience, instrument reliability dashboards, and collaborate across product and engineering teams.",
+    "expected_requirements": [
+      {
+        "id": "workflow_tools",
+        "query": "internal workflow automation Python API services",
+        "expected_evidence_ids": ["EV-BACKEND-API"]
+      },
+      {
+        "id": "reliability_dashboard",
+        "query": "reliability dashboards traces structured logging latency",
+        "expected_evidence_ids": ["EV-BACKEND-OBS"]
+      }
+    ]
+  },
+  {
+    "id": "unrelated_sales_role",
+    "title": "Enterprise Account Executive",
+    "job_description": "Own enterprise sales pipeline, negotiate commercial contracts, close annual recurring revenue quotas, and manage executive buyer relationships.",
+    "expected_requirements": [
+      {
+        "id": "sales_quota",
+        "query": "enterprise sales pipeline commercial contracts annual recurring revenue quotas executive buyers",
+        "expected_evidence_ids": []
+      }
+    ]
+  }
+]

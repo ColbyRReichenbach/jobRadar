@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="680" viewBox="0 0 1180 680" role="img" aria-label="Actual output excerpts: fluent vs supported">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<text x="32" y="40" font-size="24" font-weight="700" fill="#102027">Actual output excerpts: fluent vs supported</text>
+<text x="32" y="68" font-size="13" fill="#607d8b">Redacted prompt outputs and evidence-grounded suggestions from the local run artifacts.</text>
+<rect x="42" y="118" width="340" height="470" rx="12" fill="#ffffff" stroke="#dbe4ea"/>
+<text x="62" y="154" font-size="18" font-weight="700" fill="#dc2626">Lazy prompt resume rewrite</text>
+<line x1="62" y1="173" x2="362" y2="173" stroke="#e5edf2"/>
+<rect x="62" y="188" width="300" height="84" rx="8" fill="#f6f8f9"/>
+<text x="78" y="210" font-size="13" font-weight="400" fill="#263238">Tableau</text>
+<rect x="62" y="247" width="300" height="84" rx="8" fill="#f6f8f9"/>
+<text x="78" y="269" font-size="13" font-weight="400" fill="#263238">commitment to improving customer</text>
+<text x="78" y="286" font-size="13" font-weight="400" fill="#263238">acquisition forecasting</text>
+<rect x="62" y="323" width="300" height="84" rx="8" fill="#f6f8f9"/>
+<text x="78" y="345" font-size="13" font-weight="400" fill="#263238">enhancing forecast accuracy and</text>
+<text x="78" y="362" font-size="13" font-weight="400" fill="#263238">business visibility</text>
+<rect x="62" y="508" width="300" height="58" rx="8" fill="#fff7ed" stroke="#fed7aa"/>
+<text x="78" y="534" font-size="12" font-weight="400" fill="#7c2d12">Fluent, but the exact tool and</text>
+<text x="78" y="550" font-size="12" font-weight="400" fill="#7c2d12">domain claims are not directly</text>
+<text x="78" y="566" font-size="12" font-weight="400" fill="#7c2d12">supported.</text>
+<rect x="418" y="118" width="340" height="470" rx="12" fill="#ffffff" stroke="#dbe4ea"/>
+<text x="438" y="154" font-size="18" font-weight="700" fill="#f59e0b">Engineered prompt risk notes</text>
+<line x1="438" y1="173" x2="738" y2="173" stroke="#e5edf2"/>
+<rect x="438" y="188" width="300" height="84" rx="8" fill="#f6f8f9"/>
+<text x="454" y="210" font-size="13" font-weight="400" fill="#263238">The resume does not mention Tableau.</text>
+<rect x="438" y="247" width="300" height="84" rx="8" fill="#f6f8f9"/>
+<text x="454" y="269" font-size="13" font-weight="400" fill="#263238">Databricks or Airflow are not</text>
+<text x="454" y="286" font-size="13" font-weight="400" fill="#263238">mentioned in the resume.</text>
+<rect x="438" y="323" width="300" height="84" rx="8" fill="#f6f8f9"/>
+<text x="454" y="345" font-size="13" font-weight="400" fill="#263238">Marketing performance / GTM strategy</text>
+<text x="454" y="362" font-size="13" font-weight="400" fill="#263238">should not be claimed.</text>
+<rect x="438" y="508" width="300" height="58" rx="8" fill="#fff7ed" stroke="#fed7aa"/>
+<text x="454" y="534" font-size="12" font-weight="400" fill="#7c2d12">Better behavior: it calls out gaps</text>
+<text x="454" y="550" font-size="12" font-weight="400" fill="#7c2d12">instead of filling all of them.</text>
+<rect x="794" y="118" width="340" height="470" rx="12" fill="#ffffff" stroke="#dbe4ea"/>
+<text x="814" y="154" font-size="18" font-weight="700" fill="#00897b">Evidence-grounded suggestion</text>
+<line x1="814" y1="173" x2="1114" y2="173" stroke="#e5edf2"/>
+<rect x="814" y="188" width="300" height="84" rx="8" fill="#f6f8f9"/>
+<text x="830" y="210" font-size="13" font-weight="400" fill="#263238">Produced readable model evidence</text>
+<text x="830" y="227" font-size="13" font-weight="400" fill="#263238">artifacts including PPE10, MdAPE,</text>
+<text x="830" y="244" font-size="13" font-weight="400" fill="#263238">R-squared...</text>
+<rect x="814" y="281" width="300" height="84" rx="8" fill="#f6f8f9"/>
+<text x="830" y="303" font-size="13" font-weight="400" fill="#263238">[evidence: CUR-SPEC-MODEL-EVIDENCE]</text>
+<rect x="814" y="340" width="300" height="84" rx="8" fill="#f6f8f9"/>
+<text x="830" y="362" font-size="13" font-weight="400" fill="#263238">No verified evidence-grounded</text>
+<text x="830" y="379" font-size="13" font-weight="400" fill="#263238">bullets for the marketing near-miss.</text>
+<rect x="814" y="508" width="300" height="58" rx="8" fill="#fff7ed" stroke="#fed7aa"/>
+<text x="830" y="534" font-size="12" font-weight="400" fill="#7c2d12">Less magical, but traceable and able</text>
+<text x="830" y="550" font-size="12" font-weight="400" fill="#7c2d12">to abstain.</text>
+</svg>
